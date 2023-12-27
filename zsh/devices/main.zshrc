@@ -35,7 +35,7 @@ alias tt="taskwarrior-tui"
 alias task-done="task end.after:today-1wk completed"
 
 # Set up note taking stuff
-export nt=~/.nt
+export nt=~/.clife
 alias nt='cd ~/.nt;nvim -o "$(rg --files -g '!archive/' $nt | fzf)"'
 
 # Print the cool neofetch thing

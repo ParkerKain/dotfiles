@@ -12,7 +12,7 @@ compinit
 
 # End of lines added by compinstall
 # Set the below environment variable to direct to your dotfiles directory
-export CONFIG_ROOT=~/dotfiles_2
+export CONFIG_ROOT=~/dotfiles
 
 # This sets neovim to look in your config directory - not ~/.config/nvim
 export XDG_CONFIG_HOME=$CONFIG_ROOT

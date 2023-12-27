@@ -1,0 +1,7 @@
+new_tab clife
+cd ~/Documents/projects/clife/clife
+launch zsh
+
+new_tab neovim
+cd ~/Documents/projects/clife/clife
+launch zsh -c 'nvim'
