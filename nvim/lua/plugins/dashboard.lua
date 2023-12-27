@@ -51,7 +51,7 @@ return {
 	  },
 	  footer = {
 	   "                                                       ",
-	   "       When in doubt, compensate with emojis! 🤔       ",
+	   "       When in doubt, compensate with emojis!       ",
 	   "                                                       ",
 	}
 	}

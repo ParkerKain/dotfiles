@@ -1,9 +1,3 @@
---
--- null_ls.setup {
---   debug = true,
---   sources = sources,
--- }
-
 return {
     "jose-elias-alvarez/null-ls.nvim",
     config = function()
@@ -34,6 +28,5 @@ return {
           debug = true,
           sources = sources,
         }
-        
     end
 }

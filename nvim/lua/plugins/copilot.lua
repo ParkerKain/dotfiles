@@ -14,7 +14,7 @@ return {
             },
           },
             suggestion = {
-              auto_trigger = false,
+              auto_trigger = true,
               keymap = {
                 accept = "<C-l>",
                 next = "<C-]>",
@@ -29,5 +29,3 @@ return {
         })
       end,
     }
--- Write some cool code
-
