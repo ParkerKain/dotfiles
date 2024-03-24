@@ -1,0 +1,12 @@
+{
+  "extras": [
+    "lazyvim.plugins.extras.dap.core",
+    "lazyvim.plugins.extras.formatting.black",
+    "lazyvim.plugins.extras.formatting.prettier",
+    "lazyvim.plugins.extras.lang.tailwind"
+  ],
+  "news": {
+    "NEWS.md": "2123"
+  },
+  "version": 3
+}

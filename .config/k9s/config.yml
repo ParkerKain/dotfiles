@@ -1,0 +1,51 @@
+k9s:
+  refreshRate: 2
+  maxConnRetry: 5
+  enableMouse: false
+  headless: false
+  logoless: false
+  crumbsless: false
+  readOnly: false
+  noExitOnCtrlC: false
+  noIcons: false
+  skipLatestRevCheck: false
+  logger:
+    tail: 100
+    buffer: 5000
+    sinceSeconds: 300
+    fullScreenLogs: false
+    textWrap: false
+    showTime: false
+  currentContext: aks-ur-dev
+  currentCluster: aks-ur-dev
+  clusters:
+    aks-ur-dev:
+      namespace:
+        active: flightdeck
+        lockFavorites: false
+        favorites:
+        - wingman
+        - flightdeck
+        - default
+      view:
+        active: deployments
+      featureGates:
+        nodeShell: false
+      shellPod:
+        image: busybox:1.35.0
+        command: []
+        args: []
+        namespace: default
+        limits:
+          cpu: 100m
+          memory: 100Mi
+        labels: {}
+      portForwardAddress: localhost
+  thresholds:
+    cpu:
+      critical: 90
+      warn: 70
+    memory:
+      critical: 90
+      warn: 70
+  screenDumpDir: /var/folders/4y/26kzm6fs06vf9g438dtccl_rlr8tby/T/k9s-screens-p848332
