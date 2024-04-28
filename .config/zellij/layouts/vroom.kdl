@@ -1,0 +1,31 @@
+layout {
+  cwd "/Users/p848332/Documents/2024/labs/outbound/repos/effo_vroom/"
+  tab name="editor" focus=true {
+    pane {
+      name "editor"
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="admin" {
+    pane split_direction="vertical" {
+      pane name="git" {
+        command "lazygit"
+      }
+      pane name="tests"
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="notes" {
+    pane {
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+}

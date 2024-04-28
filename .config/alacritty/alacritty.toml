@@ -1,0 +1,11 @@
+import = ["~/.config/alacritty/rose-pine.toml"]
+
+[font]
+size=22
+
+[font.normal]
+family="Iosevka Nerd Font Mono"
+style="Regular"
+
+[window]
+option_as_alt="Both"

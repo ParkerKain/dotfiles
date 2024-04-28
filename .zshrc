@@ -34,6 +34,9 @@ export BAT_THEME="gruvbox-dark"
 # Set up Starship
 eval "$(starship init zsh)"
 
+# Set up direnv
+eval "$(direnv hook zsh)"
+
 # Set up NVM
 # export NVM_DIR="$HOME/dotfiles/nvm"
 # [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm

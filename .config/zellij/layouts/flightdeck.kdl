@@ -1,0 +1,40 @@
+layout {
+  cwd "/Users/p848332/Documents/2024/labs/dynamic_batching/repos/flightdeck/"
+  tab name="editor" focus=true {
+    pane {
+      name "editor"
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+    floating_panes {
+      pane {
+        name "host"
+        x "10%"
+        y "10%"
+        width "80%"
+        height "80%"
+      }
+    }
+  }
+  tab name="admin" {
+    pane split_direction="vertical" {
+      pane name="git" {
+        command "lazygit"
+      }
+      pane name="tests"
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="notes" {
+    pane {
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+}
