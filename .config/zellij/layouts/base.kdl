@@ -1,0 +1,27 @@
+layout {
+  tab name="notes" focus=true {
+    pane {
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="editor"{
+    pane {
+      name "editor"
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="notes" {
+    pane {
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+layout {
+  cwd "/home/parker/Documents/projects/parknotes/parknotes"
+  tab name="editor" focus=true {
+    pane {
+      name "editor"
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="admin" {
+    pane split_direction="vertical" {
+      pane name="git" {
+        command "lazygit"
+      }
+      pane name="run" {
+          command "cargo"
+          args "run"
+        }
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+  tab name="notes" {
+    pane {
+      borderless true
+    }
+    pane size=1 borderless=true {
+        plugin location="zellij:compact-bar"
+    }
+  }
+}
