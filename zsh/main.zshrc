@@ -14,6 +14,7 @@ crossword(){
         open https://worldle.teuteuf.fr/
         open https://oec.world/en/tradle/
         open https://maps.google.com
+        open https://www.nytimes.com/games/connections 
 }
 
 # Alias lazygit

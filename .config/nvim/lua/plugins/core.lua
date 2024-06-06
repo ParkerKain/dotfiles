@@ -151,6 +151,11 @@ return {
           request = "launch",
           name = "Run Pytests",
           module = "pytest",
+          args = function()
+            local args_string = vim.fn.input("Arguments: ")
+            local list_to_return = vim.split(args_string, " +")
+            return list_to_return
+          end,
         },
       }
     end,
