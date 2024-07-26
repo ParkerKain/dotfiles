@@ -41,6 +41,6 @@ alias nt='cd ~/.parknotes;nvim -o "$(rg --files -g '!archive/' $nt | fzf)"'
 alias pks="parknotes"
 
 # Print the cool neofetch thing
-neofetch
+# neofetch
 
 

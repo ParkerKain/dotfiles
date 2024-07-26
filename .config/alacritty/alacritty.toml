@@ -1,4 +1,4 @@
-import = ["~/.config/alacritty/rose-pine.toml"]
+import = ["~/.config/alacritty/tomorrow-night-bright.toml"]
 
 [font]
 size=22
