@@ -46,7 +46,7 @@ tw=35:\
 tx=36:"
 
 # New ls settings
-alias l="ls -alhoFr | rg -v "\./$""
+alias l="ls -alhoFr | rg -v '\./$'"
 
 # Bat theming
 export BAT_THEME="gruvbox-dark"
