@@ -1,1 +1,4 @@
 theme = "papercolor-dark"
+
+[editor]
+true-color = true
