@@ -89,7 +89,8 @@ return {
       "LazyVim/LazyVim",
       opts = {
         -- colorscheme = "github_dark_high_contrast",
-        colorscheme = "preto",
+        -- colorscheme = "preto",
+        colorscheme = "rose-pine",
       },
     },
   },

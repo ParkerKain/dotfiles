@@ -40,6 +40,9 @@ export nt=~/.parknotes
 alias nt='cd ~/.parknotes;nvim -o "$(rg --files -g '!archive/' $nt | fzf)"'
 alias pks="parknotes"
 
+# Alias helix
+alias hx="helix"
+
 # Print the cool neofetch thing
 # neofetch
 

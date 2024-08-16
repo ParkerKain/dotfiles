@@ -1,14 +1,14 @@
-import = ["~/.config/alacritty/papercolor_dark.toml"]
+import = ["~/.config/alacritty/rose-pine.toml"]
 
-[env]  
-TERM="xterm-256color"
+[env]
+TERM = "xterm-256color"
 
 [font]
-size=22
+size = 14
 
-[font.normal]
-family="Iosevka Nerd Font Mono"
-style="Regular"
+# [font.normal]
+# family = "Iosevka Nerd Font Mono"
+# style = "Regular"
 
 [window]
-option_as_alt="Both"
+option_as_alt = "Both"
