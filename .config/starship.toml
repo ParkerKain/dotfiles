@@ -1,110 +1,81 @@
 [time]
 disabled = false
 use_12hr = true
-style = "white bold"
-
-[cmd_duration]
-style = "#ffffff bold italic"
 
 [aws]
 symbol = "  "
-style = "#ffffff bold italic"
 
 [buf]
 symbol = " "
-style = "#ffffff bold italic"
 
 [c]
 symbol = " "
-style = "#ffffff bold italic"
 
 [conda]
 symbol = " "
-style = "#ffffff bold italic"
 
 [dart]
 symbol = " "
-style = "#ffffff bold italic"
 
 [directory]
 read_only = " 󰌾"
-style = "#ffffff bold italic"
 
 [docker_context]
 symbol = " "
-style = "#ffffff bold italic"
 
 [elixir]
 symbol = " "
-style = "#ffffff bold italic"
 
 [elm]
 symbol = " "
-style = "#ffffff bold italic"
 
 [fossil_branch]
 symbol = " "
-style = "#ffffff bold italic"
 
 [git_branch]
 symbol = " "
-style = "#ffffff bold italic"
 
 [golang]
 symbol = " "
-style = "#ffffff bold italic"
 
 [guix_shell]
 symbol = " "
-style = "#ffffff bold italic"
 
 [haskell]
 symbol = " "
-style = "#ffffff bold italic"
 
 [haxe]
 symbol = " "
-style = "#ffffff bold italic"
 
 [hg_branch]
 symbol = " "
-style = "#ffffff bold italic"
 
 [hostname]
 ssh_symbol = " "
-style = "#ffffff bold italic"
 
 [java]
 symbol = " "
-style = "#ffffff bold italic"
 
 [julia]
 symbol = " "
-style = "#ffffff bold italic"
 
 [lua]
 symbol = " "
-style = "#ffffff bold italic"
 
 [memory_usage]
 symbol = "󰍛 "
-style = "#ffffff bold italic"
 
 [meson]
 symbol = "󰔷 "
-style = "#ffffff bold italic"
 
 [nim]
 symbol = "󰆥 "
-style = "#ffffff bold italic"
 
 [nix_shell]
 symbol = " "
-style = "#ffffff bold italic"
 
 [nodejs]
 symbol = " "
-style = "#ffffff bold italic"
 
 [os.symbols]
 Alpaquita = " "
@@ -149,32 +120,21 @@ Windows = "󰍲 "
 
 [package]
 symbol = "󰏗 "
-style = "#ffffff bold italic"
 
 [pijul_channel]
 symbol = " "
-style = "#ffffff bold italic"
 
 [python]
-style = "#ffffff bold italic"
 symbol = " "
 
 [rlang]
 symbol = "󰟔 "
-style = "#ffffff bold italic"
 
 [ruby]
 symbol = " "
-style = "#ffffff bold italic"
 
 [rust]
 symbol = " "
-style = "#ffffff bold italic"
 
 [scala]
 symbol = " "
-style = "#ffffff bold italic"
-
-[character]
-success_symbol = '[❯](#ffffff bold)'
-error_symbol = '[❯](#ffffff bold)'
