@@ -79,18 +79,12 @@ return {
   },
   {
     -- add rose pine
-    -- { "shaunsingh/nord.nvim" },
     { "rose-pine/neovim", name = "rose-pine" },
-    { "projekt0n/github-nvim-theme" },
-    { "ewilazarus/preto" },
 
-    -- Configure LazyVim to load gruvbox
     {
       "LazyVim/LazyVim",
       opts = {
-        -- colorscheme = "github_dark_high_contrast",
-        -- colorscheme = "preto",
-        colorscheme = "rose-pine",
+        colorscheme = "rose-pine-moon",
       },
     },
   },
@@ -163,5 +157,14 @@ return {
         },
       }
     end,
+  },
+  {
+    "mfussenegger/nvim-lint",
+    optional = true,
+    opts = {
+      linters_by_ft = {
+        markdown = false,
+      },
+    },
   },
 }

@@ -2,19 +2,23 @@
 alias dotfiles="cd ~/dotfiles"
 
 # Open the crossword
-crossword(){
-        day=$(date +%d)
-        month=$(date +%m)
-        year=$(date +%Y)
-        open https://www.nytimes.com/crosswords/game/daily/$year/$month/$day
-        open https://www.nytimes.com/puzzles/stats
-        open https://www.nytimes.com/games/wordle/index.html
-        open https://guessthe.game/
-        open https://guesstheaudio.com/
-        open https://worldle.teuteuf.fr/
-        open https://oec.world/en/tradle/
-        open https://maps.google.com
-        open https://www.nytimes.com/games/connections 
+crossword() {
+  urls=(
+    "https://www.nytimes.com/crosswords/game/daily/$(date +%Y)/$(date +%m)/$(date +%d)"
+    "https://www.nytimes.com/puzzles/stats"
+    "https://www.nytimes.com/games/wordle/index.html"
+    "https://guessthe.game/"
+    "https://worldle.teuteuf.fr/"
+    "https://oec.world/en/tradle/"
+    "https://guesstheaudio.com/"
+    "https://www.nytimes.com/games/connections"
+    "https://bandle.app/"
+    "https://maps.google.com"
+  )
+
+  for url in "${urls[@]}"; do
+    open -a "Google Chrome" "$url"
+  done
 }
 
 # Alias lazygit
@@ -39,9 +43,6 @@ alias task-done="task end.after:today-1wk completed"
 export nt=~/.parknotes
 alias nt='cd ~/.parknotes;nvim -o "$(rg --files -g '!archive/' $nt | fzf)"'
 alias pks="parknotes"
-
-# Alias helix
-alias hx="helix"
 
 # Print the cool neofetch thing
 # neofetch
