@@ -49,7 +49,7 @@ tx=36:"
 alias l="ls -alhoFr | rg -v '\./$'"
 
 # Bat theming
-export BAT_THEME="gruvbox-dark"
+export BAT_THEME="Catppuccin Mocha"
 
 # Set up Starship
 eval "$(starship init zsh)"
@@ -57,9 +57,11 @@ eval "$(starship init zsh)"
 # Set up direnv
 eval "$(direnv hook zsh)"
 
-# Set up NVM
-# export NVM_DIR="$HOME/dotfiles/nvm"
-# [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-# [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-
 . "$HOME/.cargo/env"
+
+export NVM_DIR="$HOME/.config/nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+
+. "$HOME/.local/bin/env"
