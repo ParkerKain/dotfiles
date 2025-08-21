@@ -18,3 +18,6 @@ uv
 .emacs.d
 .tmux/plugins
 .databrickscfg
+.aider*
+claude
+configstore
