@@ -29,6 +29,9 @@ unset conf
 alias l="eza --long --header --all --icons"
 # alias l="ls -alhoFr | rg -v '\./$'"
 
+# Set up uv
+export PATH="$HOME/.local/bin:$PATH"
+
 # Bat theming
 export BAT_THEME="Catppuccin Mocha"
 
@@ -36,7 +39,7 @@ export BAT_THEME="Catppuccin Mocha"
 eval "$(starship init zsh)"
 
 # Set up direnv
-eval "$(direnv hook zsh)"
+# eval "$(direnv hook zsh)"
 
 . "$HOME/.cargo/env"
 
@@ -44,4 +47,4 @@ export NVM_DIR="$HOME/.config/nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-. "$HOME/.local/bin/env"
+# . "$HOME/.local/bin/env"

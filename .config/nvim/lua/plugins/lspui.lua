@@ -1,5 +1,6 @@
 return {
 	"jinzhongjia/LspUI.nvim",
+	dependencies = { "MeanderingProgrammer/render-markdown.nvim" },
 	branch = "main",
 	lazy = false,
 	config = function()

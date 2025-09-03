@@ -47,4 +47,4 @@ alias pks="parknotes"
 # Print the cool neofetch thing
 # neofetch
 
-
+alias mux="tmuxinator"

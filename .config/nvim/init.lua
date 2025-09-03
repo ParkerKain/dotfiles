@@ -76,3 +76,47 @@ vim.lsp.config["luals"] = {
 -- Enable LSPs
 vim.lsp.enable("pyrightls")
 vim.lsp.enable("luals")
+
+-- Enable TreeSitter
+require("lazy").setup({
+	{
+		"nvim-treesitter/nvim-treesitter",
+		build = ":TSUpdate",
+		config = function()
+			local configs = require("nvim-treesitter.configs")
+
+			configs.setup({
+				ensure_installed = {
+					"c",
+					"lua",
+					"vim",
+					"vimdoc",
+					"query",
+					"javascript",
+					"html",
+					"python",
+					"rust",
+					"markdown",
+				},
+				sync_install = false,
+				highlight = { enable = true },
+				indent = { enable = true },
+			})
+		end,
+	},
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = "markdown",
+	callback = function()
+		vim.treesitter.start()
+	end,
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = "python",
+	callback = function()
+		-- vim.cmd("TSBufEnable highlight")
+		vim.treesitter.start()
+	end,
+})
