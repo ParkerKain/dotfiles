@@ -5,6 +5,8 @@ vim.opt.clipboard = "unnamedplus"
 vim.opt.tabstop = 4
 vim.opt.shiftwidth = 4
 vim.opt.expandtab = true
+vim.keymap.set("n", "<Esc><Esc>", ":noh<CR>", { silent = true })
+vim.cmd([[cab cc CodeCompanion]])
 
 vim.diagnostic.config({
 	signs = {
@@ -106,17 +108,24 @@ require("lazy").setup({
 	},
 })
 
+-- Actviate Treesitter for Code files
 vim.api.nvim_create_autocmd("FileType", {
-	pattern = "markdown",
+	pattern = { "python", "markdown", "javascript", "lua", "rust", "html", "css" },
 	callback = function()
 		vim.treesitter.start()
 	end,
 })
 
-vim.api.nvim_create_autocmd("FileType", {
-	pattern = "python",
-	callback = function()
-		-- vim.cmd("TSBufEnable highlight")
-		vim.treesitter.start()
+-- Weird workaround for markdown highlighting in hover text from the LSP
+vim.api.nvim_create_autocmd("BufWinEnter", {
+	callback = function(args)
+		local buf = args.buf
+		-- Check if this is a floating window with nofile buftype (typical for LSP hovers)
+		if vim.api.nvim_buf_get_option(buf, "buftype") == "nofile" then
+			-- Set filetype to markdown for syntax highlighting
+			vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+			-- Start treesitter on this specific buffer
+			vim.treesitter.start(buf)
+		end
 	end,
 })
