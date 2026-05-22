@@ -1,2 +1,4 @@
 .envrc
 parker/
+
+**/.claude/settings.local.json

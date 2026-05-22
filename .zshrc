@@ -157,7 +157,7 @@ export BAT_THEME="Catppuccin Mocha"
 eval "$(starship init zsh)"
 
 # Set up direnv
-# eval "$(direnv hook zsh)"
+eval "$(direnv hook zsh)"
 
 . "$HOME/.cargo/env"
 
@@ -170,3 +170,5 @@ export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 
 # Added by Antigravity
 export PATH="/Users/parker.kain/.antigravity/antigravity/bin:$PATH"
+eval "$(rbenv init - zsh)"
+unset GEM_HOME
