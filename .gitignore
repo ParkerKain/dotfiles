@@ -20,3 +20,5 @@ uv
 .aider*
 claude
 configstore
+tmuxinator
+zsh/devclarity-mac.zshrc
