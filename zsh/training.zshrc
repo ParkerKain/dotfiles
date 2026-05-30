@@ -2,9 +2,11 @@ new-training() {
   local ops=~/Documents/internal/repos/training-ops
   local clients_dir=~/Documents/clients
 
+  [[ -d $ops ]] || { echo "training-ops not found at $ops"; return 1; }
+
   # Client selection: existing clients + "New client" option
   local items=()
-  for d in "$clients_dir"/*/; do
+  for d in "$clients_dir"/*(N/); do
     [[ -d $d ]] && items+=("$(basename "$d")")
   done
   items+=("+ New client")
@@ -38,6 +40,7 @@ new-training() {
   # Parse repos from training type YAML and clone each
   local names=("${(@f)$(grep '  - name:' "$ops/training-types/$training.yml" | awk '{print $3}')}")
   local remotes=("${(@f)$(grep '    remote:' "$ops/training-types/$training.yml" | awk '{print $2}')}")
+  [[ -z ${names[1]} ]] && { echo "No repos defined in $training training type."; return 1; }
 
   for i in {1..${#names[@]}}; do
     gum spin --spinner dot --title "Cloning ${names[$i]}..." -- \
