@@ -32,7 +32,7 @@ All demo repos live in `~/Documents/internal/repos/` and are shared across all c
             └── <repo-b>/           ← full git clone
 ```
 
-### Example: LiveTech environment-setup
+### Example: LivTech environment-setup
 
 ```
 ~/Documents/clients/livtech/trainings/environment-setup/
@@ -128,43 +128,31 @@ windows:
 
 ## Shell Functions
 
-Two new functions added to `zsh/main.zshrc` (or a new `zsh/training.zshrc`).
+Two new functions added to `zsh/training.zshrc` (auto-sourced by `.zshrc` from `zsh/`).
 
-### `new-training <client> <training-type>`
+Both functions are fully interactive — no arguments required. `gum` is used for all prompts.
+
+### `new-training`
 
 One-time setup per client per training type. Creates folder structure and clones repos.
 
-```zsh
-new-training() {
-  local client=$1 training=$2
-  local ops=~/Documents/internal/repos/training-ops
-  local base=~/Documents/clients/$client/trainings/$training
-  local def=$ops/training-types/$training.yml
+**Interaction flow:**
+1. **Client selection** — `gum choose` over existing directories in `~/Documents/clients/` plus a `+ New client` option. If `+ New client` is chosen, fall through to `gum input` for a free-text name.
+2. **Training type selection** — `gum choose` over YAML filenames in `training-ops/training-types/` (strips `.yml` extension for display).
+3. **Confirmation** — `gum confirm` showing the full path that will be created before doing anything.
+4. **Repo cloning** — clones each repo defined in the training type YAML into `repos/`, with a `gum spin` spinner per clone.
+5. **Done message** — prints the path and reminds user to add presentation files.
 
-  [[ ! -f $def ]] && { echo "Unknown training type: $training"; return 1; }
+If the target directory already exists, warn and ask to confirm before proceeding.
 
-  mkdir -p $base/presentations $base/repos
-  # Parse YAML and clone repos (implementation: yq or simple grep)
-  echo "Created $base"
-  echo "Add presentation files to: $base/presentations/"
-}
-```
-
-### `train <client> <training-type>`
+### `train`
 
 Run immediately before a training. Starts the tmuxinator session for that client.
 
-```zsh
-train() {
-  local client=$1 training=$2
-  local ops=~/Documents/internal/repos/training-ops
-  local session=$ops/sessions/$training.yml
-
-  [[ ! -f $session ]] && { echo "No session template for: $training"; return 1; }
-
-  CLIENT=$client tmuxinator start -p $session
-}
-```
+**Interaction flow:**
+1. **Client selection** — `gum filter` over existing directories in `~/Documents/clients/` (fuzzy search, keyboard-navigable).
+2. **Training type selection** — `gum choose` over subdirectories of `~/Documents/clients/<client>/trainings/` (only shows training types actually set up for that client, preventing sessions for uncloned repos).
+3. **Launch** — calls `CLIENT=<client> tmuxinator start -p training-ops/sessions/<training>.yml`.
 
 ---
 
