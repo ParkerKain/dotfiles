@@ -17,6 +17,7 @@ new-training() {
   if [[ $client == "+ New client" ]]; then
     client=$(gum input --placeholder "Client name (e.g. acmecorp)") || return 0
     [[ -z $client ]] && { echo "No client name entered."; return 1; }
+    [[ $client =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "Client name must use only letters, numbers, dots, hyphens, or underscores."; return 1; }
   fi
 
   # Tool selection: stored preference shown first
@@ -25,7 +26,7 @@ new-training() {
   stored_tool=$(cat "$clients_dir/$client/.tool" 2>/dev/null)
 
   local tool_items=()
-  if [[ -n $stored_tool ]]; then
+  if [[ -n $stored_tool && -f "$ops/tools/$stored_tool.yml" ]]; then
     tool_items=("$stored_tool")
     for t in "${all_tools[@]}"; do
       [[ $t != $stored_tool ]] && tool_items+=("$t")
