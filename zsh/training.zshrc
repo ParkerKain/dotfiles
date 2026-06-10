@@ -66,6 +66,7 @@ new-training() {
 
   # Parse delete list for selected tool
   local delete_list=("${(@f)$(grep '  - ' "$ops/tools/$tool.yml" | awk '{print $2}')}")
+  [[ -z ${delete_list[1]} ]] && delete_list=()
 
   for i in {1..${#names[@]}}; do
     local repo_path="$base/repos/${names[$i]}"
@@ -75,7 +76,8 @@ new-training() {
       || { echo "Failed to clone ${names[$i]} from ${remotes[$i]}"; return 1; }
 
     # Create client-named branch
-    git -C "$repo_path" checkout -B "$client" --quiet
+    git -C "$repo_path" checkout -B "$client" --quiet \
+      || { echo "Failed to create branch '$client' in ${names[$i]}"; return 1; }
 
     # Delete non-tool config files
     for item in "${delete_list[@]}"; do
