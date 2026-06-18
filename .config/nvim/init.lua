@@ -1,6 +1,14 @@
 require("config.lazy")
 
 vim.opt.number = true
+vim.opt.autoread = true
+vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHoldI" }, {
+	command = "checktime",
+})
+local _autoread_timer = vim.uv.new_timer()
+_autoread_timer:start(1000, 1000, vim.schedule_wrap(function()
+	vim.cmd("silent! checktime")
+end))
 vim.opt.clipboard = "unnamedplus"
 vim.opt.tabstop = 4
 vim.opt.shiftwidth = 4
@@ -75,9 +83,16 @@ vim.lsp.config["luals"] = {
 	},
 }
 
+vim.lsp.config["ruby_lsp"] = {
+	cmd = { "ruby-lsp" },
+	filetypes = { "ruby", "eruby" },
+	root_markers = { "Gemfile", ".git" },
+}
+
 -- Enable LSPs
 vim.lsp.enable("pyrightls")
 vim.lsp.enable("luals")
+vim.lsp.enable("ruby_lsp")
 
 
 -- Activate Treesitter for code files
