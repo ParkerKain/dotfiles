@@ -1,13 +1,15 @@
 new-training() {
   local ops=~/Documents/internal/repos/training-ops
-  local clients_dir=~/Documents/clients
+  local vault_dir=~/Documents/internal/repos/devclarity-vault/personal/40-customers
 
   [[ -d $ops ]] || { echo "training-ops not found at $ops"; return 1; }
 
-  # Client selection: existing clients + "New client" option
+  # Client selection: existing clients (excluding _* dirs) + "New client" option
   local items=()
-  for d in "$clients_dir"/*(N/); do
-    [[ -d $d ]] && items+=("$(basename "$d")")
+  for d in "$vault_dir"/*(N/); do
+    local name="$(basename "$d")"
+    [[ $name == _* ]] && continue
+    items+=("$name")
   done
   items+=("+ New client")
 
@@ -18,12 +20,14 @@ new-training() {
     client=$(gum input --placeholder "Client name (e.g. acmecorp)") || return 0
     [[ -z $client ]] && { echo "No client name entered."; return 1; }
     [[ $client =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "Client name must use only letters, numbers, dots, hyphens, or underscores."; return 1; }
+    mkdir -p "$vault_dir/$client"
+    cp "$vault_dir/_template/overview.md" "$vault_dir/$client/overview.md"
   fi
 
   # Tool selection: stored preference shown first
   local all_tools=("claude-code" "cursor" "github-copilot")
   local stored_tool
-  stored_tool=$(cat "$clients_dir/$client/.tool" 2>/dev/null)
+  stored_tool=$(cat "$vault_dir/$client/.tool" 2>/dev/null)
 
   local tool_items=()
   if [[ -n $stored_tool && -f "$ops/tools/$stored_tool.yml" ]]; then
@@ -39,6 +43,14 @@ new-training() {
   tool=$(printf "%s\n" "${tool_items[@]}" | gum choose --header "Select AI tool:") || return 0
   [[ -z $tool ]] && { echo "No tool selected."; return 1; }
 
+  # Trainer selection: stored preference pre-populates the input
+  local stored_trainer
+  stored_trainer=$(cat "$vault_dir/$client/.trainer" 2>/dev/null)
+
+  local trainer
+  trainer=$(gum input --placeholder "Trainer name (e.g. parker)" --value "${stored_trainer:-}") || return 0
+  [[ -z $trainer ]] && { echo "No trainer name entered."; return 1; }
+
   # Training type selection: from training-ops/training-types/
   local training
   training=$(ls "$ops/training-types/"*.yml 2>/dev/null \
@@ -46,7 +58,7 @@ new-training() {
     | gum choose --header "Select training type:") || return 0
   [[ -z $training ]] && { echo "No training type selected."; return 1; }
 
-  local base=$clients_dir/$client/trainings/$training
+  local base=$vault_dir/$client/$training
 
   # Confirm (warn if already exists)
   if [[ -d $base ]]; then
@@ -55,10 +67,11 @@ new-training() {
     gum confirm "Set up $training for $client using $tool?" || return 0
   fi
 
-  mkdir -p "$base/presentations" "$base/repos"
+  mkdir -p "$base/repos"
 
-  # Store tool preference (directory now exists)
-  echo "$tool" > "$clients_dir/$client/.tool"
+  # Store preferences
+  echo "$tool" > "$vault_dir/$client/.tool"
+  echo "$trainer" > "$vault_dir/$client/.trainer"
 
   # Parse repos from training type YAML and clone each
   local names=("${(@f)$(grep '  - name:' "$ops/training-types/$training.yml" | awk '{print $3}')}")
@@ -75,6 +88,11 @@ new-training() {
     gum spin --spinner dot --title "Cloning ${names[$i]}..." -- \
       git clone "${remotes[$i]}" "$repo_path" \
       || { echo "Failed to clone ${names[$i]} from ${remotes[$i]}"; return 1; }
+
+    # training-materials is a shared presentation repo — skip branching and config cleanup
+    if [[ "${names[$i]}" == "training-materials" ]]; then
+      continue
+    fi
 
     # Create client-named branch
     git -C "$repo_path" checkout -B "$client" --quiet \
@@ -94,25 +112,27 @@ new-training() {
 
   echo ""
   gum style --foreground 212 "✓ $training set up for $client"
-  echo "  Tool:          $tool"
-  echo "  Repos:         $base/repos/"
-  echo "  Presentations: $base/presentations/"
+  echo "  Tool:    $tool"
+  echo "  Trainer: $trainer"
+  echo "  Repos:   $base/repos/"
 }
 
 train() {
   local ops=~/Documents/internal/repos/training-ops
-  local clients_dir=~/Documents/clients
+  local vault_dir=~/Documents/internal/repos/devclarity-vault/personal/40-customers
 
   [[ -d $ops ]] || { echo "training-ops not found at $ops"; return 1; }
 
-  # Client selection: fuzzy filter over existing clients
+  # Client selection: existing clients (excluding _* dirs)
   local client_items=()
-  for d in "$clients_dir"/*(N/); do
-    client_items+=("$(basename "$d")")
+  for d in "$vault_dir"/*(N/); do
+    local name="$(basename "$d")"
+    [[ $name == _* ]] && continue
+    client_items+=("$name")
   done
 
   if [[ ${#client_items[@]} -eq 0 ]]; then
-    echo "No clients found in $clients_dir. Run new-training first."
+    echo "No clients found in $vault_dir. Run new-training first."
     return 1
   fi
 
@@ -120,16 +140,10 @@ train() {
   client=$(printf "%s\n" "${client_items[@]}" | gum filter --header "Select client:") || return 0
   [[ -z $client ]] && return 0
 
-  # Training selection: only show trainings set up for this client
-  local trainings_dir=$clients_dir/$client/trainings
-  if [[ ! -d $trainings_dir ]]; then
-    echo "No trainings set up for $client. Run new-training first."
-    return 1
-  fi
-
+  # Training selection: only dirs that contain a repos/ subdirectory
   local training_items=()
-  for d in "$trainings_dir"/*(N/); do
-    training_items+=("$(basename "$d")")
+  for d in "$vault_dir/$client"/*(N/); do
+    [[ -d "$d/repos" ]] && training_items+=("$(basename "$d")")
   done
 
   if [[ ${#training_items[@]} -eq 0 ]]; then
@@ -147,5 +161,12 @@ train() {
     return 1
   fi
 
-  CLIENT=$client tmuxinator start -p "$session"
+  local trainer
+  trainer=$(cat "$vault_dir/$client/.trainer" 2>/dev/null)
+  if [[ -z $trainer ]]; then
+    echo "No trainer set for $client. Run new-training to configure."
+    return 1
+  fi
+
+  CLIENT=$client TRAINER=$trainer tmuxinator start -p "$session"
 }
