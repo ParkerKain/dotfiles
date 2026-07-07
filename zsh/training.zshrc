@@ -48,7 +48,7 @@ new-training() {
   stored_trainer=$(cat "$vault_dir/$client/.trainer" 2>/dev/null)
 
   local trainer
-  trainer=$(gum input --placeholder "Trainer name (e.g. parker)" --value "${stored_trainer:-}") || return 0
+  trainer=$(gum input --header "Trainer name:" --placeholder "e.g. parker" --value "${stored_trainer:-}") || return 0
   [[ -z $trainer ]] && { echo "No trainer name entered."; return 1; }
 
   # Training type selection: from training-ops/training-types/
@@ -76,6 +76,8 @@ new-training() {
   # Parse repos from training type YAML and clone each
   local names=("${(@f)$(grep '  - name:' "$ops/training-types/$training.yml" | awk '{print $3}')}")
   local remotes=("${(@f)$(grep '    remote:' "$ops/training-types/$training.yml" | awk '{print $2}')}")
+  local base_branch
+  base_branch=$(grep '^base_branch:' "$ops/training-types/$training.yml" | awk '{print $2}')
   [[ -z ${names[1]} ]] && { echo "No repos defined in $training training type."; return 1; }
 
   # Parse delete list for selected tool
@@ -94,7 +96,11 @@ new-training() {
       continue
     fi
 
-    # Create client-named branch
+    # Create client-named branch (off base_branch if specified, otherwise default)
+    if [[ -n $base_branch ]]; then
+      git -C "$repo_path" checkout "$base_branch" --quiet \
+        || { echo "Failed to checkout base branch '$base_branch' in ${names[$i]}"; return 1; }
+    fi
     git -C "$repo_path" checkout -B "$client" --quiet \
       || { echo "Failed to create branch '$client' in ${names[$i]}"; return 1; }
 
@@ -105,7 +111,7 @@ new-training() {
 
     # Commit if anything was deleted
     if [[ -n "$(git -C "$repo_path" status --porcelain)" ]]; then
-      git -C "$repo_path" add -u --quiet
+      git -C "$repo_path" add -u
       git -C "$repo_path" commit -m "Remove non-${tool} AI tool configs" --quiet
     fi
   done
@@ -168,5 +174,8 @@ train() {
     return 1
   fi
 
-  CLIENT=$client TRAINER=$trainer tmuxinator start -p "$session"
+  local tool
+  tool=$(cat "$vault_dir/$client/.tool" 2>/dev/null)
+
+  CLIENT=$client TRAINER=$trainer TOOL=$tool tmuxinator start -p "$session"
 }
