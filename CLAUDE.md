@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Two CLAUDE.md files live in this repo — edit the right one:**
+>
+> | File | Stowed to | Scope | Edit it when… |
+> |------|-----------|-------|---------------|
+> | `CLAUDE.md` (this file) | *not stowed* (excluded via `.stow-local-ignore`) | repo-only — read by Claude Code when working **inside this repo** | the instruction is about the dotfiles repo itself (structure, how to apply changes, stow behavior) |
+> | `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | **global** — read by Claude Code in **every** project | the instruction should apply everywhere (personal preferences, global conventions) |
+>
+> This file is deliberately kept out of stow so it does not land at `~/CLAUDE.md` and get treated as a home-level instruction file. The git patterns in `.stow-local-ignore` are re-listed there because a custom ignore file replaces stow's built-in defaults.
+
 ## What this repo is
 
 Personal dotfiles for macOS. Configs are symlinked (or copied) from here into their expected locations. There is no build system or install script — changes take effect by editing files directly (since they're already symlinked) or by re-sourcing the relevant shell file.
