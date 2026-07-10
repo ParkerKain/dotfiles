@@ -54,6 +54,14 @@ Do not reuse an already-running Claude process because hooks are loaded at sessi
 
 Any failure reopens Task 2. A failure specifically involving stale demotion or map presentation also reopens Task 3.
 
+## Minimap interaction
+
+Automated renderer ordering and exact target extraction already passed. These human gestures have not yet passed.
+
+- [ ] Press `prefix+g` and confirm the popup renders real Claude panes waiting-first.
+- [ ] Select a pane in another session and confirm Enter jumps directly to that exact pane.
+- [ ] Reopen the popup and confirm Escape closes it without switching.
+
 ## Completion record
 
 - Date:
