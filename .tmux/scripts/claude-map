@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# claude-map - global minimap of Claude Code panes on the tmux server.
+# Bound to prefix+g via display-popup. Enter jumps to the selected pane.
+# CLAUDE_MAP_DRYRUN=1 prints rows and exits (test hook).
+set -u
+
+STATE_DIR="$HOME/.claude/tmux-state"
+STALE_WORKING=900   # seconds; older 'working' shows as idle (interrupt recovery)
+VERSION_RE='^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
+now="$(date +%s)"
+
+panes="$(mktemp)"; live="$(mktemp)"; rows="$(mktemp)"
+trap 'rm -f "$panes" "$live" "$rows"' EXIT
+
+tmux list-panes -a -F \
+  '#{pane_id}	#{session_name}	#{window_index}	#{pane_index}	#{pane_current_command}	#{pane_title}	#{pane_current_path}' \
+  > "$panes"
+cut -f1 "$panes" > "$live"
+
+# Prune state files whose pane is gone.
+if [ -d "$STATE_DIR" ]; then
+  for f in "$STATE_DIR"/*; do
+    [ -e "$f" ] || continue
+    b="$(basename "$f")"
+    case "$b" in .tmp.*) continue ;; esac
+    grep -qx "$b" "$live" || rm -f "$f"
+  done
+fi
+
+while IFS=$'\t' read -r pid sess win pane cmd title path; do
+  status=""; ts=0; summary=""
+  sf="$STATE_DIR/$pid"
+  if [ -f "$sf" ]; then
+    IFS=$'\t' read -r status ts summary < "$sf" || true
+    [ -n "${ts:-}" ] || ts=0
+    if [ "$status" = working ] && [ $(( now - ts )) -gt "$STALE_WORKING" ]; then
+      status=idle
+    fi
+  elif printf '%s' "$cmd" | grep -Eq "$VERSION_RE"; then
+    case "$title" in
+      "✳"*) status=idle ;;
+      *)    status=working ;;
+    esac
+    summary="$(basename "$path")"
+  fi
+  [ -n "$status" ] || continue
+
+  case "$status" in
+    waiting-permission) sk=0; icon="⏳" ;;
+    waiting-input)      sk=1; icon="⏳" ;;
+    idle)               sk=2; icon="✳" ;;
+    working)            sk=3; icon="⠿" ;;
+    *)                  sk=4; icon=" " ;;
+  esac
+
+  age="-"
+  if printf '%s' "$ts" | grep -Eq '^[0-9]+$' && [ "$ts" -gt 0 ]; then
+    d=$(( now - ts ))
+    if   [ "$d" -lt 60 ];   then age="${d}s"
+    elif [ "$d" -lt 3600 ]; then age="$(( d / 60 ))m"
+    else                         age="$(( d / 3600 ))h"
+    fi
+  fi
+
+  printf '%d\t%s  %-22s %-12s %-18s %-5s\t%s\n' \
+    "$sk" "$icon" "$sess:$win" "$(basename "$path")" "$status" "$age" "$pid" >> "$rows"
+done < "$panes"
+
+if [ ! -s "$rows" ]; then
+  echo "No Claude sessions running."; sleep 1.2; exit 0
+fi
+
+if [ -n "${CLAUDE_MAP_DRYRUN:-}" ]; then
+  sort -n "$rows" | cut -f2-
+  exit 0
+fi
+
+sel="$(sort -n "$rows" | cut -f2- \
+  | fzf --with-nth=1 --delimiter=$'\t' --reverse \
+        --prompt='claude ▸ ' --header='enter: jump   esc: cancel')" || exit 0
+[ -n "$sel" ] || exit 0
+pid="$(printf '%s' "$sel" | awk -F'\t' '{print $NF}')"
+[ -n "$pid" ] && tmux switch-client -t "$pid"
