@@ -22,3 +22,4 @@ claude
 configstore
 tmuxinator
 zsh/devclarity-mac.zshrc
+.worktrees/
