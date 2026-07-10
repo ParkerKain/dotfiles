@@ -172,3 +172,4 @@ export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="/Users/parker.kain/.antigravity/antigravity/bin:$PATH"
 eval "$(rbenv init - zsh)"
 unset GEM_HOME
+export PATH=$PATH:$HOME/.maestro/bin
