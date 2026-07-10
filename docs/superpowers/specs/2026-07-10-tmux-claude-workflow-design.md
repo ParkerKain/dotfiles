@@ -56,6 +56,7 @@ Add to `~/dotfiles/.tmux.conf`:
 - `set -g history-limit 50000` - Claude output is long.
 - `set -g focus-events on`.
 - `set -g base-index 1` and `setw -g pane-base-index 1` - number keys line up with the first window being `1`.
+- Clear the minimap state dir on server start: `run-shell 'rm -f ~/.claude/tmux-state/*'` at config load. tmux restarts pane ids from `%0` on a fresh server, so state files orphaned by a crash (where `SessionEnd` never fired) would otherwise match unrelated new panes. Clearing on start closes that hole.
 
 Prefix stays `C-b`. Existing settings (`mouse on`, vi mode, rose-pine, TPM) unchanged.
 
@@ -73,7 +74,7 @@ A creation-time layout toggle via the `MUX_LAYOUT` env var:
 - unset / `default` - the two-window shape above.
 - `wide` - a single window tiled as a pane grid (nvim + admin + Claude panes) for the ultrawide monitor at home. Implemented with ERB conditionals in the tmuxinator yml.
 
-Usage: `mux start devclarity-vault` (default) vs `MUX_LAYOUT=wide mux start devclarity-vault` (grid).
+Usage: `mux start devclarity-vault` (default) vs `MUX_LAYOUT=wide mux start devclarity-vault` (grid). Caveat: the toggle is read only at session *creation* - `mux start` on an already-running session ignores it. The `wide` arm is the largest, most-duplicated diff and nothing else depends on it, so it is sequenced last (see Build order); the base Workspace + Claude reshape lands earlier.
 
 Scope of change:
 
@@ -82,11 +83,12 @@ Scope of change:
 
 ### Component 3 - Claude launcher keybinds
 
-- **`prefix + C`** (capital C; default lowercase `c` = new-window is preserved): create a new window in the current session named `Claude` / `Claude-2` / ... (next free suffix), run `claude` in it, select it.
+- **`prefix + C`** (capital C): create a new window in the current session named `Claude` / `Claude-2` / ... (next free suffix), run `claude` in it, select it. Note: `C` is bound to `customize-mode -Z` by default, so this deliberately overrides that (lowercase `c` = new-window is untouched).
 - **`qc` shell function** (bound also to `prefix + S`): the dedicated scratch session.
   - Creates or attaches a persistent session named `scratch`.
   - Opens a fresh `Claude` window in it, runs `claude`, jumps there (`switch-client` if inside tmux, else `attach`).
-  - Root directory resolution: `qc <dir>` sets the window root to `<dir>`; bare `qc` prompts via `gum choose` (e.g. `~/dotfiles`, "pick a dir", "none - research from $HOME"). Matches the observed reality that a scratch Claude sometimes has an obvious root and sometimes does not.
+  - Root directory resolution (v1): `qc <dir>` sets the window root to `<dir>`; bare `qc` defaults to `$HOME`. A `gum choose` picker (dotfiles / pick-a-dir / research-from-$HOME) is a deferred nice-to-have, added only if the plain default is felt to be lacking.
+  - The `prefix + S` binding must host the launcher via `display-popup -E` (or a throwaway window), not a bare `run-shell` - a key binding's `run-shell` has no tty, so any interactive prompt (`gum`) would hang.
 
 The global minimap (Component 4) is what makes it safe to put ad-hoc Claudes in `scratch` rather than the current project session - nothing gets lost.
 
@@ -94,23 +96,26 @@ The global minimap (Component 4) is what makes it safe to put ad-hoc Claudes in 
 
 **Trigger:** `prefix + g` runs `tmux display-popup -E claude-map`.
 
-**State model:** a directory `~/.claude/tmux-state/` with one file per pane, named by pane id (e.g. `%22`). Each file holds a single line: `status<TAB>epoch<TAB>summary`, where `status` is one of `working | waiting-permission | waiting-input | idle | done`. `summary` is a short label (from `cwd` basename and/or notification type).
+**State model:** a directory `~/.claude/tmux-state/` with one file per pane, named by pane id (e.g. `%22`). Each file holds a single line: `status<TAB>epoch<TAB>summary`, where `status` is one of `working | waiting-permission | waiting-input | idle`. `summary` is a short label (from `cwd` basename and/or notification type). The `epoch` (write time) lets the renderer demote a stale `working` to `idle` after a threshold - this is the recovery path for an Esc-interrupt, where no `Stop` fires and the pane would otherwise read `working` forever while shadowing the glyph fallback.
+
+Writes are atomic: each hook writes a `mktemp` file in the same dir and `mv`s it into place, so a concurrent reader (minimap or status counter) never sees a torn or empty file. Parallel tool calls fire multiple `PreToolUse` hooks near-simultaneously; last-writer-wins is fine here, tearing is not.
 
 **Hooks** (in `~/.claude/settings.json`) - each is a small shell command that reads stdin JSON + `$TMUX_PANE` and writes the state file for that pane:
 
-- `SessionStart` -> `working` (or `idle`).
-- `UserPromptSubmit`, `PreToolUse` -> `working`.
-- `Notification` -> `waiting-permission` if `notification_type` is `permission_prompt`, else `waiting-input`.
+- `SessionStart` -> `idle`.
+- `UserPromptSubmit`, `PreToolUse`, `PostToolUse` -> `working`. `PostToolUse` is load-bearing: it clears `waiting-permission` the instant a tool is approved, so a long post-approval command does not keep reading as "still waiting" (nothing else fires until the next `PreToolUse`/`Stop`).
+- `Notification` by `notification_type`: `permission_prompt` -> `waiting-permission`; `agent_needs_input` -> `waiting-input`; `idle_prompt` -> `idle` (it fires ~60s into a wait when `Stop` has usually already set idle - it must NOT escalate to a waiting status, or every quiet pane floats to the top of the waiting-first sort and the signal becomes noise); other types ignored.
 - `Stop` -> `idle`.
 - `SessionEnd` -> remove the state file.
 
 Hooks only write when `$TMUX_PANE` is set (so they are no-ops outside tmux).
 
-**Detection strategy (hybrid, recommended):**
+**Detection strategy (hybrid, recommended):** enumerate the *union* of two sources, so neither can hide a Claude the other sees.
 
-1. Enumerate candidate Claude panes: `tmux list-panes -a -F '#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_command}\t#{pane_title}\t#{pane_current_path}'`, keeping panes whose command matches the version regex OR whose title starts with a Claude glyph.
-2. For each candidate, prefer its state file (precise). If none exists (e.g. a session that predates the hooks), infer status from the title glyph: braille spinner -> `working`, `✳` -> `idle`.
-3. Prune state files whose pane id is no longer in `list-panes -a`.
+1. Snapshot all panes: `tmux list-panes -a -F '#{pane_id}\t#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_current_command}\t#{pane_title}\t#{pane_current_path}'`.
+2. Candidate set = (panes with a state file in `~/.claude/tmux-state/`) UNION (panes whose command matches the version regex `^[0-9]+\.[0-9]+\.[0-9]+$` or whose title starts with a Claude glyph). The state-file arm catches Claude wrapped by another process - e.g. inside `nvim :terminal`, where `pane_current_command` is `nvim` and nvim owns the title - which the command/glyph arm alone would miss.
+3. Status resolution per candidate: if a state file exists, use it (precise), applying the stale-`working` demotion from the epoch. If not, fall back to the title glyph - but ONLY when the command regex also matches, so a lingering `✳ ...` title on a plain shell pane (claude exited, shell survived) does not resurrect as a ghost idle Claude.
+4. Prune state files whose pane id is no longer in the `list-panes -a` snapshot.
 
 **Presentation:** an `fzf` list, sorted waiting-first, one row per Claude pane:
 
@@ -120,7 +125,7 @@ Hooks only write when `$TMUX_PANE` is set (so they are no-ops outside tmux).
 ⠿  devclarity-vault:2    ~/dev...  working                 just now
 ```
 
-**Action:** Enter jumps directly to the pane: `tmux switch-client -t <session>` then `select-window -t <session>:<window>` then `select-pane -t <pane_id>`. (Secondary actions such as kill/peek are possible but out of scope for v1.)
+**Action:** Enter jumps directly to the pane with a single command: `tmux switch-client -t <pane_id>`. In 3.6a a pane target for `switch-client` changes session, window, and pane in one step - this avoids a three-command sequence that would race `renumber-windows on` (a window closing between the list snapshot and Enter shifts indexes, so a `select-window` by index lands on the wrong window). (Secondary actions such as kill/peek are possible but out of scope for v1.)
 
 **Scripts** live in `~/dotfiles/.tmux/scripts/` (new dir): `claude-map` (the popup renderer) and the small hook writer(s), plus whatever helper `qc` and `prefix + C` share for next-name resolution.
 
@@ -139,10 +144,22 @@ Append to `status-right` a glanceable count read from `~/.claude/tmux-state/`, e
 ## Edge cases and risks
 
 - **Title glyphs are undocumented** and could change across Claude versions. Mitigation: hooks are the source of truth; the glyph is fallback only. If glyphs change, only pre-hook sessions degrade.
-- **`$TMUX_PANE` in hooks is confirmed on this machine but undocumented.** If a future Claude version stops inheriting it, hooks can fall back to matching on `session_id` -> transcript, but v1 relies on the pane id. The plan should include a one-line smoke test of a hook writing `$TMUX_PANE`.
-- **Stale state files** from crashes: pruned on each minimap open by intersecting with `list-panes -a`; `SessionEnd` also removes them.
+- **`$TMUX_PANE` in hooks.** tmux documents that it passes the pane id to the pane's child process via `$TMUX_PANE`, and the live test confirmed a subprocess inherits it; the only residual risk is Claude Code sanitizing hook env, which the smoke test covers. If a future version drops it, hooks can fall back to matching `session_id` -> transcript, but v1 relies on the pane id.
+- **Esc / interrupt strands `working`.** If the user interrupts and no `Stop` fires, the state file stays `working` and shadows the glyph fallback. Mitigated by the epoch-based stale-`working` demotion in the renderer. The smoke test must walk an interrupt explicitly.
+- **Pane-id reuse across a server restart.** Within one server's life pane ids are never reused, so the key is safe; but a fresh server restarts ids from `%0`, and files orphaned by a crash could match new panes. Handled by clearing the state dir on server start (Component 1). Live-prune only catches ids absent from `list-panes -a`, which cannot catch this case.
+- **Stale state files** during a session: pruned on each minimap open by intersecting with `list-panes -a`; `SessionEnd` also removes them.
 - **Multiple tmux servers / sockets** are out of scope; the minimap sees only the default server. Noted for a future extension (iterate `tmux -L <socket>`).
 - **`~/.claude/settings.json` is user-global**, shared across all repos - hooks must be cheap and must no-op cleanly when `$TMUX_PANE` is unset so non-tmux usage is unaffected.
+
+## Build order
+
+Risk is concentrated in the hook state machine, which is also the smallest artifact. Build and validate in this order so the core bet is proven before any UI or churn:
+
+1. **Hooks + state dir + smoke tests.** Confirm `$TMUX_PANE` reaches the hook env, then walk one session through the full cycle - prompt -> tool -> permission prompt -> approve -> long tool -> `Stop` -> ~60s idle -> Esc interrupt - `cat`-ing the state file at each step. This surfaces the state-machine issues before any consumer exists.
+2. **`claude-map` popup + jump.** The payoff; known-good pattern (`display-popup -E` + fzf + `switch-client`). Exercises union enumeration, glyph fallback, epoch demotion, and pruning.
+3. **Launcher keybinds** (`prefix + C`, `qc` / `prefix + S`), including the tty handling for the picker.
+4. **tmuxinator + `nwt` refactor** to Workspace + Claude. Mechanical, biggest churn, zero dependency on the minimap - doing it earlier would be cost without de-risking. Roll the `wide` ERB toggle out after the base reshape is proven.
+5. **Status-bar counter** (Component 5) whenever; optional.
 
 ## Success criteria
 
