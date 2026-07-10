@@ -1,0 +1,12 @@
+name: training-materials
+root: ~/Documents/internal/repos/training-materials
+
+windows:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Admin:
+  - Claude:
+      panes:
+        - claude

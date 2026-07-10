@@ -1,0 +1,14 @@
+name: demo-devclarity
+root: ~/Documents/internal/repos/demo-devclarity
+
+on_project_start: code ~/Documents/internal/repos/demo-devclarity
+
+windows:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Admin:
+  - Claude:
+      panes:
+        - claude

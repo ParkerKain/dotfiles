@@ -1,0 +1,12 @@
+name: devclarity-vault
+root: ~/Documents/internal/repos/devclarity-vault
+
+windows:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Admin:
+  - Claude:
+      panes:
+        - claude

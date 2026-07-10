@@ -1,0 +1,12 @@
+name: dotfiles
+root: ~/dotfiles
+
+windows:
+  - Admin:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Claude:
+      panes:
+        - claude

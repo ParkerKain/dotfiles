@@ -1,0 +1,12 @@
+name: transcript-machine
+root: ~/Documents/internal/repos/transcript-machine
+
+windows:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Admin:
+  - Claude:
+      panes:
+        - claude

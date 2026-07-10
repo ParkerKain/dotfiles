@@ -1,0 +1,12 @@
+name: automation
+root: ~/Documents/internal/repos/automation
+
+windows:
+  - Neovim:
+      layout: main-vertical
+      panes:
+        - nvim
+  - Admin:
+  - Claude:
+      panes:
+        - claude
