@@ -14,6 +14,7 @@
 - **Scripts must run under macOS bash 3.2** - no `mapfile`, no `declare -A`, no `${var,,}`. Use `while read`, temp files, and `case`.
 - **Editing the repo is live** - `~/.tmux` -> `dotfiles/.tmux`, `~/.tmux.conf` -> `dotfiles/.tmux.conf`, `~/.claude/settings.local.json` -> `dotfiles/.claude/settings.local.json` are symlinks. Apply tmux changes with `tmux source-file ~/.tmux.conf`; shell changes with `source ~/.zshrc`.
 - **Never write `~/.claude/settings.json`** - it holds secrets and an existing voice-check hook. All new hooks go in the tracked `dotfiles/.claude/settings.local.json`, merged into its existing JSON.
+- **`.claude/settings.local.json` is currently ignored by the broad `claude` gitignore rule.** Task 2 must either force-add it (`git add -f .claude/settings.local.json`) or first replace the broad ignore with precise Claude cache/state ignores. Do not let the hook config remain untracked.
 - **Hooks must no-op when `$TMUX_PANE` is unset** so non-tmux Claude usage is unaffected.
 - **State file format** (one line): `<status>\t<epoch>\t<summary>`, `status` in `working | waiting-permission | waiting-input | idle`. State dir: `~/.claude/tmux-state/`.
 - **Pre-existing uncommitted edits** exist in `.zshrc` and `.config/nvim/` (unrelated to this plan). Any task that edits `.zshrc` must stage only its own hunks with `git add -p`, never `git add .zshrc` wholesale.
@@ -35,7 +36,8 @@
 | `.tmux/scripts/claude-waiting-count` | dotfiles (new) | Count `waiting-*` state files for the status bar |
 | `.claude/settings.local.json` | dotfiles | Hook registration (merged into existing JSON) |
 | `.config/tmuxinator/*.yml` | dotfiles | 9 project configs -> Workspace + Claude shape + `MUX_LAYOUT` |
-| `.zshrc` | dotfiles | `qc` function; refactored `nwt` |
+| `zsh/main.zshrc` | dotfiles | `qc` function |
+| `.zshrc` | dotfiles | refactored `nwt` |
 
 ---
 
@@ -241,11 +243,12 @@ In a tmux pane running a **fresh** `claude` (start a new session so the new hook
 - [ ] **Step 7: Commit**
 
 ```bash
-cd ~/dotfiles && git add .tmux/scripts/claude-state .claude/settings.local.json && \
-git check-ignore .claude/settings.local.json; \
+cd ~/dotfiles && git add .tmux/scripts/claude-state && \
+git add -f .claude/settings.local.json && \
+git diff --cached --name-only | grep -Fx .claude/settings.local.json && \
 git commit -m "$(printf 'feat(claude): per-pane state hooks for the tmux minimap\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>')"
 ```
-(The `git check-ignore` prints nothing if the file is trackable; if it prints the path, the file is gitignored and the commit will silently skip it - stop and investigate.)
+Use `git add -f` because the repo currently ignores `.claude/settings.local.json` via the broad `claude` ignore rule. The `grep` is a guard: if the hook config is not staged, stop instead of committing a partial implementation.
 
 ---
 
@@ -409,11 +412,11 @@ git commit -m "$(printf 'feat(tmux): prefix+g global Claude minimap popup\n\nCo-
 - Create: `~/dotfiles/.tmux/scripts/claude-window`
 - Create: `~/dotfiles/.tmux/scripts/claude-scratch`
 - Modify: `~/dotfiles/.tmux.conf` (bind `prefix+C`, `prefix+S`)
-- Modify: `~/dotfiles/.zshrc` (add `qc`)
+- Modify: `~/dotfiles/zsh/main.zshrc` (add `qc`)
 
 **Interfaces:**
 - Consumes: `automatic-rename off` from Task 1 (stable `Claude-N` names).
-- Produces: `claude-window` (new Claude window in current session), `claude-scratch [dir]` (scratch session + Claude window; attaches or switches based on `$TMUX`). `qc [dir]` wraps `claude-scratch`.
+- Produces: `claude-window <session> <cwd>` (new Claude window in target session), `claude-scratch [--switch|--attach] [dir]` (scratch session + Claude window). `qc [dir]` wraps `claude-scratch`.
 
 - [ ] **Step 1: Write claude-window**
 
@@ -421,10 +424,10 @@ Create `~/dotfiles/.tmux/scripts/claude-window`:
 
 ```bash
 #!/usr/bin/env bash
-# claude-window - add a Claude / Claude-N window to the current session.
+# claude-window - add a Claude / Claude-N window to the target session.
 set -u
-sess="$(tmux display-message -p '#S')"
-cwd="$(tmux display-message -p '#{pane_current_path}')"
+sess="${1:?usage: claude-window <session> <cwd>}"
+cwd="${2:?usage: claude-window <session> <cwd>}"
 name="Claude"; n=2
 while tmux list-windows -t "$sess" -F '#W' | grep -qx "$name"; do
   name="Claude-$n"; n=$(( n + 1 ))
@@ -440,11 +443,16 @@ Create `~/dotfiles/.tmux/scripts/claude-scratch`:
 
 ```bash
 #!/usr/bin/env bash
-# claude-scratch [dir] - open a Claude window in the persistent 'scratch'
-# session (default dir: $HOME). Switches if inside tmux, else attaches.
+# claude-scratch [--switch|--attach] [dir] - open a Claude window in the
+# persistent 'scratch' session (default dir: $HOME).
 set -u
+mode="auto"
+case "${1:-}" in
+  --switch) mode="switch"; shift ;;
+  --attach) mode="attach"; shift ;;
+esac
 root="${1:-$HOME}"
-root="$(cd "$root" 2>/dev/null && pwd)" || { echo "claude-scratch: no such dir: $1" >&2; exit 1; }
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "claude-scratch: no such dir: ${1:-$HOME}" >&2; exit 1; }
 sess="scratch"
 
 if ! tmux has-session -t "$sess" 2>/dev/null; then
@@ -460,7 +468,11 @@ else
   tmux select-window -t "$sess:$name"
 fi
 
-if [ -n "${TMUX:-}" ]; then tmux switch-client -t "$sess"; else tmux attach -t "$sess"; fi
+if [ "$mode" = switch ] || { [ "$mode" = auto ] && [ -n "${TMUX:-}" ]; }; then
+  tmux switch-client -t "$sess"
+else
+  tmux attach -t "$sess"
+fi
 ```
 
 - [ ] **Step 3: Make both executable**
@@ -471,11 +483,9 @@ Run: `chmod +x ~/dotfiles/.tmux/scripts/claude-window ~/dotfiles/.tmux/scripts/c
 
 ```bash
 tmux new-session -d -s _t4 -c ~ -n Workspace
-TMUX= tmux send-keys -t _t4 "" # no-op guard
-# simulate the binding target by running against _t4's active pane:
-tmux switch-client -t _t4 2>/dev/null; ~/.tmux/scripts/claude-window >/dev/null 2>&1 || true
+~/.tmux/scripts/claude-window _t4 "$HOME"
 tmux list-windows -t _t4 -F '#W'   # expect: Workspace, Claude
-~/.tmux/scripts/claude-window >/dev/null 2>&1 || true
+~/.tmux/scripts/claude-window _t4 "$HOME"
 tmux list-windows -t _t4 -F '#W'   # expect: Workspace, Claude, Claude-2
 tmux kill-session -t _t4
 ```
@@ -485,9 +495,9 @@ Expected: second run produces `Claude-2` (no name collision). (Running from a sc
 
 ```bash
 tmux kill-session -t scratch 2>/dev/null || true
-TMUX= ~/.tmux/scripts/claude-scratch ~/dotfiles >/dev/null 2>&1 &
+TMUX= ~/.tmux/scripts/claude-scratch --attach ~/dotfiles >/dev/null 2>&1 &
 sleep 1; tmux list-windows -t scratch -F '#W'   # expect: Claude
-TMUX=1 ~/.tmux/scripts/claude-scratch ~ >/dev/null 2>&1 || true
+~/.tmux/scripts/claude-scratch --switch ~ >/dev/null 2>&1 || true
 tmux list-windows -t scratch -F '#W'            # expect: Claude, Claude-2
 tmux kill-session -t scratch
 ```
@@ -508,8 +518,8 @@ Add to `~/dotfiles/.tmux.conf`:
 
 ```tmux
 # Claude launchers
-bind-key C run-shell "$HOME/.tmux/scripts/claude-window"
-bind-key S run-shell "$HOME/.tmux/scripts/claude-scratch"
+bind-key C run-shell "$HOME/.tmux/scripts/claude-window '#S' '#{pane_current_path}'"
+bind-key S run-shell "$HOME/.tmux/scripts/claude-scratch --switch '#{pane_current_path}'"
 ```
 
 - [ ] **Step 8: Reload and smoke test**
@@ -517,7 +527,7 @@ bind-key S run-shell "$HOME/.tmux/scripts/claude-scratch"
 ```bash
 tmux source-file ~/.tmux.conf && source ~/.zshrc
 ```
-Then: press `prefix + C` -> a new `Claude` window opens in the current session running `claude`. Press `prefix + S` -> switches to the `scratch` session with a Claude window. Run `qc ~/dotfiles` from a shell -> scratch session gets a Claude window rooted at dotfiles. Clean up scratch afterward if desired: `tmux kill-session -t scratch`.
+Then: press `prefix + C` -> a new `Claude` window opens in the current session running `claude`. Press `prefix + S` -> switches to the `scratch` session with a Claude window rooted at the current pane path. Run `qc ~/dotfiles` from a shell -> scratch session gets a Claude window rooted at dotfiles and attaches/switches based on the interactive shell's `$TMUX`. Clean up scratch afterward if desired: `tmux kill-session -t scratch`.
 
 - [ ] **Step 9: Commit**
 
@@ -770,9 +780,9 @@ rm -f "$HOME/.claude/tmux-state/%wa" "$HOME/.claude/tmux-state/%wb"
 ~/.tmux/scripts/claude-waiting-count   # expect: (no output)
 ```
 
-- [ ] **Step 3: Append to status-right after the theme loads**
+- [ ] **Step 3: Append to status-right while keeping TPM last**
 
-Add near the bottom of `~/dotfiles/.tmux.conf`, **after** the `run '~/.tmux/plugins/tpm/tpm'` line (so it appends to rose-pine's status, not gets overwritten):
+Add near the bottom of `~/dotfiles/.tmux.conf`, **before** the final `run '~/.tmux/plugins/tpm/tpm'` line. Keep TPM as the last line; if rose-pine overwrites `status-right`, switch this to the theme's append option instead of moving config after TPM.
 
 ```tmux
 set -g status-interval 5
@@ -785,7 +795,7 @@ set -ga status-right " #(~/.tmux/scripts/claude-waiting-count)"
 tmux source-file ~/.tmux.conf
 printf 'waiting-permission\t%s\tx\n' "$(date +%s)" > "$HOME/.claude/tmux-state/$(tmux list-panes -F '#{pane_id}' | head -1)"
 ```
-Wait up to 5s; expect `◍ 1 waiting` at the right of the status bar. Remove the seeded file afterward. If rose-pine overwrites it, move the `set -ga status-right` into a `set -agF status-right` invocation or a `@rose_pine_status_right_append` option per the theme's README; note the finding in the commit.
+Wait up to 5s; expect `◍ 1 waiting` at the right of the status bar. Remove the seeded file afterward. If rose-pine overwrites it, move the `set -ga status-right` into a `set -agF status-right` invocation or a `@rose_pine_status_right_append` option per the theme's README; keep the TPM line last and note the finding in the commit.
 
 - [ ] **Step 5: Commit**
 

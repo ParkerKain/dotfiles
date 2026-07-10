@@ -40,7 +40,7 @@ These were verified against the live machine and the 2026 Claude Code docs; the 
   - `Notification` - needs the user; `notification_type` distinguishes `permission_prompt`, `idle_prompt`, `agent_needs_input`, `agent_completed`, etc.
   - `Stop` - turn finished (effectively waiting for the user).
   - `SessionStart` / `SessionEnd` - lifecycle.
-- Hooks are configured in `~/.claude/settings.json` under `hooks.<Event>[].hooks[]` as `type: command`; a hook may be a shell command writing to an arbitrary file.
+- Hooks are configured in `~/.claude/settings.local.json` under `hooks.<Event>[].hooks[]` as `type: command`; a hook may be a shell command writing to an arbitrary file.
 - tmux version is 3.6a (supports `display-popup -E`).
 
 ## Design
@@ -88,7 +88,7 @@ Scope of change:
   - Creates or attaches a persistent session named `scratch`.
   - Opens a fresh `Claude` window in it, runs `claude`, jumps there (`switch-client` if inside tmux, else `attach`).
   - Root directory resolution (v1): `qc <dir>` sets the window root to `<dir>`; bare `qc` defaults to `$HOME`. A `gum choose` picker (dotfiles / pick-a-dir / research-from-$HOME) is a deferred nice-to-have, added only if the plain default is felt to be lacking.
-  - The `prefix + S` binding must host the launcher via `display-popup -E` (or a throwaway window), not a bare `run-shell` - a key binding's `run-shell` has no tty, so any interactive prompt (`gum`) would hang.
+  - The `prefix + S` binding must use a non-interactive switch mode. If a future picker is added, host it via `display-popup -E` (or a throwaway window), not a bare `run-shell` - a key binding's `run-shell` has no tty, so any interactive prompt (`gum`) would hang.
 
 The global minimap (Component 4) is what makes it safe to put ad-hoc Claudes in `scratch` rather than the current project session - nothing gets lost.
 
@@ -100,7 +100,7 @@ The global minimap (Component 4) is what makes it safe to put ad-hoc Claudes in 
 
 Writes are atomic: each hook writes a `mktemp` file in the same dir and `mv`s it into place, so a concurrent reader (minimap or status counter) never sees a torn or empty file. Parallel tool calls fire multiple `PreToolUse` hooks near-simultaneously; last-writer-wins is fine here, tearing is not.
 
-**Hooks** (in `~/.claude/settings.json`) - each is a small shell command that reads stdin JSON + `$TMUX_PANE` and writes the state file for that pane:
+**Hooks** (in `~/.claude/settings.local.json`) - each is a small shell command that reads stdin JSON + `$TMUX_PANE` and writes the state file for that pane:
 
 - `SessionStart` -> `idle`.
 - `UserPromptSubmit`, `PreToolUse`, `PostToolUse` -> `working`. `PostToolUse` is load-bearing: it clears `waiting-permission` the instant a tool is approved, so a long post-approval command does not keep reading as "still waiting" (nothing else fires until the next `PreToolUse`/`Stop`).
@@ -138,8 +138,9 @@ Append to `status-right` a glanceable count read from `~/.claude/tmux-state/`, e
 - `~/dotfiles/.tmux.conf` - Component 1 options; `prefix + C`, `prefix + S`, `prefix + g` bindings; Component 5 `status-right` fragment.
 - `~/dotfiles/.tmux/scripts/` (new) - `claude-map`, hook writer script(s), name-resolution helper, status-counter script.
 - `~/dotfiles/.config/tmuxinator/*.yml` (9 files) - Workspace + Claude shape with `MUX_LAYOUT` ERB toggle.
-- `~/dotfiles/.zshrc` - refactor `nwt` to the new shape; add `qc` function.
-- `~/.claude/settings.json` - hook definitions. (Lives outside the dotfiles repo unless it is stowed; the plan will confirm whether this file is tracked and, if not, whether to add a tracked copy.)
+- `~/dotfiles/zsh/main.zshrc` - add `qc` function.
+- `~/dotfiles/.zshrc` - refactor `nwt` to the new shape.
+- `~/dotfiles/.claude/settings.local.json` - hook definitions. It is stowed to `~/.claude/settings.local.json`; because the repo currently ignores `.claude/` via the broad `claude` gitignore rule, the implementation must force-add it or narrow the ignore rule.
 
 ## Edge cases and risks
 
@@ -149,7 +150,7 @@ Append to `status-right` a glanceable count read from `~/.claude/tmux-state/`, e
 - **Pane-id reuse across a server restart.** Within one server's life pane ids are never reused, so the key is safe; but a fresh server restarts ids from `%0`, and files orphaned by a crash could match new panes. Handled by clearing the state dir on server start (Component 1). Live-prune only catches ids absent from `list-panes -a`, which cannot catch this case.
 - **Stale state files** during a session: pruned on each minimap open by intersecting with `list-panes -a`; `SessionEnd` also removes them.
 - **Multiple tmux servers / sockets** are out of scope; the minimap sees only the default server. Noted for a future extension (iterate `tmux -L <socket>`).
-- **`~/.claude/settings.json` is user-global**, shared across all repos - hooks must be cheap and must no-op cleanly when `$TMUX_PANE` is unset so non-tmux usage is unaffected.
+- **`~/.claude/settings.local.json` is user-global**, shared across all repos - hooks must be cheap and must no-op cleanly when `$TMUX_PANE` is unset so non-tmux usage is unaffected.
 
 ## Build order
 
