@@ -372,9 +372,9 @@ Expected: three rows, `waiting-permission` first (⏳), then `idle`, then `worki
 - [ ] **Step 4: Test pruning of dead panes**
 
 ```bash
-printf 'idle\t%s\tghost\n' "$(date +%s)" > '~/.claude/tmux-state/%99999'
+printf 'idle\t%s\tghost\n' "$(date +%s)" > "$HOME/.claude/tmux-state/%99999"
 CLAUDE_MAP_DRYRUN=1 ~/.tmux/scripts/claude-map >/dev/null
-test ! -e '~/.claude/tmux-state/%99999' && echo "OK: pruned dead pane"
+test ! -e "$HOME/.claude/tmux-state/%99999" && echo "OK: pruned dead pane"
 ```
 Expected: `OK: pruned dead pane` (`%99999` is not in `list-panes -a`).
 
@@ -763,10 +763,10 @@ exit 0
 ```bash
 chmod +x ~/dotfiles/.tmux/scripts/claude-waiting-count
 mkdir -p ~/.claude/tmux-state
-printf 'waiting-permission\t%s\tx\n' "$(date +%s)" > '~/.claude/tmux-state/%wa'
-printf 'working\t%s\ty\n' "$(date +%s)" > '~/.claude/tmux-state/%wb'
+printf 'waiting-permission\t%s\tx\n' "$(date +%s)" > "$HOME/.claude/tmux-state/%wa"
+printf 'working\t%s\ty\n' "$(date +%s)" > "$HOME/.claude/tmux-state/%wb"
 ~/.tmux/scripts/claude-waiting-count   # expect: ◍ 1 waiting
-rm -f '~/.claude/tmux-state/%wa' '~/.claude/tmux-state/%wb'
+rm -f "$HOME/.claude/tmux-state/%wa" "$HOME/.claude/tmux-state/%wb"
 ~/.tmux/scripts/claude-waiting-count   # expect: (no output)
 ```
 
