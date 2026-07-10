@@ -5,5 +5,14 @@
       "Read(//Users/parker/.config/**)",
       "WebFetch(domain:nikitabobko.github.io)"
     ]
+  },
+  "hooks": {
+    "SessionStart":     [ { "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" SessionStart" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" UserPromptSubmit" } ] } ],
+    "PreToolUse":       [ { "matcher": "*", "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" PreToolUse" } ] } ],
+    "PostToolUse":      [ { "matcher": "*", "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" PostToolUse" } ] } ],
+    "Notification":     [ { "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" Notification" } ] } ],
+    "Stop":             [ { "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" Stop" } ] } ],
+    "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "\"$HOME/.tmux/scripts/claude-state\" SessionEnd" } ] } ]
   }
 }

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# claude-state - Claude Code hook writer for the tmux minimap.
+# Usage (as a hook command): claude-state <EVENT>
+# Reads hook JSON on stdin; writes ~/.claude/tmux-state/<pane_id>.
+# No-op when not inside tmux ($TMUX_PANE unset).
+set -u
+
+event="${1:-}"
+pane="${TMUX_PANE:-}"
+[ -n "$pane" ] || exit 0
+
+dir="$HOME/.claude/tmux-state"
+mkdir -p "$dir"
+file="$dir/$pane"
+
+payload="$(cat 2>/dev/null || true)"
+cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
+[ -n "$cwd" ] || cwd="$PWD"
+summary="$(basename "$cwd")"
+
+case "$event" in
+  SessionStart)                 status=idle ;;
+  UserPromptSubmit|PreToolUse|PostToolUse) status=working ;;
+  Stop)                         status=idle ;;
+  Notification)
+    ntype="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
+    case "$ntype" in
+      permission_prompt) status=waiting-permission ;;
+      agent_needs_input) status=waiting-input ;;
+      idle_prompt)       status=idle ;;
+      *)                 exit 0 ;;
+    esac
+    summary="$summary ($ntype)"
+    ;;
+  SessionEnd)  rm -f "$file"; exit 0 ;;
+  *)           exit 0 ;;
+esac
+
+# Atomic write: temp in same dir + mv, so readers never see a torn file.
+tmp="$(mktemp "$dir/.tmp.XXXXXX")"
+printf '%s\t%s\t%s\n' "$status" "$(date +%s)" "$summary" > "$tmp"
+mv -f "$tmp" "$file"
