@@ -8,14 +8,15 @@ STATE_DIR="$HOME/.claude/tmux-state"
 STALE_WORKING=900   # seconds; older 'working' shows as idle (interrupt recovery)
 VERSION_RE='^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
 now="$(date +%s)"
+sep="$(printf '\037')"
 
 panes="$(mktemp)"; live="$(mktemp)"; rows="$(mktemp)"
 trap 'rm -f "$panes" "$live" "$rows"' EXIT
 
 tmux list-panes -a -F \
-  '#{pane_id}	#{session_name}	#{window_index}	#{pane_index}	#{pane_current_command}	#{pane_title}	#{pane_current_path}' \
+  "#{pane_id}${sep}#{session_name}${sep}#{window_index}${sep}#{pane_index}${sep}#{pane_current_command}${sep}#{pane_title}${sep}#{pane_current_path}" \
   > "$panes"
-cut -f1 "$panes" > "$live"
+cut -d "$sep" -f1 "$panes" > "$live"
 
 # Prune state files whose pane is gone.
 if [ -d "$STATE_DIR" ]; then
@@ -27,13 +28,14 @@ if [ -d "$STATE_DIR" ]; then
   done
 fi
 
-while IFS=$'\t' read -r pid sess win pane cmd title path; do
+while IFS="$sep" read -r pid sess win pane cmd title path; do
   status=""; ts=0; summary=""
   sf="$STATE_DIR/$pid"
   if [ -f "$sf" ]; then
     IFS=$'\t' read -r status ts summary < "$sf" || true
     [ -n "${ts:-}" ] || ts=0
-    if [ "$status" = working ] && [ $(( now - ts )) -gt "$STALE_WORKING" ]; then
+    printf '%s' "$ts" | grep -Eq '^[0-9]+$' || ts=0
+    if [ "$status" = working ] && [ "$ts" -gt 0 ] && [ $(( now - ts )) -gt "$STALE_WORKING" ]; then
       status=idle
     fi
   elif printf '%s' "$cmd" | grep -Eq "$VERSION_RE"; then
@@ -54,7 +56,7 @@ while IFS=$'\t' read -r pid sess win pane cmd title path; do
   esac
 
   age="-"
-  if printf '%s' "$ts" | grep -Eq '^[0-9]+$' && [ "$ts" -gt 0 ]; then
+  if [ "$ts" -gt 0 ]; then
     d=$(( now - ts ))
     if   [ "$d" -lt 60 ];   then age="${d}s"
     elif [ "$d" -lt 3600 ]; then age="$(( d / 60 ))m"
