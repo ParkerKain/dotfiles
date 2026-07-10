@@ -2,7 +2,21 @@ return {
 	"stevearc/oil.nvim",
 	---@module 'oil'
 	---@type oil.SetupOpts
-	opts = {},
+	opts = {
+		keymaps = {
+			["gx"] = {
+				callback = function()
+					local oil = require("oil")
+					local entry = oil.get_cursor_entry()
+					local dir = oil.get_current_dir()
+					if entry and dir then
+						vim.ui.open(dir .. entry.name)
+					end
+				end,
+				desc = "Open entry with system default",
+			},
+		},
+	},
 	-- Optional dependencies
 	dependencies = { { "echasnovski/mini.icons", opts = {} } },
 	-- dependencies = { "nvim-tree/nvim-web-devicons" }, -- use if you prefer nvim-web-devicons

@@ -14,6 +14,9 @@ vim.opt.tabstop = 4
 vim.opt.shiftwidth = 4
 vim.opt.expandtab = true
 vim.keymap.set("n", "<Esc><Esc>", ":noh<CR>", { silent = true })
+vim.keymap.set("n", "<leader>o", function()
+	vim.ui.open(vim.fn.expand("%:p"))
+end, { desc = "Open file with system default" })
 vim.cmd([[cab cc CodeCompanion]])
 
 vim.diagnostic.config({
