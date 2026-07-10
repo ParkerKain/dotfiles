@@ -25,7 +25,7 @@ git pull --ff-only
 # Before merge only, in a clean disposable checkout:
 # git cherry-pick <final-feature-commit>
 
-source ~/.tmux.conf
+tmux source-file ~/.tmux.conf
 echo "$TMUX_PANE"
 claude
 ```
