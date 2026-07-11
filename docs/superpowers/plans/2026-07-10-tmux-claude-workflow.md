@@ -10,7 +10,9 @@
 
 ## Execution Status and Resume Point
 
-Last updated: 2026-07-11 after the idle-vs-waiting bug fix (Option A) landed. Tasks 1-4 complete; Task 5 is next.
+Last updated: 2026-07-11 after Task 5 (tmuxinator + nwt reshape) landed and passed review. Tasks 1-5 complete; Task 6 is next.
+
+**CRITICAL SAFETY NOTE discovered during Task 5 (read before dispatching Task 6 or any later task):** this plan is being executed from a Claude Code session running inside a tmux session literally named `devclarity-vault`. Any live-test step that runs `tmux kill-session -t devclarity-vault` (or otherwise touches that exact session) will kill the tmux session the executing agent/conversation itself lives in - this happened twice in a row during Task 5 before the plan's Step 4 was rewritten to target `dotfiles` instead. **Before dispatching any implementer whose brief contains a `tmux kill-session` or `mux start`/session-name live-test command, grep the brief for the literal string `devclarity-vault` in a kill-session/mux-start context and substitute a different, non-live session name (`dotfiles` is the establishing precedent) if found.** Task 6 Step 3 already targets `dotfiles` - verified safe - but re-check this note against the brief actually extracted at dispatch time in case the plan text drifts.
 
 **Live verification (2026-07-10):** the deferred Task 2/3 checks now **pass**, run against the reviewed config temporarily installed into the primary `~/dotfiles` working tree. All hook transitions were confirmed in a real Claude session (incl. `waiting-permission` on a real permission prompt), and the `prefix+g` popup render/jump/Esc gestures were confirmed by the user. See the companion `…-deferred-verification.md` for the full record. **The `claude-map` row label was redesigned this pass** (see Task 3 note below): rows now read `session | claude-title | status | age`, where `claude-title` is the pane title Claude's `/rename` sets, glyph-stripped and truncated. The committed `.tmux/scripts/claude-map` is the source of truth; the snippet embedded in Task 3 below is illustrative and predates this change and the `\037`-separator fix.
 
@@ -24,10 +26,9 @@ Last updated: 2026-07-11 after the idle-vs-waiting bug fix (Option A) landed. Ta
 - Task 4 is complete and review-approved (spec compliant, quality approved). Commits: `70c5ae9` (scripts + binds + `qc`), `28ef57e` (deferred-check tracking doc). The fake-tmux unit harness `.superpowers/sdd/task-4-tests.sh` passes 25/25. During review the harness (gitignored scratch, not a deliverable) was hardened twice: normalized its temp root with `cd/pwd` (macOS `$TMPDIR` has a trailing slash, which doubled a slash in its own expected strings) and fixed a picker-guard regex that false-matched `select-window`. Neither was an implementation bug.
 - Deferred live checks are tracked in `docs/superpowers/plans/2026-07-10-tmux-claude-workflow-deferred-verification.md`: Task 2/3 hook + minimap gestures (recorded PASSED there), and Task 4 launcher gestures (`prefix+C`, `prefix+S`, `qc` Steps 4/5/8) which are **deferred, not passed** because they spawn real `claude` processes against the live server.
 - **Idle-vs-waiting bug: FIXED 2026-07-11.** Commit `7428b7f` (`fix(claude): end-of-turn -> waiting-input ...`). Option A: `Stop` and `idle_prompt` now map to `waiting-input` so a Claude that ended its turn (question or done) surfaces in the minimap waiting tier. Verified by the unit harness (`.superpowers/sdd/task-2-tests.sh`, 10/10) and a seeded `claude-map` dry-run (`waiting-permission > waiting-input > working`). See the RESOLVED block above for the full rationale and the documented `AskUserQuestion` mid-turn blind spot. The live primary copy at `~/.tmux/scripts/claude-state` was synced to match. A gold-standard live re-confirm (fresh interactive `claude` writing `waiting-input` on turn end) was NOT run and is optional - the change is a single status string over already-live-verified plumbing.
-- Task 5 is the next task. No Task 5 production changes exist yet; the feature worktree is clean (HEAD `7428b7f`).
-- Tasks 6 through 7, whole-branch review, and branch finishing are pending.
-
-**Worktree-specific finding that changes Task 5 staging:** Global Constraints warn that `.zshrc` has pre-existing unstaged hunks and mandate `git add -p` to stage only the `nwt` change. That warning describes the primary `~/dotfiles` checkout. In THIS isolated worktree (`~/dotfiles/.worktrees/tmux-claude-workflow`), `.zshrc` is clean (`git diff -- .zshrc` empty). So Task 5 Step 7 does not need interactive `git add -p` here - after editing, `git add .zshrc` wholesale stages only the intended change. This matters because subagents cannot run interactive `git add -p`. `nwt` lives in `.zshrc`: definition at line 33, banner line at 91, window-creation block at ~124-136 (verified). Re-check `git diff -- .zshrc` is still empty before staging, in case the worktree state changed.
+- Task 5 is complete and review-approved (spec compliant, quality approved, no Critical/Important findings). Commit: `28f1d7a` (`feat(tmux): Workspace+Claude session shape for tmuxinator and nwt`). All 9 tmuxinator YAMLs reshaped to Workspace+Claude (or the survey-benchmarking 3-window exception); `.zshrc`'s `nwt` refactored to match. `git add -f` was needed for the yml files because `.gitignore` has a bare `tmuxinator` pattern that now blocks even tracked files under modern git - verified the staged set was exactly the intended 10 files, nothing extra. The primary `~/dotfiles/.zshrc` was NOT mirrored with the nwt refactor (only the worktree copy was touched, per the task's scope) - if Task 6 or later live-tests depend on the primary `~/.zshrc` already reflecting this shape, mirror it in first.
+- Task 6 is the next task. No Task 6 production changes exist yet; the feature worktree is clean (HEAD `28f1d7a`, plus this doc-only edit).
+- Task 7, whole-branch review, and branch finishing are pending.
 
 **RESOLVED 2026-07-11 (was: idle-vs-waiting bug in shipped Task 2/3).** Symptom: a Claude session that ended its turn by asking the user a prose question showed as `idle`, not a waiting state. Investigation (authoritative, from Claude Code's hook docs): Claude Code fires `Stop` at the end of EVERY turn and `idle_prompt` ("done and waiting for your next prompt") - and it fires the *same* signal whether the turn ended with a question or just finished. The speculated `agent_needs_input` does exist but **only fires in agent-view for background sessions**, not for a normal interactive end-of-turn question. So there is **no hook signal that distinguishes "ended turn awaiting an answer" from "done/idle"** - the distinction is simply not observable. Chosen fix (Option A, user-approved): treat every end-of-turn as "waiting on the user for their next move" - map both `Stop` and `idle_prompt` -> `waiting-input`. This surfaces question-enders in the minimap waiting tier (above `idle`, below `waiting-permission`), and because both signals map to the same state it is order-independent and also dissolves the suspected secondary clobber bug (a late `Stop` can no longer overwrite `waiting-input` with `idle`). `SessionStart` still -> `idle` (a fresh session with no turn yet). **Documented blind spot:** a tool that blocks on the user *mid-turn* (e.g. `AskUserQuestion`) stays `working`, because `PreToolUse` wrote `working` and no `Stop`/notification fires until the user answers; `permission_prompt` is the only mid-turn user-block Claude Code emits, so tool-approval prompts are the only mid-turn wait the minimap can surface. Commit: see Task 2 fix commit below. Was never a Task 4 regression.
 
@@ -39,9 +40,11 @@ git status --short --branch
 cat .superpowers/sdd/progress.md
 ```
 
-Then restart at **Task 5: Session shape - tmuxinator + nwt refactor** using the Subagent-Driven Development workflow (`superpowers:subagent-driven-development`). Extract the task brief with the skill's `scripts/task-brief` on this plan file, dispatch a fresh implementer (Task 5 touches 9 tmuxinator YAMLs + the `nwt` block, so a standard model), then run the per-task review gate before Task 6. **Base commit for Task 5's review package is now `7428b7f`** (was `28ef57e` before the idle fix landed).
+Then restart at **Task 6: Wide-layout MUX_LAYOUT toggle** using the Subagent-Driven Development workflow (`superpowers:subagent-driven-development`). Extract the task brief with the skill's `scripts/task-brief` on this plan file, dispatch a fresh implementer (Task 6 wraps the 9 tmuxinator YAMLs' `windows:` blocks in an ERB conditional - mechanical, a standard model is fine), then run the per-task review gate before Task 7. **Base commit for Task 6's review package is `28f1d7a`.**
 
-**Worktree-vs-primary reminder for Task 5's live checks:** edits and commits happen in this worktree (source of truth), but `tmuxinator debug` / `mux start` / `nwt` read the home symlinks, which resolve to the **primary** `~/dotfiles` checkout (`~/.config/tmuxinator -> ../dotfiles/.config/tmuxinator`, `~/.zshrc -> dotfiles/.zshrc`), currently on clean `main`. So to live-test Task 5, mirror the edited configs/`.zshrc` into the primary checkout (uncommitted) the same way earlier tasks did, or the live tools will still see the old shape. The unit-level `tmuxinator debug` parse check can run directly on the worktree files by pointing tmuxinator at them, but the `mux start` shape check needs the primary mirror.
+**Read the CRITICAL SAFETY NOTE above before dispatching Task 6's implementer** - the brief's Step 3 live test must target `dotfiles`, never `devclarity-vault`.
+
+**Worktree-vs-primary reminder for Task 6's live checks:** edits and commits happen in this worktree (source of truth), but `tmuxinator debug` / `mux start` read the home symlinks, which resolve to the **primary** `~/dotfiles` checkout. The primary checkout already has Task 5's reshaped tmuxinator configs mirrored in (uncommitted) from Task 5's live testing, but does NOT have the `.zshrc` nwt refactor mirrored (see the Task 5 status line above) - irrelevant to Task 6, which doesn't touch `.zshrc`. Mirror Task 6's ERB edits into the primary checkout's tmuxinator configs (uncommitted) the same way earlier tasks did, or the live tools will still see Task 5's shape instead of the wide-toggle behavior.
 
 ## Global Constraints
 
@@ -659,11 +662,14 @@ Expected: `ok` for every file. (`tmuxinator debug` renders the config without st
 
 - [ ] **Step 4: Live-test one session shape**
 
+**Do NOT target `devclarity-vault`** - this plan and the agent running it live inside a tmux session named `devclarity-vault`, so `tmux kill-session -t devclarity-vault` kills the very session the test runs from (confirmed live: it killed the conversation twice). Use `dotfiles` instead (same session Task 6 Step 3 already tests against):
+
 ```bash
-tmux kill-session -t devclarity-vault 2>/dev/null || true
-mux start devclarity-vault
-tmux list-windows -t devclarity-vault -F '#I #W'      # expect: 1 Workspace, 2 Claude
-tmux list-panes  -t devclarity-vault:Workspace -F '#P #{pane_current_command}'  # expect two panes, one nvim
+tmux kill-session -t dotfiles 2>/dev/null || true
+mux start dotfiles
+tmux list-windows -t dotfiles -F '#I #W'      # expect: 1 Workspace, 2 Claude
+tmux list-panes  -t dotfiles:Workspace -F '#P #{pane_current_command}'  # expect two panes, one nvim
+tmux kill-session -t dotfiles
 ```
 Expected: window 1 `Workspace` with nvim + shell panes, window 2 `Claude`.
 
