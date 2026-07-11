@@ -10,7 +10,7 @@
 
 ## Execution Status and Resume Point
 
-Last updated: 2026-07-10 after Task 3, plus a live-verification + minimap-label pass.
+Last updated: 2026-07-11 after Task 4 (launcher keybinds) completed and passed review.
 
 **Live verification (2026-07-10):** the deferred Task 2/3 checks now **pass**, run against the reviewed config temporarily installed into the primary `~/dotfiles` working tree. All hook transitions were confirmed in a real Claude session (incl. `waiting-permission` on a real permission prompt), and the `prefix+g` popup render/jump/Esc gestures were confirmed by the user. See the companion `…-deferred-verification.md` for the full record. **The `claude-map` row label was redesigned this pass** (see Task 3 note below): rows now read `session | claude-title | status | age`, where `claude-title` is the pane title Claude's `/rename` sets, glyph-stripped and truncated. The committed `.tmux/scripts/claude-map` is the source of truth; the snippet embedded in Task 3 below is illustrative and predates this change and the `\037`-separator fix.
 
@@ -21,9 +21,14 @@ Last updated: 2026-07-10 after Task 3, plus a live-verification + minimap-label 
 - Task 1 is complete and review-approved. Commits: `5a5b5a2`, `eeb5057`.
 - Task 2 implementation is complete and source review found no defects. Commits: `eed0305`, `6a72f31`, `2076856`. Claude account quota blocked part of the live acceptance run; the user directed Codex to document those checks and continue.
 - Task 3 is complete and review-approved after fixing empty tmux field parsing and malformed timestamp handling. Commits: `701a084`, `6ff899f`, `e7cb4bc`.
-- Deferred Task 2 and Task 3 live checks are tracked in `docs/superpowers/plans/2026-07-10-tmux-claude-workflow-deferred-verification.md`. They are deferred, not passed.
-- Task 4 is the next task. Its implementer was interrupted before editing or committing; the feature worktree is clean and no Task 4 production files exist.
-- Tasks 5 through 7, whole-branch review, and branch finishing are pending.
+- Task 4 is complete and review-approved (spec compliant, quality approved). Commits: `70c5ae9` (scripts + binds + `qc`), `28ef57e` (deferred-check tracking doc). The fake-tmux unit harness `.superpowers/sdd/task-4-tests.sh` passes 25/25. During review the harness (gitignored scratch, not a deliverable) was hardened twice: normalized its temp root with `cd/pwd` (macOS `$TMPDIR` has a trailing slash, which doubled a slash in its own expected strings) and fixed a picker-guard regex that false-matched `select-window`. Neither was an implementation bug.
+- Deferred live checks are tracked in `docs/superpowers/plans/2026-07-10-tmux-claude-workflow-deferred-verification.md`: Task 2/3 hook + minimap gestures (recorded PASSED there), and Task 4 launcher gestures (`prefix+C`, `prefix+S`, `qc` Steps 4/5/8) which are **deferred, not passed** because they spawn real `claude` processes against the live server.
+- Task 5 is the next task. No Task 5 production changes exist yet; the feature worktree is clean.
+- Tasks 6 through 7, whole-branch review, and branch finishing are pending.
+
+**Worktree-specific finding that changes Task 5 staging:** Global Constraints warn that `.zshrc` has pre-existing unstaged hunks and mandate `git add -p` to stage only the `nwt` change. That warning describes the primary `~/dotfiles` checkout. In THIS isolated worktree (`~/dotfiles/.worktrees/tmux-claude-workflow`), `.zshrc` is clean (`git diff -- .zshrc` empty). So Task 5 Step 7 does not need interactive `git add -p` here - after editing, `git add .zshrc` wholesale stages only the intended change. This matters because subagents cannot run interactive `git add -p`. `nwt` lives in `.zshrc`: definition at line 33, banner line at 91, window-creation block at ~124-136 (verified). Re-check `git diff -- .zshrc` is still empty before staging, in case the worktree state changed.
+
+**Known issue to investigate (surfaced 2026-07-11, affects shipped Task 2/3, not Task 4):** a Claude session that ends its turn by asking the user a prose question shows as `idle` in the minimap, not a waiting state. Root cause: `claude-state` maps the `Stop` event to `idle` unconditionally, and Claude Code fires `Stop` when a turn ends regardless of whether it ended by asking something. Only `Notification/permission_prompt` (-> `waiting-permission`) and `Notification/agent_needs_input` (-> `waiting-input`) surface as waiting; a plain end-of-turn question is indistinguishable from "done." Suspected secondary bug: if `agent_needs_input` does fire, a subsequent `Stop` clobbers `waiting-input` back to `idle`. Investigation for next session: (1) capture the actual hook event stream when a real session ends a turn with a question (log every event+payload `claude-state` receives) to see whether `agent_needs_input` fires at all and in what order relative to `Stop`; (2) if it fires, stop `Stop` from overwriting a `waiting-input` state; (3) if it does not fire, there may be no reliable hook signal for "ended turn awaiting an answer" - document the limitation rather than inventing a fragile heuristic. Do NOT treat this as a Task 4 regression.
 
 Resume with:
 
@@ -33,7 +38,7 @@ git status --short --branch
 cat .superpowers/sdd/progress.md
 ```
 
-Then restart at **Task 4: Claude launcher keybinds** using the Subagent-Driven Development workflow. The ignored Task 4 brief already exists at `.superpowers/sdd/task-4-brief.md`; regenerate it from this plan if that scratch directory is unavailable. Use test-first scratch coverage before creating the launcher scripts.
+Then restart at **Task 5: Session shape - tmuxinator + nwt refactor** using the Subagent-Driven Development workflow (`superpowers:subagent-driven-development`). Extract the task brief with the skill's `scripts/task-brief` on this plan file, dispatch a fresh implementer (Task 5 touches 9 tmuxinator YAMLs + the `nwt` block, so a standard model), then run the per-task review gate before Task 6. Base commit for Task 5's review package is `28ef57e`.
 
 ## Global Constraints
 
