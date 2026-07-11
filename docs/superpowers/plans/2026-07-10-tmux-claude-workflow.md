@@ -10,7 +10,7 @@
 
 ## Execution Status and Resume Point
 
-Last updated: 2026-07-11 after Task 4 (launcher keybinds) completed and passed review.
+Last updated: 2026-07-11 after the idle-vs-waiting bug fix (Option A) landed. Tasks 1-4 complete; Task 5 is next.
 
 **Live verification (2026-07-10):** the deferred Task 2/3 checks now **pass**, run against the reviewed config temporarily installed into the primary `~/dotfiles` working tree. All hook transitions were confirmed in a real Claude session (incl. `waiting-permission` on a real permission prompt), and the `prefix+g` popup render/jump/Esc gestures were confirmed by the user. See the companion `…-deferred-verification.md` for the full record. **The `claude-map` row label was redesigned this pass** (see Task 3 note below): rows now read `session | claude-title | status | age`, where `claude-title` is the pane title Claude's `/rename` sets, glyph-stripped and truncated. The committed `.tmux/scripts/claude-map` is the source of truth; the snippet embedded in Task 3 below is illustrative and predates this change and the `\037`-separator fix.
 
@@ -23,7 +23,8 @@ Last updated: 2026-07-11 after Task 4 (launcher keybinds) completed and passed r
 - Task 3 is complete and review-approved after fixing empty tmux field parsing and malformed timestamp handling. Commits: `701a084`, `6ff899f`, `e7cb4bc`.
 - Task 4 is complete and review-approved (spec compliant, quality approved). Commits: `70c5ae9` (scripts + binds + `qc`), `28ef57e` (deferred-check tracking doc). The fake-tmux unit harness `.superpowers/sdd/task-4-tests.sh` passes 25/25. During review the harness (gitignored scratch, not a deliverable) was hardened twice: normalized its temp root with `cd/pwd` (macOS `$TMPDIR` has a trailing slash, which doubled a slash in its own expected strings) and fixed a picker-guard regex that false-matched `select-window`. Neither was an implementation bug.
 - Deferred live checks are tracked in `docs/superpowers/plans/2026-07-10-tmux-claude-workflow-deferred-verification.md`: Task 2/3 hook + minimap gestures (recorded PASSED there), and Task 4 launcher gestures (`prefix+C`, `prefix+S`, `qc` Steps 4/5/8) which are **deferred, not passed** because they spawn real `claude` processes against the live server.
-- Task 5 is the next task. No Task 5 production changes exist yet; the feature worktree is clean.
+- **Idle-vs-waiting bug: FIXED 2026-07-11.** Commit `7428b7f` (`fix(claude): end-of-turn -> waiting-input ...`). Option A: `Stop` and `idle_prompt` now map to `waiting-input` so a Claude that ended its turn (question or done) surfaces in the minimap waiting tier. Verified by the unit harness (`.superpowers/sdd/task-2-tests.sh`, 10/10) and a seeded `claude-map` dry-run (`waiting-permission > waiting-input > working`). See the RESOLVED block above for the full rationale and the documented `AskUserQuestion` mid-turn blind spot. The live primary copy at `~/.tmux/scripts/claude-state` was synced to match. A gold-standard live re-confirm (fresh interactive `claude` writing `waiting-input` on turn end) was NOT run and is optional - the change is a single status string over already-live-verified plumbing.
+- Task 5 is the next task. No Task 5 production changes exist yet; the feature worktree is clean (HEAD `7428b7f`).
 - Tasks 6 through 7, whole-branch review, and branch finishing are pending.
 
 **Worktree-specific finding that changes Task 5 staging:** Global Constraints warn that `.zshrc` has pre-existing unstaged hunks and mandate `git add -p` to stage only the `nwt` change. That warning describes the primary `~/dotfiles` checkout. In THIS isolated worktree (`~/dotfiles/.worktrees/tmux-claude-workflow`), `.zshrc` is clean (`git diff -- .zshrc` empty). So Task 5 Step 7 does not need interactive `git add -p` here - after editing, `git add .zshrc` wholesale stages only the intended change. This matters because subagents cannot run interactive `git add -p`. `nwt` lives in `.zshrc`: definition at line 33, banner line at 91, window-creation block at ~124-136 (verified). Re-check `git diff -- .zshrc` is still empty before staging, in case the worktree state changed.
@@ -38,7 +39,9 @@ git status --short --branch
 cat .superpowers/sdd/progress.md
 ```
 
-Then restart at **Task 5: Session shape - tmuxinator + nwt refactor** using the Subagent-Driven Development workflow (`superpowers:subagent-driven-development`). Extract the task brief with the skill's `scripts/task-brief` on this plan file, dispatch a fresh implementer (Task 5 touches 9 tmuxinator YAMLs + the `nwt` block, so a standard model), then run the per-task review gate before Task 6. Base commit for Task 5's review package is `28ef57e`.
+Then restart at **Task 5: Session shape - tmuxinator + nwt refactor** using the Subagent-Driven Development workflow (`superpowers:subagent-driven-development`). Extract the task brief with the skill's `scripts/task-brief` on this plan file, dispatch a fresh implementer (Task 5 touches 9 tmuxinator YAMLs + the `nwt` block, so a standard model), then run the per-task review gate before Task 6. **Base commit for Task 5's review package is now `7428b7f`** (was `28ef57e` before the idle fix landed).
+
+**Worktree-vs-primary reminder for Task 5's live checks:** edits and commits happen in this worktree (source of truth), but `tmuxinator debug` / `mux start` / `nwt` read the home symlinks, which resolve to the **primary** `~/dotfiles` checkout (`~/.config/tmuxinator -> ../dotfiles/.config/tmuxinator`, `~/.zshrc -> dotfiles/.zshrc`), currently on clean `main`. So to live-test Task 5, mirror the edited configs/`.zshrc` into the primary checkout (uncommitted) the same way earlier tasks did, or the live tools will still see the old shape. The unit-level `tmuxinator debug` parse check can run directly on the worktree files by pointing tmuxinator at them, but the `mux start` shape check needs the primary mirror.
 
 ## Global Constraints
 
