@@ -21,7 +21,6 @@ claude_map_scan() {
   sep="$(printf '\037')"
   now="$(date +%s)"
   panes="$(mktemp)"; live="$(mktemp)"
-  trap 'rm -f "$panes" "$live"' RETURN
 
   tmux list-panes -a -F \
     "#{pane_id}${sep}#{session_name}${sep}#{window_index}${sep}#{pane_index}${sep}#{pane_current_command}${sep}#{pane_title}${sep}#{pane_current_path}" \
@@ -91,4 +90,5 @@ claude_map_scan() {
   done < "$panes"
 
   sort -n -o "$rows_file" "$rows_file"
+  rm -f "$panes" "$live"
 }
