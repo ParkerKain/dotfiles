@@ -92,3 +92,23 @@ restarted. New sessions are unaffected. This is a startup-timing property of hoo
 
 1. **Column alignment.** The dir-label column was `%-12s`; basenames longer than 12 chars (`personal-assistant`, `training-materials`, `devclarity-vault`) overflowed and shoved the `status`/`age` columns right, giving a ragged edge. First widened + truncated; then superseded by change 2.
 2. **Label redesign to session + Claude title.** Per user request, the row now reads `session-name | claude-title | status | age`. The `claude-title` is the pane's `pane_title`, i.e. what Claude Code's `/rename` (or its auto-title) sets, with Claude's leading status glyph stripped and truncated to 30 chars (`~` marker); the session name is truncated to 20. The window *index* (`:N`) was dropped. Jump target is still `pane_id`, unchanged. Verified live: `/rename New Tmux Setup` set the pane title to `⠂ New Tmux Setup`, and the minimap rendered `New Tmux Setup`. Columns align across all rows via `CLAUDE_MAP_DRYRUN=1`.
+
+## Task 4 launcher live checks (deferred)
+
+Task 4 (`claude-window`, `claude-scratch`, `prefix+C`, `prefix+S`, `qc`) passed its
+automated gate - the fake-tmux harness `.superpowers/sdd/task-4-tests.sh` runs 25/25
+pristine, asserting exact `Claude`/`Claude-N` window allocation, exact
+`new-window`/`send-keys`/`select-window` args (including paths with spaces),
+`--switch`/`--attach`/auto-mode selection, the nonexistent-dir error path, and absence
+of any interactive picker. Task review returned spec ✅ / quality Approved.
+
+The brief's live real-tmux steps were **deferred, not passed** (same posture as the
+Task 2/3 live checks), because they run against the user's live tmux server and spawn
+real `claude` processes (quota). Rerun these against the reviewed feature config
+(installed live or merged), each starting from a shell inside tmux:
+
+- [ ] **Step 4 - `prefix+C`.** In a session, press `prefix+C`; a new `Claude` window opens in the current session running `claude`. Press again; the next window is `Claude-2` (no collision).
+- [ ] **Step 5 - `prefix+S`.** Press `prefix+S`; the client switches to the `scratch` session with a Claude window rooted at the current pane's path. Reuse adds `Claude-2`, not a second session.
+- [ ] **Step 8 - `qc`.** Run `qc ~/dotfiles` from an interactive shell; the `scratch` session gets a Claude window rooted at dotfiles and attaches/switches based on the shell's `$TMUX`.
+
+Any failure reopens Task 4.
