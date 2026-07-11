@@ -2,18 +2,16 @@ name: survey-benchmarking
 root: ~/Documents/internal/repos/survey-benchmarking
 
 windows:
-  - Neovim:
-      root: ~/Documents/internal/repos/survey-benchmarking
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
-  - survey-benchmarking:
-      root: ~/Documents/internal/repos/survey-benchmarking
+        -
+  - Sync:
       panes:
         - |
           git checkout main && git fetch origin
           [[ -n "$(git status --porcelain)" ]] && { echo "⚠️  WARNING: local changes in survey-benchmarking:"; git status --short; }; git pull
   - Claude:
-      root: ~/Documents/internal/repos/survey-benchmarking
       panes:
         - claude

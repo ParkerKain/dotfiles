@@ -2,11 +2,11 @@ name: devclarity-vault
 root: ~/Documents/internal/repos/devclarity-vault
 
 windows:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
-  - Admin:
+        -
   - Claude:
       panes:
         - claude

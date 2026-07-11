@@ -2,11 +2,11 @@ name: dotfiles
 root: ~/dotfiles
 
 windows:
-  - Admin:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
+        -
   - Claude:
       panes:
         - claude

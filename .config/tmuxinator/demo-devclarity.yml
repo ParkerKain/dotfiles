@@ -4,11 +4,11 @@ root: ~/Documents/internal/repos/demo-devclarity
 on_project_start: code ~/Documents/internal/repos/demo-devclarity
 
 windows:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
-  - Admin:
+        -
   - Claude:
       panes:
         - claude

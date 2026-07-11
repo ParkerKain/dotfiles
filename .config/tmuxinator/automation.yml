@@ -2,11 +2,11 @@ name: automation
 root: ~/Documents/internal/repos/automation
 
 windows:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
-  - Admin:
+        -
   - Claude:
       panes:
         - claude

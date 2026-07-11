@@ -88,7 +88,7 @@ nwt() {
     "Directory: $dir_location" \
     "Session:   $branch_name (tmux)" \
     "" \
-    "Windows:   Neovim | Admin | Claude"
+    "Windows:   Workspace (nvim+admin) | Claude"
 
   echo ""
   if ! gum confirm "Create worktree and tmux session?"; then
@@ -121,19 +121,19 @@ nwt() {
   if tmux has-session -t="$session_name" 2>/dev/null; then
     gum style --foreground 214 "Session '$session_name' already exists. Switching..."
   else
-    # Create new session with first window (Neovim)
-    tmux new-session -d -s "$session_name" -n "Neovim" -c "$dir_location"
-    tmux send-keys -t "${session_name}:Neovim" "nvim" Enter
-
-    # Create Admin window
-    tmux new-window -t "$session_name" -n "Admin" -c "$dir_location"
+    # Create new session with the Workspace window (nvim + admin split)
+    tmux new-session -d -s "$session_name" -n "Workspace" -c "$dir_location"
+    tmux send-keys -t "${session_name}:Workspace" "nvim" Enter
+    tmux split-window -h -t "${session_name}:Workspace" -c "$dir_location"
+    tmux select-layout -t "${session_name}:Workspace" main-vertical
+    tmux select-pane -t "${session_name}:Workspace.1"
 
     # Create Claude window
     tmux new-window -t "$session_name" -n "Claude" -c "$dir_location"
     tmux send-keys -t "${session_name}:Claude" "claude" Enter
 
-    # Select the first window (Neovim)
-    tmux select-window -t "${session_name}:Neovim"
+    # Select the Workspace window
+    tmux select-window -t "${session_name}:Workspace"
 
     gum style --foreground 212 "Worktree and session created! Switching..."
     sleep 0.5

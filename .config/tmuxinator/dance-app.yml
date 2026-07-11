@@ -2,11 +2,11 @@ name: dance-app
 root: ~/Documents/personal/repos/dance-app
 
 windows:
-  - Admin:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
+        -
   - Claude:
       panes:
         - claude

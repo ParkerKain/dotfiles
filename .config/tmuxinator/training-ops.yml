@@ -2,11 +2,11 @@ name: training-ops
 root: ~/Documents/internal/repos/training-ops
 
 windows:
-  - Neovim:
+  - Workspace:
       layout: main-vertical
       panes:
         - nvim
-  - Admin:
+        -
   - Claude:
       panes:
         - claude
