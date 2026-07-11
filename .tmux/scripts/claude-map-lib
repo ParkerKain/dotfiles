@@ -5,6 +5,11 @@
 : "${CLAUDE_MAP_STATE_DIR:=$HOME/.claude/tmux-state}"
 : "${CLAUDE_MAP_STALE_WORKING:=900}"
 CLAUDE_MAP_VERSION_RE='^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$'
+CLAUDE_MAP_COLOR_WAITING_PERMISSION=$'\033[31m'   # red
+CLAUDE_MAP_COLOR_WAITING_INPUT=$'\033[33m'        # yellow
+CLAUDE_MAP_COLOR_WORKING=$'\033[36m'              # cyan
+CLAUDE_MAP_COLOR_IDLE=$'\033[90m'                 # gray
+CLAUDE_MAP_COLOR_RESET=$'\033[0m'
 
 # claude_map_scan <rows_file>
 # Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
@@ -53,11 +58,11 @@ claude_map_scan() {
     [ -n "$status" ] || continue
 
     case "$status" in
-      waiting-permission) sk=0; icon="⏳" ;;
-      waiting-input)      sk=1; icon="⏳" ;;
-      idle)               sk=2; icon="✳" ;;
-      working)            sk=3; icon="⠿" ;;
-      *)                  sk=4; icon=" " ;;
+      waiting-permission) sk=0; icon="⏳"; color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
+      waiting-input)      sk=1; icon="⏳"; color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;
+      idle)               sk=2; icon="✳"; color="$CLAUDE_MAP_COLOR_IDLE" ;;
+      working)            sk=3; icon="⠿"; color="$CLAUDE_MAP_COLOR_WORKING" ;;
+      *)                  sk=4; icon=" "; color="" ;;
     esac
 
     age="-"
@@ -79,7 +84,8 @@ claude_map_scan() {
     [ -n "$ctitle" ] || ctitle="$(basename "$path")"
     [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
 
-    rendered="$(printf '%s  %-20s %-30s %-18s %-5s' "$icon" "$slabel" "$ctitle" "$status" "$age")"
+    rendered="$(printf '%s%s  %-20s %-30s %-18s %-5s%s' \
+      "$color" "$icon" "$slabel" "$ctitle" "$status" "$age" "$CLAUDE_MAP_COLOR_RESET")"
 
     printf '%d\t%s\t%s\t%s\n' "$sk" "$status" "$rendered" "$pid" >> "$rows_file"
   done < "$panes"

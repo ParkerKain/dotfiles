@@ -22,7 +22,7 @@ if [ -n "${CLAUDE_MAP_DRYRUN:-}" ]; then
 fi
 
 sel="$(cut -f3- "$rows" \
-  | fzf --with-nth=1 --delimiter=$'\t' --reverse \
+  | fzf --ansi --with-nth=1 --delimiter=$'\t' --reverse \
         --prompt='claude ▸ ' --header='enter: jump   esc: cancel')" || exit 0
 [ -n "$sel" ] || exit 0
 pid="$(printf '%s' "$sel" | awk -F'\t' '{print $NF}')"
