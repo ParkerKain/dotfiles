@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # claude-map-statusline - renders one colored tmux-status chip per live
 # Claude pane, worst-status first. Meant to be called from status-format[1]
-# as `#(claude-map-statusline #{client_width})`; tmux re-runs it on its own
-# status-interval, so this prints once and exits (no loop).
+# as `#(claude-map-statusline #{client_width} #{pane_id})`; tmux re-runs it
+# on its own status-interval, so this prints once and exits (no loop).
+# The 2nd arg, if given, is the pane_id currently focused on this client -
+# its chip is marked with a leading arrow and bold/underline.
 # CLAUDE_MAP_DRYRUN=1 renders once and exits (test hook, same as normal mode).
 set -u
 
@@ -19,6 +21,7 @@ MUTED='#6e6a86'
 TEXT='#e0def4'
 
 MAX_WIDTH="${1:-80}"
+CURRENT_PANE="${2:-}"
 
 raw="$(mktemp)"
 trap 'rm -f "$raw"' EXIT
@@ -32,7 +35,7 @@ fi
 chips=()
 used=0
 shown=0
-while IFS=$'\t' read -r sk status icon sess ctitle age pid; do
+while IFS=$'\t' read -r sk status icon sess ctitle age win pane pid; do
   case "$status" in
     waiting-permission) bg="$LOVE";  fg="$BASE" ;;
     waiting-input)      bg="$GOLD";  fg="$BASE" ;;
@@ -41,14 +44,21 @@ while IFS=$'\t' read -r sk status icon sess ctitle age pid; do
     *)                   bg="$MUTED"; fg="$TEXT" ;;
   esac
 
-  label="$icon $sess $age"
+  attrs=""
+  marker=""
+  if [ -n "$CURRENT_PANE" ] && [ "$pid" = "$CURRENT_PANE" ]; then
+    attrs=",bold,underscore"
+    marker="▸"
+  fi
+
+  label="${marker}${icon} ${sess}:${win}.${pane} ${age}"
   # +2 for the padding spaces inside the chip, +1 for the gap before it.
   width=$(( ${#label} + 3 ))
   if [ $(( used + width )) -gt "$MAX_WIDTH" ]; then
     break
   fi
 
-  chips+=("#[bg=${bg},fg=${fg}] ${label} #[bg=default,fg=default]")
+  chips+=("#[bg=${bg},fg=${fg}${attrs}] ${label} #[bg=default,fg=default,nobold,nounderscore]")
   used=$(( used + width ))
   shown=$(( shown + 1 ))
 done < "$raw"

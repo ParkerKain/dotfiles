@@ -13,7 +13,9 @@ CLAUDE_MAP_COLOR_RESET=$'\033[0m'
 
 # claude_map_scan_raw <rows_file>
 # Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
-#   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>pane_id
+#   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>window<TAB>pane<TAB>pane_id
+# window/pane are the tmux window and pane indices (e.g. 2, 1) - needed to
+# tell apart multiple Claude panes that share the same session name.
 # Prunes stale state files (pane no longer live) as a side effect.
 claude_map_scan_raw() {
   local rows_file="$1"
@@ -83,8 +85,8 @@ claude_map_scan_raw() {
     [ -n "$ctitle" ] || ctitle="$(basename "$path")"
     [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
 
-    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$sk" "$status" "$icon" "$slabel" "$ctitle" "$age" "$pid" >> "$rows_file"
+    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$sk" "$status" "$icon" "$slabel" "$ctitle" "$age" "$win" "$pane" "$pid" >> "$rows_file"
   done < "$panes"
 
   sort -n -o "$rows_file" "$rows_file"
@@ -102,7 +104,7 @@ claude_map_scan() {
   claude_map_scan_raw "$raw"
 
   : > "$rows_file"
-  while IFS=$'\t' read -r sk status icon slabel ctitle age pid; do
+  while IFS=$'\t' read -r sk status icon slabel ctitle age win pane pid; do
     case "$status" in
       waiting-permission) color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
       waiting-input)      color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;
@@ -111,7 +113,9 @@ claude_map_scan() {
       *)                   color="" ;;
     esac
 
-    rendered="$(printf '%s%s  %-20s %-30s %-18s %-5s%s' \
+    slabel="${slabel}:${win}.${pane}"
+
+    rendered="$(printf '%s%s  %-23s %-30s %-18s %-5s%s' \
       "$color" "$icon" "$slabel" "$ctitle" "$status" "$age" "$CLAUDE_MAP_COLOR_RESET")"
 
     printf '%d\t%s\t%s\t%s\n' "$sk" "$status" "$rendered" "$pid" >> "$rows_file"
