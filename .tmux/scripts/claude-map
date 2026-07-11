@@ -64,8 +64,22 @@ while IFS="$sep" read -r pid sess win pane cmd title path; do
     fi
   fi
 
-  printf '%d\t%s  %-22s %-12s %-18s %-5s\t%s\n' \
-    "$sk" "$icon" "$sess:$win" "$(basename "$path")" "$status" "$age" "$pid" >> "$rows"
+  # Session name (truncate so a long name never breaks column alignment).
+  slabel="$sess"
+  [ "${#slabel}" -gt 20 ] && slabel="${slabel:0:19}~"
+
+  # Claude's pane title = what `/rename` (or Claude's auto-title) sets. Claude
+  # prepends a status glyph ("<glyph> <title>"); drop it, then truncate. Fall
+  # back to the dir basename if the title is empty. bash 3.2 substring ops ok.
+  case "$title" in
+    [!A-Za-z0-9]*) ctitle="${title#* }" ;;
+    *)             ctitle="$title" ;;
+  esac
+  [ -n "$ctitle" ] || ctitle="$(basename "$path")"
+  [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
+
+  printf '%d\t%s  %-20s %-30s %-18s %-5s\t%s\n' \
+    "$sk" "$icon" "$slabel" "$ctitle" "$status" "$age" "$pid" >> "$rows"
 done < "$panes"
 
 if [ ! -s "$rows" ]; then
