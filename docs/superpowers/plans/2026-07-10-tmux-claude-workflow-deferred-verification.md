@@ -47,7 +47,7 @@ resolved to the feature files. `L` = observed in a live Claude session; `U` = ve
 the isolated unit/seed harness against the installed scripts.
 
 - [x] Start a fresh Claude after the final hooks are live. **(L)** Pane `%69` `SessionStart` wrote `idle`.
-- [x] Submit a prompt and observe `working`, then `Stop` writing `idle`. **(L)** `%69`: `working` then `idle`; session answered "pong".
+- [x] Submit a prompt and observe `working`, then `Stop` writing `idle`. **(L)** `%69`: `working` then `idle`; session answered "pong". **SUPERSEDED 2026-07-11:** the `Stop -> idle` mapping was changed to `Stop -> waiting-input` (Option A end-of-turn fix; see the plan's RESOLVED note). This live observation reflects the pre-fix behavior; post-fix, an ended turn reads `waiting-input`. The `working`-during-run half is unchanged.
 - [x] Trigger a permission prompt and observe `waiting-permission`. **(L)** Fresh pane `%72` in default mode: a real Bash approval prompt fired `Notification` with `notification_type: permission_prompt`; state file read `waiting-permission` while the prompt showed, then cleared to `idle` after the user approved (and `/tmp/hello` was created). Confirms Claude Code emits the `permission_prompt` notification the script expects.
 - [x] Approve the prompt and confirm `PostToolUse` returns the pane to `working`. **(U)** `PostToolUse` writes `working` (clears the wait). Live approve-then-working not separately observed.
 - [x] Trigger `agent_needs_input` and observe `waiting-input`. **(U)** Unit harness. Live not observed.

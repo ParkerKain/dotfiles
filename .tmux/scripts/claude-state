@@ -18,16 +18,28 @@ cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
 [ -n "$cwd" ] || cwd="$PWD"
 summary="$(basename "$cwd")"
 
+# End-of-turn model (Option A). Claude Code fires Stop at the end of EVERY turn
+# and idle_prompt when it "is done and waiting for your next prompt" - and it
+# fires the SAME signal whether the turn ended by asking you a question or by
+# finishing work. Hooks cannot distinguish the two (there is no "ended turn
+# awaiting an answer" event). So both mean "waiting on the user for their next
+# move" -> waiting-input. This surfaces question-enders in the minimap instead
+# of burying them as idle, and being order-independent it also removes the old
+# bug where a late Stop clobbered a waiting-input back to idle.
+# Known blind spot: a tool that blocks on you mid-turn (e.g. AskUserQuestion)
+# stays `working`, because PreToolUse fired working and no Stop/notification
+# fires until you answer. permission_prompt is the only mid-turn user-block
+# signal Claude Code emits, so that is the only mid-turn wait we can surface.
 case "$event" in
   SessionStart)                 status=idle ;;
   UserPromptSubmit|PreToolUse|PostToolUse) status=working ;;
-  Stop)                         status=idle ;;
+  Stop)                         status=waiting-input ;;
   Notification)
     ntype="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
     case "$ntype" in
       permission_prompt) status=waiting-permission ;;
       agent_needs_input) status=waiting-input ;;
-      idle_prompt)       status=idle ;;
+      idle_prompt)       status=waiting-input ;;
       *)                 exit 0 ;;
     esac
     summary="$summary ($ntype)"

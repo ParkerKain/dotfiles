@@ -28,7 +28,7 @@ Last updated: 2026-07-11 after Task 4 (launcher keybinds) completed and passed r
 
 **Worktree-specific finding that changes Task 5 staging:** Global Constraints warn that `.zshrc` has pre-existing unstaged hunks and mandate `git add -p` to stage only the `nwt` change. That warning describes the primary `~/dotfiles` checkout. In THIS isolated worktree (`~/dotfiles/.worktrees/tmux-claude-workflow`), `.zshrc` is clean (`git diff -- .zshrc` empty). So Task 5 Step 7 does not need interactive `git add -p` here - after editing, `git add .zshrc` wholesale stages only the intended change. This matters because subagents cannot run interactive `git add -p`. `nwt` lives in `.zshrc`: definition at line 33, banner line at 91, window-creation block at ~124-136 (verified). Re-check `git diff -- .zshrc` is still empty before staging, in case the worktree state changed.
 
-**Known issue to investigate (surfaced 2026-07-11, affects shipped Task 2/3, not Task 4):** a Claude session that ends its turn by asking the user a prose question shows as `idle` in the minimap, not a waiting state. Root cause: `claude-state` maps the `Stop` event to `idle` unconditionally, and Claude Code fires `Stop` when a turn ends regardless of whether it ended by asking something. Only `Notification/permission_prompt` (-> `waiting-permission`) and `Notification/agent_needs_input` (-> `waiting-input`) surface as waiting; a plain end-of-turn question is indistinguishable from "done." Suspected secondary bug: if `agent_needs_input` does fire, a subsequent `Stop` clobbers `waiting-input` back to `idle`. Investigation for next session: (1) capture the actual hook event stream when a real session ends a turn with a question (log every event+payload `claude-state` receives) to see whether `agent_needs_input` fires at all and in what order relative to `Stop`; (2) if it fires, stop `Stop` from overwriting a `waiting-input` state; (3) if it does not fire, there may be no reliable hook signal for "ended turn awaiting an answer" - document the limitation rather than inventing a fragile heuristic. Do NOT treat this as a Task 4 regression.
+**RESOLVED 2026-07-11 (was: idle-vs-waiting bug in shipped Task 2/3).** Symptom: a Claude session that ended its turn by asking the user a prose question showed as `idle`, not a waiting state. Investigation (authoritative, from Claude Code's hook docs): Claude Code fires `Stop` at the end of EVERY turn and `idle_prompt` ("done and waiting for your next prompt") - and it fires the *same* signal whether the turn ended with a question or just finished. The speculated `agent_needs_input` does exist but **only fires in agent-view for background sessions**, not for a normal interactive end-of-turn question. So there is **no hook signal that distinguishes "ended turn awaiting an answer" from "done/idle"** - the distinction is simply not observable. Chosen fix (Option A, user-approved): treat every end-of-turn as "waiting on the user for their next move" - map both `Stop` and `idle_prompt` -> `waiting-input`. This surfaces question-enders in the minimap waiting tier (above `idle`, below `waiting-permission`), and because both signals map to the same state it is order-independent and also dissolves the suspected secondary clobber bug (a late `Stop` can no longer overwrite `waiting-input` with `idle`). `SessionStart` still -> `idle` (a fresh session with no turn yet). **Documented blind spot:** a tool that blocks on the user *mid-turn* (e.g. `AskUserQuestion`) stays `working`, because `PreToolUse` wrote `working` and no `Stop`/notification fires until the user answers; `permission_prompt` is the only mid-turn user-block Claude Code emits, so tool-approval prompts are the only mid-turn wait the minimap can surface. Commit: see Task 2 fix commit below. Was never a Task 4 regression.
 
 Resume with:
 
@@ -208,13 +208,13 @@ cut -f1 ~/.claude/tmux-state/%zz       # expect: working
 echo '{"cwd":"/Users/parker/dotfiles"}' | TMUX_PANE=%zz "$S" PostToolUse
 cut -f1 ~/.claude/tmux-state/%zz       # expect: working
 
-# idle notification must NOT escalate -> idle
+# idle_prompt (turn ended, your move) -> waiting-input  [Option A, 2026-07-11]
 echo '{"cwd":"/x","notification_type":"idle_prompt"}' | TMUX_PANE=%zz "$S" Notification
-cut -f1 ~/.claude/tmux-state/%zz       # expect: idle
+cut -f1 ~/.claude/tmux-state/%zz       # expect: waiting-input
 
-# turn end -> idle
+# turn end -> waiting-input (waiting on the user)  [Option A, 2026-07-11]
 echo '{"cwd":"/x"}' | TMUX_PANE=%zz "$S" Stop
-cut -f1 ~/.claude/tmux-state/%zz       # expect: idle
+cut -f1 ~/.claude/tmux-state/%zz       # expect: waiting-input
 
 # no tmux -> no file written
 rm -f ~/.claude/tmux-state/%noenv
@@ -262,7 +262,7 @@ Expected: `valid JSON`.
 In a tmux pane running a **fresh** `claude` (start a new session so the new hooks load):
 1. Note the pane id: `echo $TMUX_PANE` (e.g. `%22`).
 2. Submit any prompt. In another pane: `cat ~/.claude/tmux-state/%22` -> status `working` while it runs.
-3. Let it finish. Re-`cat` -> `idle`.
+3. Let it finish. Re-`cat` -> `waiting-input` (end-of-turn = waiting on you; Option A, 2026-07-11). Only a fresh session with no turn yet, or a stranded `working` demoted after 900s, reads `idle`.
 4. Trigger a permission prompt (e.g. a command needing approval). Re-`cat` -> `waiting-permission`.
 5. Approve it; while the tool runs -> `working` (confirms `PostToolUse` clears the wait).
 6. Press Esc to interrupt mid-run. Re-`cat` -> likely still `working` (no `Stop`); this is the stranded-`working` case Task 3's demotion handles. Note the timestamp.
@@ -854,7 +854,7 @@ git commit -m "$(printf 'feat(tmux): status-bar counter of waiting Claude sessio
 - Component 4 (minimap: hooks + state model + popup + jump) -> Task 2 (hooks/state) + Task 3 (popup/jump). ✓
 - Component 5 (status counter) -> Task 7. ✓
 - Spec build order (hooks first, tmuxinator churn late, status last): Tasks ordered foundations -> hooks -> minimap -> launchers -> reshape -> wide -> counter. Foundations precede hooks because they are zero-risk scaffolding; the risky hook state machine is validated in Task 2 before any UI. ✓
-- Edge cases: `PostToolUse` clear (Task 2 Step 3 + Step 6.5), `idle_prompt`->idle (Task 2 Step 3), stranded-`working` demotion (Task 3 script + Task 2 Step 6.6), union enumeration (Task 3 script: state-file arm ∪ command/glyph arm), ghost-title guard (glyph fallback gated on version regex), atomic writes (Task 2 script `mktemp`+`mv`), pane-id reuse (Task 1 state clear), single-command jump (Task 3 `switch-client -t $pid`), tty for picker (deferred with the gum picker; `prefix+S` uses a non-interactive script in v1). ✓
+- Edge cases: `PostToolUse` clear (Task 2 Step 3 + Step 6.5), end-of-turn `Stop`/`idle_prompt`->`waiting-input` (Option A, 2026-07-11; Task 2 Step 3), stranded-`working` demotion (Task 3 script + Task 2 Step 6.6), union enumeration (Task 3 script: state-file arm ∪ command/glyph arm), ghost-title guard (glyph fallback gated on version regex), atomic writes (Task 2 script `mktemp`+`mv`), pane-id reuse (Task 1 state clear), single-command jump (Task 3 `switch-client -t $pid`), tty for picker (deferred with the gum picker; `prefix+S` uses a non-interactive script in v1). ✓
 
 **Placeholder scan:** every code step contains complete content; the 9-config repetition is expressed as one template + a name/root table (differences are only those two fields), which is explicit, not a "similar to Task N" placeholder. No TBD/TODO.
 
