@@ -1,6 +1,15 @@
 name: transcript-machine
 root: ~/Documents/internal/repos/transcript-machine
 
+<% if ENV['MUX_LAYOUT'] == 'wide' %>
+windows:
+  - Workspace:
+      layout: tiled
+      panes:
+        - nvim
+        -
+        - claude
+<% else %>
 windows:
   - Workspace:
       layout: main-vertical
@@ -10,3 +19,4 @@ windows:
   - Claude:
       panes:
         - claude
+<% end %>

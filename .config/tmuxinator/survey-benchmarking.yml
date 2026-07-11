@@ -1,6 +1,18 @@
 name: survey-benchmarking
 root: ~/Documents/internal/repos/survey-benchmarking
 
+<% if ENV['MUX_LAYOUT'] == 'wide' %>
+windows:
+  - Workspace:
+      layout: tiled
+      panes:
+        - nvim
+        -
+        - |
+          git checkout main && git fetch origin
+          [[ -n "$(git status --porcelain)" ]] && { echo "⚠️  WARNING: local changes in survey-benchmarking:"; git status --short; }; git pull
+        - claude
+<% else %>
 windows:
   - Workspace:
       layout: main-vertical
@@ -15,3 +27,4 @@ windows:
   - Claude:
       panes:
         - claude
+<% end %>

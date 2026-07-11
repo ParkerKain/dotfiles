@@ -3,6 +3,15 @@ root: ~/Documents/internal/repos/demo-devclarity
 
 on_project_start: code ~/Documents/internal/repos/demo-devclarity
 
+<% if ENV['MUX_LAYOUT'] == 'wide' %>
+windows:
+  - Workspace:
+      layout: tiled
+      panes:
+        - nvim
+        -
+        - claude
+<% else %>
 windows:
   - Workspace:
       layout: main-vertical
@@ -12,3 +21,4 @@ windows:
   - Claude:
       panes:
         - claude
+<% end %>
