@@ -8,6 +8,33 @@
 
 **Tech Stack:** tmux 3.6a, bash (3.2-compatible scripts), zsh functions, jq, fzf, gum, tmuxinator (ERB), Claude Code hooks + settings.
 
+## Execution Status and Resume Point
+
+Last updated: 2026-07-10 after Task 3, plus a live-verification + minimap-label pass.
+
+**Live verification (2026-07-10):** the deferred Task 2/3 checks now **pass**, run against the reviewed config temporarily installed into the primary `~/dotfiles` working tree. All hook transitions were confirmed in a real Claude session (incl. `waiting-permission` on a real permission prompt), and the `prefix+g` popup render/jump/Esc gestures were confirmed by the user. See the companion `…-deferred-verification.md` for the full record. **The `claude-map` row label was redesigned this pass** (see Task 3 note below): rows now read `session | claude-title | status | age`, where `claude-title` is the pane title Claude's `/rename` sets, glyph-stripped and truncated. The committed `.tmux/scripts/claude-map` is the source of truth; the snippet embedded in Task 3 below is illustrative and predates this change and the `\037`-separator fix.
+
+- Active branch: `feat/tmux-claude-workflow`.
+- Isolated worktree: `~/dotfiles/.worktrees/tmux-claude-workflow`.
+- Last clean feature commit: `e7cb4bc` (`docs(tmux): add deferred minimap interaction checks`).
+- Primary `~/dotfiles` checkout: clean `main`; home symlinks therefore still resolve to `main` until a feature commit is temporarily mirrored for live testing or the branch is integrated.
+- Task 1 is complete and review-approved. Commits: `5a5b5a2`, `eeb5057`.
+- Task 2 implementation is complete and source review found no defects. Commits: `eed0305`, `6a72f31`, `2076856`. Claude account quota blocked part of the live acceptance run; the user directed Codex to document those checks and continue.
+- Task 3 is complete and review-approved after fixing empty tmux field parsing and malformed timestamp handling. Commits: `701a084`, `6ff899f`, `e7cb4bc`.
+- Deferred Task 2 and Task 3 live checks are tracked in `docs/superpowers/plans/2026-07-10-tmux-claude-workflow-deferred-verification.md`. They are deferred, not passed.
+- Task 4 is the next task. Its implementer was interrupted before editing or committing; the feature worktree is clean and no Task 4 production files exist.
+- Tasks 5 through 7, whole-branch review, and branch finishing are pending.
+
+Resume with:
+
+```bash
+cd ~/dotfiles/.worktrees/tmux-claude-workflow
+git status --short --branch
+cat .superpowers/sdd/progress.md
+```
+
+Then restart at **Task 4: Claude launcher keybinds** using the Subagent-Driven Development workflow. The ignored Task 4 brief already exists at `.superpowers/sdd/task-4-brief.md`; regenerate it from this plan if that scratch directory is unavailable. Use test-first scratch coverage before creating the launcher scripts.
+
 ## Global Constraints
 
 - **tmux 3.6a** is the floor (uses `display-popup -E`, `switch-client -t <pane_id>`).
@@ -333,8 +360,15 @@ while IFS=$'\t' read -r pid sess win pane cmd title path; do
     fi
   fi
 
-  printf '%d\t%s  %-22s %-12s %-18s %-5s\t%s\n' \
-    "$sk" "$icon" "$sess:$win" "$(basename "$path")" "$status" "$age" "$pid" >> "$rows"
+  # Label redesign (2026-07-10 live pass): row is `session | claude-title | status | age`.
+  # claude-title = pane_title (what Claude's /rename sets) with its leading status
+  # glyph stripped, truncated to 30; session truncated to 20. Jump key stays pane_id.
+  slabel="$sess"; [ "${#slabel}" -gt 20 ] && slabel="${slabel:0:19}~"
+  case "$title" in [!A-Za-z0-9]*) ctitle="${title#* }" ;; *) ctitle="$title" ;; esac
+  [ -n "$ctitle" ] || ctitle="$(basename "$path")"
+  [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
+  printf '%d\t%s  %-20s %-30s %-18s %-5s\t%s\n' \
+    "$sk" "$icon" "$slabel" "$ctitle" "$status" "$age" "$pid" >> "$rows"
 done < "$panes"
 
 if [ ! -s "$rows" ]; then
