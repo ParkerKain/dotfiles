@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# claude-map-statusline - renders one colored tmux-status chip per live
+# Claude pane, worst-status first. Meant to be called from status-format[1]
+# as `#(claude-map-statusline #{client_width})`; tmux re-runs it on its own
+# status-interval, so this prints once and exits (no loop).
+# CLAUDE_MAP_DRYRUN=1 renders once and exits (test hook, same as normal mode).
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./claude-map-lib
+source "$SCRIPT_DIR/claude-map-lib"
+
+# rose-pine moon palette (matches .tmux/plugins/tmux/rose-pine.tmux)
+BASE='#232136'
+LOVE='#eb6f92'
+GOLD='#f6c177'
+FOAM='#9ccfd8'
+MUTED='#6e6a86'
+TEXT='#e0def4'
+
+MAX_WIDTH="${1:-80}"
+
+raw="$(mktemp)"
+trap 'rm -f "$raw"' EXIT
+claude_map_scan_raw "$raw"
+
+total="$(wc -l < "$raw" | tr -d ' ')"
+if [ "$total" -eq 0 ]; then
+  exit 0
+fi
+
+chips=()
+used=0
+shown=0
+while IFS=$'\t' read -r sk status icon sess ctitle age pid; do
+  case "$status" in
+    waiting-permission) bg="$LOVE";  fg="$BASE" ;;
+    waiting-input)      bg="$GOLD";  fg="$BASE" ;;
+    idle)                bg="$MUTED"; fg="$TEXT" ;;
+    working)             bg="$FOAM";  fg="$BASE" ;;
+    *)                   bg="$MUTED"; fg="$TEXT" ;;
+  esac
+
+  label="$icon $sess $age"
+  # +2 for the padding spaces inside the chip, +1 for the gap before it.
+  width=$(( ${#label} + 3 ))
+  if [ $(( used + width )) -gt "$MAX_WIDTH" ]; then
+    break
+  fi
+
+  chips+=("#[bg=${bg},fg=${fg}] ${label} #[bg=default,fg=default]")
+  used=$(( used + width ))
+  shown=$(( shown + 1 ))
+done < "$raw"
+
+if [ "$shown" -lt "$total" ]; then
+  chips+=("#[bg=${MUTED},fg=${TEXT}] +$(( total - shown )) #[bg=default,fg=default]")
+fi
+
+printf ' %s' "${chips[@]}"
+printf '\n'

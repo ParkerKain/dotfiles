@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude-map-lib - shared pane enumeration + status resolution for
-# claude-map and claude-map-peek. Sourced, not executed directly.
+# claude-map and claude-map-statusline. Sourced, not executed directly.
 
 : "${CLAUDE_MAP_STATE_DIR:=$HOME/.claude/tmux-state}"
 : "${CLAUDE_MAP_STALE_WORKING:=900}"
@@ -11,11 +11,11 @@ CLAUDE_MAP_COLOR_WORKING=$'\033[36m'              # cyan
 CLAUDE_MAP_COLOR_IDLE=$'\033[90m'                 # gray
 CLAUDE_MAP_COLOR_RESET=$'\033[0m'
 
-# claude_map_scan <rows_file>
+# claude_map_scan_raw <rows_file>
 # Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
-#   sort_key<TAB>status<TAB>rendered<TAB>pane_id
+#   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>pane_id
 # Prunes stale state files (pane no longer live) as a side effect.
-claude_map_scan() {
+claude_map_scan_raw() {
   local rows_file="$1"
   local sep panes live now
   sep="$(printf '\037')"
@@ -57,11 +57,11 @@ claude_map_scan() {
     [ -n "$status" ] || continue
 
     case "$status" in
-      waiting-permission) sk=0; icon="⏳"; color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
-      waiting-input)      sk=1; icon="⏳"; color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;
-      idle)               sk=2; icon="✳"; color="$CLAUDE_MAP_COLOR_IDLE" ;;
-      working)            sk=3; icon="⠿"; color="$CLAUDE_MAP_COLOR_WORKING" ;;
-      *)                  sk=4; icon=" "; color="" ;;
+      waiting-permission) sk=0; icon="⏳" ;;
+      waiting-input)      sk=1; icon="⏳" ;;
+      idle)               sk=2; icon="✳" ;;
+      working)            sk=3; icon="⠿" ;;
+      *)                  sk=4; icon=" " ;;
     esac
 
     age="-"
@@ -83,12 +83,39 @@ claude_map_scan() {
     [ -n "$ctitle" ] || ctitle="$(basename "$path")"
     [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
 
-    rendered="$(printf '%s%s  %-20s %-30s %-18s %-5s%s' \
-      "$color" "$icon" "$slabel" "$ctitle" "$status" "$age" "$CLAUDE_MAP_COLOR_RESET")"
-
-    printf '%d\t%s\t%s\t%s\n' "$sk" "$status" "$rendered" "$pid" >> "$rows_file"
+    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$sk" "$status" "$icon" "$slabel" "$ctitle" "$age" "$pid" >> "$rows_file"
   done < "$panes"
 
   sort -n -o "$rows_file" "$rows_file"
   rm -f "$panes" "$live"
+}
+
+# claude_map_scan <rows_file>
+# Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
+#   sort_key<TAB>status<TAB>rendered<TAB>pane_id
+# `rendered` is ANSI-colored, fixed-width text for terminal display (fzf, etc).
+claude_map_scan() {
+  local rows_file="$1"
+  local raw color rendered
+  raw="$(mktemp)"
+  claude_map_scan_raw "$raw"
+
+  : > "$rows_file"
+  while IFS=$'\t' read -r sk status icon slabel ctitle age pid; do
+    case "$status" in
+      waiting-permission) color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
+      waiting-input)      color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;
+      idle)                color="$CLAUDE_MAP_COLOR_IDLE" ;;
+      working)             color="$CLAUDE_MAP_COLOR_WORKING" ;;
+      *)                   color="" ;;
+    esac
+
+    rendered="$(printf '%s%s  %-20s %-30s %-18s %-5s%s' \
+      "$color" "$icon" "$slabel" "$ctitle" "$status" "$age" "$CLAUDE_MAP_COLOR_RESET")"
+
+    printf '%d\t%s\t%s\t%s\n' "$sk" "$status" "$rendered" "$pid" >> "$rows_file"
+  done < "$raw"
+
+  rm -f "$raw"
 }
