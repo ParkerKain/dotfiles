@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# claude-scratch [--switch|--attach] [dir] - open a Claude window in the
+# persistent 'scratch' session (default dir: $HOME).
+set -u
+mode="auto"
+case "${1:-}" in
+  --switch) mode="switch"; shift ;;
+  --attach) mode="attach"; shift ;;
+esac
+root="${1:-$HOME}"
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "claude-scratch: no such dir: ${1:-$HOME}" >&2; exit 1; }
+sess="scratch"
+
+if ! tmux has-session -t "$sess" 2>/dev/null; then
+  tmux new-session -d -s "$sess" -n "Claude" -c "$root"
+  tmux send-keys -t "$sess:Claude" 'claude' Enter
+else
+  name="Claude"; n=2
+  while tmux list-windows -t "$sess" -F '#W' | grep -qx "$name"; do
+    name="Claude-$n"; n=$(( n + 1 ))
+  done
+  tmux new-window -t "$sess" -n "$name" -c "$root"
+  tmux send-keys -t "$sess:$name" 'claude' Enter
+  tmux select-window -t "$sess:$name"
+fi
+
+if [ "$mode" = switch ] || { [ "$mode" = auto ] && [ -n "${TMUX:-}" ]; }; then
+  tmux switch-client -t "$sess"
+else
+  tmux attach -t "$sess"
+fi

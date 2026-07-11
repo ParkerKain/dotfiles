@@ -1,6 +1,9 @@
 # Aliases - shortcuts
 alias dotfiles="cd ~/dotfiles"
 
+# qc - quick Claude in the persistent 'scratch' session. Optional dir (default $HOME).
+qc() { ~/.tmux/scripts/claude-scratch "${1:-$HOME}"; }
+
 # Open the crossword
 crossword() {
   urls=(

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# claude-window - add a Claude / Claude-N window to the target session.
+set -u
+sess="${1:?usage: claude-window <session> <cwd>}"
+cwd="${2:?usage: claude-window <session> <cwd>}"
+name="Claude"; n=2
+while tmux list-windows -t "$sess" -F '#W' | grep -qx "$name"; do
+  name="Claude-$n"; n=$(( n + 1 ))
+done
+tmux new-window -t "$sess" -n "$name" -c "$cwd"
+tmux send-keys -t "$sess:$name" 'claude' Enter
+tmux select-window -t "$sess:$name"
