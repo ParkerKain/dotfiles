@@ -35,7 +35,7 @@ fi
 chips=()
 used=0
 shown=0
-while IFS=$'\t' read -r sk status icon sess ctitle age win pane pid; do
+while IFS=$'\t' read -r sk status tool icon sess ctitle age win pane pid; do
   case "$status" in
     waiting-permission) bg="$LOVE";  fg="$BASE" ;;
     waiting-input)      bg="$GOLD";  fg="$BASE" ;;
@@ -51,7 +51,7 @@ while IFS=$'\t' read -r sk status icon sess ctitle age win pane pid; do
     marker="▸"
   fi
 
-  label="${marker}${icon} ${sess}:${win}.${pane} ${age}"
+  label="${marker}${icon} $(claude_map_tool_tag "$tool")·${sess}:${win}.${pane} ${age}"
   # +2 for the padding spaces inside the chip, +1 for the gap before it.
   width=$(( ${#label} + 3 ))
   if [ $(( used + width )) -gt "$MAX_WIDTH" ]; then
