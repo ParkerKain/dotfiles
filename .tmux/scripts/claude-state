@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# claude-state - Claude Code hook writer for the tmux minimap.
-# Usage (as a hook command): claude-state <EVENT>
-# Reads hook JSON on stdin; writes ~/.claude/tmux-state/<pane_id>.
-# No-op when not inside tmux ($TMUX_PANE unset).
+# claude-state - agent-state hook writer for the tmux minimap.
+# Usage (as a hook command): claude-state <tool> <EVENT>
+#   <tool>  short agent tag recorded in the state file (claude|codex).
+#   <EVENT> lifecycle event name from the agent's hook system.
+# Reads hook JSON on stdin; writes $CLAUDE_MAP_STATE_DIR/<pane_id>
+# (default ~/.claude/tmux-state/<pane_id>).
+# No-op when not inside tmux ($TMUX_PANE unset) or when <tool> is empty.
 set -u
 
-event="${1:-}"
+tool="${1:-}"
+event="${2:-}"
 pane="${TMUX_PANE:-}"
 [ -n "$pane" ] || exit 0
+[ -n "$tool" ] || exit 0
 
-dir="$HOME/.claude/tmux-state"
+dir="${CLAUDE_MAP_STATE_DIR:-$HOME/.claude/tmux-state}"
 mkdir -p "$dir"
 file="$dir/$pane"
 
@@ -18,22 +23,23 @@ cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
 [ -n "$cwd" ] || cwd="$PWD"
 summary="$(basename "$cwd")"
 
-# End-of-turn model (Option A). Claude Code fires Stop at the end of EVERY turn
-# and idle_prompt when it "is done and waiting for your next prompt" - and it
-# fires the SAME signal whether the turn ended by asking you a question or by
-# finishing work. Hooks cannot distinguish the two (there is no "ended turn
-# awaiting an answer" event). So both mean "waiting on the user for their next
-# move" -> waiting-input. This surfaces question-enders in the minimap instead
-# of burying them as idle, and being order-independent it also removes the old
-# bug where a late Stop clobbered a waiting-input back to idle.
-# Known blind spot: a tool that blocks on you mid-turn (e.g. AskUserQuestion)
-# stays `working`, because PreToolUse fired working and no Stop/notification
-# fires until you answer. permission_prompt is the only mid-turn user-block
-# signal Claude Code emits, so that is the only mid-turn wait we can surface.
+# Event -> status. Claude Code and Codex CLI share most lifecycle events and
+# differ only in how they signal a mid-turn user block: Claude emits
+# Notification (with .notification_type), Codex emits a dedicated
+# PermissionRequest event. Those names are disjoint, so one case serves both.
+#
+# End-of-turn model: both agents fire Stop at the end of every turn whether the
+# turn ended by asking a question or by finishing work, and hooks cannot tell
+# the two apart. Both mean "waiting on the user for their next move" ->
+# waiting-input. Being order-independent, this also avoids a late Stop
+# clobbering a waiting-permission back to idle. The one mid-turn user-block we
+# can surface is the explicit permission event (Notification/permission_prompt
+# for Claude, PermissionRequest for Codex).
 case "$event" in
-  SessionStart)                 status=idle ;;
-  UserPromptSubmit|PreToolUse|PostToolUse) status=working ;;
-  Stop)                         status=waiting-input ;;
+  SessionStart)                             status=idle ;;
+  UserPromptSubmit|PreToolUse|PostToolUse)  status=working ;;
+  Stop)                                     status=waiting-input ;;
+  PermissionRequest)                        status=waiting-permission ;;
   Notification)
     ntype="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
     case "$ntype" in
@@ -50,5 +56,5 @@ esac
 
 # Atomic write: temp in same dir + mv, so readers never see a torn file.
 tmp="$(mktemp "$dir/.tmp.XXXXXX")"
-printf '%s\t%s\t%s\n' "$status" "$(date +%s)" "$summary" > "$tmp"
+printf '%s\t%s\t%s\t%s\n' "$tool" "$status" "$(date +%s)" "$summary" > "$tmp"
 mv -f "$tmp" "$file"
