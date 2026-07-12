@@ -7,7 +7,7 @@ n=0
 for f in "$dir"/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in .tmp.*) continue ;; esac
-  case "$(cut -f1 "$f" 2>/dev/null)" in waiting-*) n=$(( n + 1 )) ;; esac
+  case "$(cut -f2 "$f" 2>/dev/null)" in waiting-*) n=$(( n + 1 )) ;; esac
 done
 [ "$n" -gt 0 ] && printf '◍ %d waiting ' "$n"
 exit 0
