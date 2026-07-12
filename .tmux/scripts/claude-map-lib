@@ -11,6 +11,15 @@ CLAUDE_MAP_COLOR_WORKING=$'\033[36m'              # cyan
 CLAUDE_MAP_COLOR_IDLE=$'\033[90m'                 # gray
 CLAUDE_MAP_COLOR_RESET=$'\033[0m'
 
+# claude_map_tool_tag <tool> -> single-char display tag.
+claude_map_tool_tag() {
+  case "$1" in
+    claude) printf 'c' ;;
+    codex)  printf 'x' ;;
+    *)      printf '?' ;;
+  esac
+}
+
 # claude_map_scan_raw <rows_file>
 # Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
 #   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>window<TAB>pane<TAB>pane_id
@@ -40,10 +49,10 @@ claude_map_scan_raw() {
 
   : > "$rows_file"
   while IFS="$sep" read -r pid sess win pane cmd title path; do
-    status=""; ts=0; summary=""
+    status=""; ts=0; summary=""; tool=""
     sf="$CLAUDE_MAP_STATE_DIR/$pid"
     if [ -f "$sf" ]; then
-      IFS=$'\t' read -r status ts summary < "$sf" || true
+      IFS=$'\t' read -r tool status ts summary < "$sf" || true
       [ -n "${ts:-}" ] || ts=0
       printf '%s' "$ts" | grep -Eq '^[0-9]+$' || ts=0
       if [ "$status" = working ] && [ "$ts" -gt 0 ] && [ $(( now - ts )) -gt "$CLAUDE_MAP_STALE_WORKING" ]; then
@@ -55,8 +64,16 @@ claude_map_scan_raw() {
         *)    status=working ;;
       esac
       summary="$(basename "$path")"
+      tool=claude
+    elif [ "$cmd" = codex ]; then
+      # Codex has no reliable title convention; report present/unknown as idle
+      # until its hooks fire and record real status.
+      status=idle
+      summary="$(basename "$path")"
+      tool=codex
     fi
     [ -n "$status" ] || continue
+    [ -n "$tool" ] || tool="?"
 
     case "$status" in
       waiting-permission) sk=0; icon="⏳" ;;
@@ -85,8 +102,8 @@ claude_map_scan_raw() {
     [ -n "$ctitle" ] || ctitle="$(basename "$path")"
     [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
 
-    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$sk" "$status" "$icon" "$slabel" "$ctitle" "$age" "$win" "$pane" "$pid" >> "$rows_file"
+    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$sk" "$status" "$tool" "$icon" "$slabel" "$ctitle" "$age" "$win" "$pane" "$pid" >> "$rows_file"
   done < "$panes"
 
   sort -n -o "$rows_file" "$rows_file"
@@ -104,7 +121,7 @@ claude_map_scan() {
   claude_map_scan_raw "$raw"
 
   : > "$rows_file"
-  while IFS=$'\t' read -r sk status icon slabel ctitle age win pane pid; do
+  while IFS=$'\t' read -r sk status tool icon slabel ctitle age win pane pid; do
     case "$status" in
       waiting-permission) color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
       waiting-input)      color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;
@@ -113,9 +130,9 @@ claude_map_scan() {
       *)                   color="" ;;
     esac
 
-    slabel="${slabel}:${win}.${pane}"
+    slabel="$(claude_map_tool_tag "$tool")·${slabel}:${win}.${pane}"
 
-    rendered="$(printf '%s%s  %-23s %-30s %-18s %-5s%s' \
+    rendered="$(printf '%s%s  %-25s %-30s %-18s %-5s%s' \
       "$color" "$icon" "$slabel" "$ctitle" "$status" "$age" "$CLAUDE_MAP_COLOR_RESET")"
 
     printf '%d\t%s\t%s\t%s\n' "$sk" "$status" "$rendered" "$pid" >> "$rows_file"
