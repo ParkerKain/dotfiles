@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# pi-window - add a Pi window to the target session.
+set -u
+sess="${1:?usage: pi-window <session> <cwd>}"
+cwd="${2:?usage: pi-window <session> <cwd>}"
+name="Pi"; n=2
+while tmux list-windows -t "$sess" -F '#W' | grep -qx "$name"; do
+  name="Pi-$n"; n=$(( n + 1 ))
+done
+tmux new-window -t "$sess" -n "$name" -c "$cwd"
+tmux send-keys -t "$sess:$name" 'pi' Enter
+tmux select-window -t "$sess:$name"

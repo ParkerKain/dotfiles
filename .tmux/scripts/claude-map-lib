@@ -18,6 +18,7 @@ claude_map_tool_tag() {
   case "$1" in
     claude) printf 'c' ;;
     codex)  printf 'x' ;;
+    pi)     printf 'π' ;;
     *)      printf '?' ;;
   esac
 }
@@ -55,11 +56,26 @@ claude_map_scan_raw() {
     sf="$CLAUDE_MAP_STATE_DIR/$pid"
     if [ -f "$sf" ]; then
       IFS=$'\t' read -r tool status ts summary < "$sf" || true
-      [ -n "${ts:-}" ] || ts=0
-      printf '%s' "$ts" | grep -Eq '^[0-9]+$' || ts=0
-      if [ "$status" = working ] && [ "$ts" -gt 0 ] && [ $(( now - ts )) -gt "$CLAUDE_MAP_STALE_WORKING" ]; then
-        status=idle
+      # The tool that wrote this file may have exited without its SessionEnd
+      # hook firing (Ctrl-C, crash, non-standard exit path) while the pane
+      # itself lives on running something else. Pruning-by-live-pane-id alone
+      # can't catch that, so also drop the file if the pane's current command
+      # no longer matches the tool it claims to be.
+      case "$tool" in
+        codex)  printf '%s' "$cmd" | grep -q '^codex$' || { rm -f "$sf"; status=""; tool=""; } ;;
+        claude) printf '%s' "$cmd" | grep -Eq "$CLAUDE_MAP_VERSION_RE" || { rm -f "$sf"; status=""; tool=""; } ;;
+        pi)     printf '%s' "$cmd" | grep -qE '^(pi|node)$' || { rm -f "$sf"; status=""; tool=""; } ;;
+      esac
+      if [ -n "$status" ]; then
+        [ -n "${ts:-}" ] || ts=0
+        printf '%s' "$ts" | grep -Eq '^[0-9]+$' || ts=0
+        if [ "$status" = working ] && [ "$ts" -gt 0 ] && [ $(( now - ts )) -gt "$CLAUDE_MAP_STALE_WORKING" ]; then
+          status=idle
+        fi
       fi
+    fi
+    if [ -n "$status" ]; then
+      : # state file was valid and current; keep its status.
     elif printf '%s' "$cmd" | grep -Eq "$CLAUDE_MAP_VERSION_RE"; then
       case "$title" in
         "✳"*) status=idle ;;
@@ -73,6 +89,11 @@ claude_map_scan_raw() {
       status=idle
       summary="$(basename "$path")"
       tool=codex
+    elif [ "$cmd" = pi ]; then
+      # pi — detected via state file or pane command. Report idle until hooks fire.
+      status=idle
+      summary="$(basename "$path")"
+      tool=pi
     fi
     [ -n "$status" ] || continue
     [ -n "$tool" ] || tool="?"
