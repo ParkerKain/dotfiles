@@ -13,13 +13,15 @@ lifecycle hooks, not polling or screen-scraping.
 - `.tmux/scripts/claude-state` is the one script both tools' hooks call, as
   `claude-state <tool> <EVENT>` (`<tool>` is `claude` or `codex`). It reads
   `$TMUX_PANE`, maps the event to a status (`idle` / `working` /
-  `waiting-input` / `waiting-permission`), and atomically writes
+  `approval-pending` / `waiting-input` / `waiting-permission`), and atomically writes
   `tool<TAB>status<TAB>timestamp<TAB>summary` to
   `~/.claude/tmux-state/<pane_id>`.
 - `.tmux/scripts/claude-map-lib` (sourced, not run directly) lists all live
   tmux panes, joins each to its state file by pane ID, prunes stale/orphaned
   files, and falls back to guessing status from `pane_current_command` /
-  title for panes with no state file yet.
+  title for panes with no state file yet. Live `working` panes are not demoted
+  based on elapsed time; later hooks and the pane liveness check determine
+  their next state.
 - `claude-map` (fzf popup), `claude-map-statusline` (status-bar chips), and
   `claude-waiting-count` (right-status counter) all read that library.
 - `.tmux.conf` clears `~/.claude/tmux-state/*` on server start, because tmux
@@ -29,7 +31,10 @@ lifecycle hooks, not polling or screen-scraping.
 Claude and Codex fire mostly-aligned event names, with one difference:
 Claude signals a permission prompt via `Notification`
 (`.notification_type == "permission_prompt"`), Codex via a dedicated
-`PermissionRequest` event. `claude-state` handles both in one script.
+`PermissionRequest` event. Codex `PermissionRequest` becomes
+`approval-pending`: an approval is in progress, without asserting whether a
+person or the automatic reviewer will handle it. `claude-state` handles both
+in one script, with no auto-mode setup required.
 
 ## Requirements
 
