@@ -33,13 +33,14 @@ summary="$(basename "$cwd")"
 # the two apart. Both mean "waiting on the user for their next move" ->
 # waiting-input. Being order-independent, this also avoids a late Stop
 # clobbering a waiting-permission back to idle. The one mid-turn user-block we
-# can surface is the explicit permission event (Notification/permission_prompt
-# for Claude, PermissionRequest for Codex).
+# can surface is the explicit permission event. Claude's Notification with a
+# permission_prompt blocks on the user; Codex PermissionRequest is neutral
+# because it may be handled by a user or by automatic approval review.
 case "$event" in
   SessionStart)                             status=idle ;;
   UserPromptSubmit|PreToolUse|PostToolUse)  status=working ;;
   Stop)                                     status=waiting-input ;;
-  PermissionRequest)                        status=waiting-permission ;;
+  PermissionRequest)                        status=approval-pending ;;
   Notification)
     ntype="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
     case "$ntype" in

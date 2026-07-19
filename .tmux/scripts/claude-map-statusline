@@ -39,6 +39,7 @@ while IFS=$'\t' read -r sk status tool icon sess ctitle age win pane pid; do
   case "$status" in
     waiting-permission) bg="$LOVE";  fg="$BASE" ;;
     waiting-input)      bg="$GOLD";  fg="$BASE" ;;
+    approval-pending)   bg="$FOAM";  fg="$BASE" ;;
     idle)                bg="$MUTED"; fg="$TEXT" ;;
     working)             bg="$FOAM";  fg="$BASE" ;;
     *)                   bg="$MUTED"; fg="$TEXT" ;;
