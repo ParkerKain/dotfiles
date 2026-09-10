@@ -51,9 +51,8 @@ set -g @rose_pine_status_right_append_section '#(~/.tmux/scripts/ops-timer-statu
 The three bindings (near the `prefix+G` block):
 
 ```tmux
-bind-key t   display-popup -E -w 60 -h 12 'ops-tasks track start --window'
+bind-key t   display-popup -E -w 60 -h 12 'ops-tasks track start --window || { echo; echo "[enter to close]"; read x; }'
 bind-key T   run-shell 'ops-tasks track stop'
-bind-key M-t display-popup -E -w 80 -h 20 'ops-tasks track start'
 ```
 
 **Note: this replaces the default `prefix+t` binding (`clock-mode`).** That
@@ -115,7 +114,7 @@ rm ~/Library/LaunchAgents/com.devclarity.ops-tasks-track.plist
 ```
 
 Remove the tmux bindings and status chip: delete the three `bind-key t` /
-`bind-key T` / `bind-key M-t` lines and the `ops-timer-status` half of the
+`bind-key T` lines and the `ops-timer-status` half of the
 `@rose_pine_status_right_append_section` value from `~/.tmux.conf`, then
 `tmux source-file ~/.tmux.conf`. `prefix+t` reverts to tmux's built-in
 `clock-mode` once its `bind-key t` line is removed.
