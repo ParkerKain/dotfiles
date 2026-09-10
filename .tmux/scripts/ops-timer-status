@@ -1,0 +1,11 @@
+#!/bin/sh
+# ops-timer-status: the running Toggl timer, for the tmux right status.
+#
+# It never prints a fault. A status bar is not a place to report errors, and
+# a line that turns into a stack trace at 09:00 is worse than a blank one, so
+# every failure path here is silence.
+#
+# It makes no network call: ops-tasks reads a display cache the one-minute
+# launchd sync writes, and computes elapsed locally. See docs/ops-timer.md.
+command -v ops-tasks >/dev/null 2>&1 || exit 0
+ops-tasks track status --format tmux 2>/dev/null || true
