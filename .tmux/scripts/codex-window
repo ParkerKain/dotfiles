@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# codex-window - add a Codex window to the target session.
+set -u
+sess="${1:?usage: codex-window <session> <cwd>}"
+cwd="${2:?usage: codex-window <session> <cwd>}"
+name="Codex"; n=2
+while tmux list-windows -t "$sess" -F '#W' | grep -qx "$name"; do
+  name="Codex-$n"; n=$(( n + 1 ))
+done
+tmux new-window -t "$sess" -n "$name" -c "$cwd"
+tmux send-keys -t "$sess:$name" 'codex' Enter
+tmux select-window -t "$sess:$name"

@@ -173,3 +173,11 @@ export PATH="/Users/parker.kain/.antigravity/antigravity/bin:$PATH"
 eval "$(rbenv init - zsh)"
 unset GEM_HOME
 export PATH=$PATH:$HOME/.maestro/bin
+
+# Pi-only local Alloy routing; leaves Claude Code routing unchanged.
+if [[ -r "$HOME/.config/devclarity/pi-alloy/pi-shell.zsh" ]]; then
+  source "$HOME/.config/devclarity/pi-alloy/pi-shell.zsh"
+fi
+
+# Use Vim-style command-line editing (Esc for command mode).
+bindkey -v

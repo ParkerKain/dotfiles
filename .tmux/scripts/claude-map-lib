@@ -22,6 +22,23 @@ claude_map_tool_tag() {
   esac
 }
 
+# claude_map_is_pi_pane <pane_current_command> <pane_title> <window_name>
+# -> true when the pane is Pi. Depending on how Pi was launched, tmux may
+# report its command as `pi` or as the underlying `node` process. Pi session
+# titles are user-controlled, so the Pi window name is the reliable fallback
+# when the lifecycle extension has not written a state file yet.
+claude_map_is_pi_pane() {
+  [ "$1" = "pi" ] && return 0
+  [ "$1" = "node" ] || return 1
+  case "$2" in
+    π*|Pi) return 0 ;;
+  esac
+  case "$3" in
+    [Pp][Ii]|[Pp][Ii]-*) return 0 ;;
+    *)                   return 1 ;;
+  esac
+}
+
 # claude_map_scan_raw <rows_file>
 # Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
 #   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>window<TAB>pane<TAB>pane_id
@@ -36,7 +53,7 @@ claude_map_scan_raw() {
   panes="$(mktemp)"; live="$(mktemp)"
 
   tmux list-panes -a -F \
-    "#{pane_id}${sep}#{session_name}${sep}#{window_index}${sep}#{pane_index}${sep}#{pane_current_command}${sep}#{pane_title}${sep}#{pane_current_path}" \
+    "#{pane_id}${sep}#{session_name}${sep}#{window_index}${sep}#{pane_index}${sep}#{pane_current_command}${sep}#{pane_title}${sep}#{pane_current_path}${sep}#{window_name}" \
     > "$panes"
   cut -d "$sep" -f1 "$panes" > "$live"
 
@@ -50,7 +67,7 @@ claude_map_scan_raw() {
   fi
 
   : > "$rows_file"
-  while IFS="$sep" read -r pid sess win pane cmd title path; do
+  while IFS="$sep" read -r pid sess win pane cmd title path window_name; do
     status=""; ts=0; summary=""; tool=""
     sf="$CLAUDE_MAP_STATE_DIR/$pid"
     if [ -f "$sf" ]; then
@@ -83,8 +100,9 @@ claude_map_scan_raw() {
       status=idle
       summary="$(basename "$path")"
       tool=codex
-    elif [ "$cmd" = pi ]; then
-      # pi — detected via state file or pane command. Report idle until hooks fire.
+    elif claude_map_is_pi_pane "$cmd" "$title" "$window_name"; then
+      # Pi can appear as `node` in tmux when its lifecycle state file is
+      # missing. Report idle until the extension writes a current status.
       status=idle
       summary="$(basename "$path")"
       tool=pi
