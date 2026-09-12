@@ -24,6 +24,10 @@ lifecycle hooks, not polling or screen-scraping.
   their next state.
 - `claude-map` (fzf popup), `claude-map-statusline` (status-bar chips), and
   `claude-waiting-count` (right-status counter) all read that library.
+- Status-bar chips show the agent title when one is available, for example
+  `c - Sola SumoLogic Dashboard`. Unnamed panes fall back to
+  `c - tmux-session:window.pane`; long identity labels are truncated and each
+  chip has rounded powerline caps.
 - `.tmux.conf` clears `~/.claude/tmux-state/*` on server start, because tmux
   pane IDs restart from `%0` each new server and stale files would collide
   with new panes.

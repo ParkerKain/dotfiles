@@ -40,10 +40,12 @@ claude_map_is_pi_pane() {
 }
 
 # claude_map_scan_raw <rows_file>
-# Writes one line per live Claude pane to <rows_file>, sorted worst-status-first:
-#   sort_key<TAB>status<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>window<TAB>pane<TAB>pane_id
+# Writes one line per live Claude, Codex, or Pi pane to <rows_file>, sorted
+# worst-status-first:
+#   sort_key<TAB>status<TAB>tool<TAB>icon<TAB>session<TAB>title<TAB>age<TAB>window<TAB>pane<TAB>pane_id<TAB>named
 # window/pane are the tmux window and pane indices (e.g. 2, 1) - needed to
-# tell apart multiple Claude panes that share the same session name.
+# tell apart multiple Claude panes that share the same session name. `named` is
+# 1 when the agent supplied a title and 0 when the fallback identity is used.
 # Prunes stale state files (pane no longer live) as a side effect.
 claude_map_scan_raw() {
   local rows_file="$1"
@@ -131,15 +133,34 @@ claude_map_scan_raw() {
     slabel="$sess"
     [ "${#slabel}" -gt 20 ] && slabel="${slabel:0:19}~"
 
+    # Agent titles are the useful identity when present. Strip the status/tool
+    # prefix that Claude and Pi put in pane_title, but keep the original title
+    # around long enough to distinguish a real name from the default Pi title.
+    named=0
     case "$title" in
-      [!A-Za-z0-9]*) ctitle="${title#* }" ;;
-      *)             ctitle="$title" ;;
+      "✳ "*)  ctitle="${title#✳ }"; named=1 ;;
+      "⠿ "*)  ctitle="${title#⠿ }"; named=1 ;;
+      "⏳ "*) ctitle="${title#⏳ }"; named=1 ;;
+      "✳"|"⠿"|"⏳"|"π") ctitle="" ;;
+      "π - "*) ctitle="${title#π - }" ;;
+      "π "*)   ctitle="${title#π }" ;;
+      [!A-Za-z0-9]*) ctitle="${title#* }"; named=1 ;;
+      "")             ctitle="" ;;
+      *)              ctitle="$title"; named=1 ;;
     esac
+
+    # Pi's default pane title is `π - <directory>`, not a user-supplied name.
+    # Only Claude and Pi titles should replace the tmux-coordinate fallback.
+    case "$tool" in
+      claude|pi) ;;
+      *)          named=0 ;;
+    esac
+
     [ -n "$ctitle" ] || ctitle="$(basename "$path")"
     [ "${#ctitle}" -gt 30 ] && ctitle="${ctitle:0:29}~"
 
-    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$sk" "$status" "$tool" "$icon" "$slabel" "$ctitle" "$age" "$win" "$pane" "$pid" >> "$rows_file"
+    printf '%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$sk" "$status" "$tool" "$icon" "$slabel" "$ctitle" "$age" "$win" "$pane" "$pid" "$named" >> "$rows_file"
   done < "$panes"
 
   sort -n -o "$rows_file" "$rows_file"
@@ -157,7 +178,7 @@ claude_map_scan() {
   claude_map_scan_raw "$raw"
 
   : > "$rows_file"
-  while IFS=$'\t' read -r sk status tool icon slabel ctitle age win pane pid; do
+  while IFS=$'\t' read -r sk status tool icon slabel ctitle age win pane pid named; do
     case "$status" in
       waiting-permission) color="$CLAUDE_MAP_COLOR_WAITING_PERMISSION" ;;
       waiting-input)      color="$CLAUDE_MAP_COLOR_WAITING_INPUT" ;;

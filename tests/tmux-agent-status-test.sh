@@ -12,6 +12,7 @@ if [ "$1" = list-panes ]; then
   printf '%%1\037work\0371\0370\037codex\037Codex\037/tmp/project\037Workspace\n'
   printf '%%2\037pi-work\0372\0371\037node\037π - pi-work\037/tmp/pi-project\037Pi-2\n'
   printf '%%3\037pi-custom\0373\0371\037node\037Knowledge Share email\037/tmp/custom-pi\037Pi\n'
+  printf '%%4\037claude-work\0374\0371\0372.1.269\037✳ Sola SumoLogic Dashboard\037/tmp/claude-project\037Claude\n'
 fi
 EOF
 chmod +x "$tmp/bin/tmux"
@@ -35,4 +36,10 @@ awk -F '\t' '$2 == "idle" && $3 == "pi" && $10 == "%2" { found = 1 } END { exit 
 awk -F '\t' '$2 == "idle" && $3 == "pi" && $10 == "%3" { found = 1 } END { exit !found }' "$rows"
 
 printf 'codex\tapproval-pending\t1\tproject\n' > "$tmp/state/%1"
-"$root/.tmux/scripts/claude-map-statusline" 200 '%1' | grep -q 'bg=#9ccfd8'
+ticker="$("$root/.tmux/scripts/claude-map-statusline" 200 '%1')"
+printf '%s\n' "$ticker" | grep -q 'bg=#9ccfd8'
+printf '%s\n' "$ticker" | grep -q 'c - Sola SumoLogic Dashboard'
+printf '%s\n' "$ticker" | grep -q 'x - work:1.0'
+printf '%s\n' "$ticker" | grep -q 'π - Knowledge Share email'
+printf '%s\n' "$ticker" | grep -q ''
+printf '%s\n' "$ticker" | grep -q ''
