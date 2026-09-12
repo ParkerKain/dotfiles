@@ -13,6 +13,52 @@ _training_top_level() {
   ' "$file" | tr -d '"'
 }
 
+_training_validate_slug() {
+  local label=$1
+  local value=$2
+
+  [[ -n $value && $value != . && $value != .. && $value =~ ^[a-zA-Z0-9._-]+$ ]] || {
+    echo "$label must use only letters, numbers, dots, hyphens, or underscores (and cannot be . or ..)."
+    return 1
+  }
+}
+
+_training_tool_command() {
+  local ops=$1
+  local tool=$2
+  local tool_file="$ops/tools/$tool.yml"
+
+  [[ -f $tool_file ]] || return 1
+  _training_top_level "$tool_file" command
+}
+
+_training_ensure_client_branch() {
+  local repo=$1
+  local client=$2
+  local base_branch=$3
+  local repo_name=$4
+
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$client"; then
+    return 0
+  fi
+
+  if [[ -n "$(git -C "$repo" status --porcelain)" ]]; then
+    echo "Cannot create branch '$client' in $repo_name: repository has uncommitted work."
+    return 1
+  fi
+
+  if [[ -n $base_branch ]]; then
+    git -C "$repo" checkout "$base_branch" --quiet || {
+      echo "Failed to checkout base branch '$base_branch' in $repo_name"
+      return 1
+    }
+  fi
+  git -C "$repo" checkout -b "$client" --quiet || {
+    echo "Failed to create branch '$client' in $repo_name"
+    return 1
+  }
+}
+
 # Create or refresh the ignored per-client deck manifest in a cloned
 # training-materials repo. Existing module edits are preserved; only the
 # generated client/tool/presenter metadata is refreshed.
@@ -36,9 +82,14 @@ _training_write_manifest() {
   local input="$source"
   [[ -f $target ]] && input="$target"
 
+  # Most decks use the short `copilot` tag; environment-setup is the
+  # exception and uses the stored `github-copilot` tool name.
+  local deck_tool="$tool"
+  [[ $tool == github-copilot && $deck_manifest != environment-setup ]] && deck_tool=copilot
+
   mkdir -p "$manifest_dir"
   local tmp="$target.tmp.$$"
-  awk -v client="$client" -v tool="$tool" -v presenter="$trainer" '
+  awk -v client="$client" -v tool="$deck_tool" -v presenter="$trainer" '
     function emit_metadata() {
       print "client: " client
       print "tool: " tool
@@ -91,10 +142,7 @@ new-training() {
   if [[ $client == "+ New client" ]]; then
     client=$(gum input --placeholder "Client name (e.g. acmecorp)") || return 0
     [[ -z $client ]] && { echo "No client name entered."; return 1; }
-    [[ $client =~ ^[a-zA-Z0-9._-]+$ ]] || {
-      echo "Client name must use only letters, numbers, dots, hyphens, or underscores."
-      return 1
-    }
+    _training_validate_slug "Client name" "$client" || return 1
     mkdir -p "$vault_dir/$client"
     if [[ ! -f "$vault_dir/_template/overview.md" ]]; then
       echo "Customer template not found: $vault_dir/_template/overview.md"
@@ -102,6 +150,10 @@ new-training() {
     fi
     cp "$vault_dir/_template/overview.md" "$vault_dir/$client/overview.md" || return 1
   fi
+
+  # Validate both newly entered and existing-client selections before using
+  # the value in filesystem paths and tmuxinator templates.
+  _training_validate_slug "Client name" "$client" || return 1
 
   # Tool selection: stored preference shown first.
   local all_tools=("claude-code" "cursor" "github-copilot")
@@ -131,10 +183,7 @@ new-training() {
   local trainer
   trainer=$(gum input --header "Trainer name:" --placeholder "e.g. parker" --value "${stored_trainer:-}") || return 0
   [[ -z $trainer ]] && { echo "No trainer name entered."; return 1; }
-  [[ $trainer =~ ^[a-zA-Z0-9._-]+$ ]] || {
-    echo "Trainer name must use only letters, numbers, dots, hyphens, or underscores."
-    return 1
-  }
+  _training_validate_slug "Trainer name" "$trainer" || return 1
 
   # Training type selection: from training-ops/training-types/.
   local training_items=()
@@ -147,6 +196,7 @@ new-training() {
   local training
   training=$(printf "%s\n" "${training_items[@]}" | gum choose --header "Select training type:") || return 0
   [[ -z $training ]] && { echo "No training type selected."; return 1; }
+  _training_validate_slug "Training name" "$training" || return 1
 
   local type_file="$ops/training-types/$training.yml"
   [[ -f $type_file ]] || { echo "Training type not found: $type_file"; return 1; }
@@ -188,10 +238,13 @@ new-training() {
     local repo_path="$base/repos/$repo_name"
 
     if [[ -e $repo_path ]]; then
-      [[ -d "$repo_path/.git" ]] || {
+      git -C "$repo_path" rev-parse --git-dir >/dev/null 2>&1 || {
         echo "Cannot reuse $repo_path: it is not a git repository."
         return 1
       }
+      if [[ $repo_name != training-materials ]]; then
+        _training_ensure_client_branch "$repo_path" "$client" "$base_branch" "$repo_name" || return 1
+      fi
       echo "  Reusing existing $repo_name (leaving its work untouched)"
       continue
     fi
@@ -209,16 +262,7 @@ new-training() {
     fi
 
     # Create the client branch off an optional training-specific base branch.
-    if [[ -n $base_branch ]]; then
-      git -C "$repo_path" checkout "$base_branch" --quiet || {
-        echo "Failed to checkout base branch '$base_branch' in $repo_name"
-        return 1
-      }
-    fi
-    git -C "$repo_path" checkout -B "$client" --quiet || {
-      echo "Failed to create branch '$client' in $repo_name"
-      return 1
-    }
+    _training_ensure_client_branch "$repo_path" "$client" "$base_branch" "$repo_name" || return 1
 
     # Delete non-tool config files.
     local item
@@ -272,6 +316,7 @@ train() {
   local client
   client=$(printf "%s\n" "${client_items[@]}" | gum filter --header "Select client:") || return 0
   [[ -z $client ]] && return 0
+  _training_validate_slug "Client name" "$client" || return 1
 
   # Training selection: only dirs that contain a repos/ subdirectory.
   local training_items=()
@@ -287,6 +332,7 @@ train() {
   local training
   training=$(printf "%s\n" "${training_items[@]}" | gum choose --header "Select training:") || return 0
   [[ -z $training ]] && return 0
+  _training_validate_slug "Training name" "$training" || return 1
 
   local session="$ops/sessions/$training.yml"
   if [[ ! -f $session ]]; then
@@ -308,6 +354,17 @@ train() {
     return 1
   fi
 
+  local tool_command
+  tool_command=$(_training_tool_command "$ops" "$tool")
+  if [[ -z $tool_command ]]; then
+    echo "No launch command configured for AI tool '$tool'."
+    return 1
+  fi
+  if ! command -v "$tool_command" >/dev/null 2>&1; then
+    echo "AI tool '$tool' requires '$tool_command' on PATH."
+    return 1
+  fi
+
   # Refresh/create the local manifest without replacing any manual module edits.
   local type_file="$ops/training-types/$training.yml"
   local deck_manifest
@@ -318,5 +375,5 @@ train() {
     "$vault_dir/$client/$training/repos/training-materials" \
     "$deck_manifest" "$client" "$tool" "$trainer" || return 1
 
-  CLIENT="$client" TRAINER="$trainer" TOOL="$tool" tmuxinator start -p "$session"
+  CLIENT="$client" TRAINER="$trainer" TOOL="$tool" TOOL_COMMAND="$tool_command" tmuxinator start -p "$session"
 }
