@@ -51,7 +51,15 @@ case "$event" in
     esac
     summary="$summary ($ntype)"
     ;;
-  SessionEnd)  rm -f "$file"; exit 0 ;;
+  # SessionEnd also fires with reason clear (/clear) and resume (switching
+  # sessions), where the agent keeps running in this pane; only a real
+  # shutdown should retire the file.
+  SessionEnd)
+    case "$(printf '%s' "$payload" | jq -r '.reason // empty' 2>/dev/null)" in
+      clear|resume) status=idle ;;
+      *)            rm -f "$file"; exit 0 ;;
+    esac
+    ;;
   *)           exit 0 ;;
 esac
 

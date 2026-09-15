@@ -81,7 +81,7 @@ claude_map_scan_raw() {
       # no longer matches the tool it claims to be.
       case "$tool" in
         codex)  printf '%s' "$cmd" | grep -q '^codex$' || { rm -f "$sf"; status=""; tool=""; } ;;
-        claude) printf '%s' "$cmd" | grep -Eq "$CLAUDE_MAP_VERSION_RE" || { rm -f "$sf"; status=""; tool=""; } ;;
+        claude) printf '%s' "$cmd" | grep -Eq "$CLAUDE_MAP_VERSION_RE" || { status=""; tool=""; } ;;
         pi)     printf '%s' "$cmd" | grep -qE '^(pi|node)$' || { rm -f "$sf"; status=""; tool=""; } ;;
       esac
       [ -n "${ts:-}" ] || ts=0
