@@ -19,3 +19,5 @@ General opinions I hold that apply across all sessions.
 - Commit work to git regularly as it progresses - after each meaningful, working unit (a completed step, a passing verification, a fixed bug), not only at the end of a task or when asked. Frequent commits create restore points, keep the working tree clean, and make outstanding work obvious. Still only commit/push when appropriate, but bias toward more frequent commits during active building.
 
 - Refer to things by the name I actually see, not their internal identifier. Dashboard panels, UI elements, and files shown in an app should be called by their visible title ("Estimated cost per user"), never by a code-side id ("P13", "A1", "k1-total-spend"). Internal ids are correct and expected inside code, file paths, and edits; they just don't belong in conversation, because I can't map them to anything on screen.
+
+- Use a branch for all work, never commit directly to main/default. Create a feature branch before making edits, even for small scoped changes, so work stays reviewable and reversible.
