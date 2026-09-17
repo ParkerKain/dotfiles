@@ -79,6 +79,10 @@ export default function (pi: ExtensionAPI) {
   // the pane marked working instead of yellow/waiting-input.
   const pendingAskUserQuestions = new Set<string>();
 
+  // Any Pi dialog (confirm, select, input) blocks on the human, like Claude
+  // Code's permission prompt. Depth handles nested prompts.
+  let uiPromptDepth = 0;
+
   // Pi's default title is "π - <session> - <cwd>". The minimap uses the
   // tmux pane title, so keep it to the session name alone, like Claude Code.
   const setSessionTitle = (ctx: { ui: { setTitle(title: string): void } }) => {
@@ -86,6 +90,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    uiPromptDepth = 0;
     pendingAskUserQuestions.clear();
     setSessionTitle(ctx);
     await writeState("idle", ctx.cwd);
@@ -96,6 +101,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_start", async (_event, ctx) => {
+    uiPromptDepth = 0;
     pendingAskUserQuestions.clear();
     await writeState("working", ctx.cwd);
   });
@@ -114,12 +120,24 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  pi.on("ui_prompt_start", async (_event, ctx) => {
+    if (uiPromptDepth++ === 0) await writeState("waiting-permission", ctx.cwd);
+  });
+
+  pi.on("ui_prompt_end", async (_event, ctx) => {
+    if (uiPromptDepth === 0) return;
+    if (--uiPromptDepth === 0) {
+      await writeState(pendingAskUserQuestions.size > 0 ? "waiting-input" : "working", ctx.cwd);
+    }
+  });
+
   pi.on("agent_settled", async (_event, ctx) => {
     pendingAskUserQuestions.clear();
     await writeState("waiting-input", ctx.cwd);
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
+    uiPromptDepth = 0;
     pendingAskUserQuestions.clear();
     await removeState();
   });
