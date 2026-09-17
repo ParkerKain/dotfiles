@@ -41,10 +41,17 @@ async function ensureDir(): Promise<void> {
   }
 }
 
+// The last status written for this pane. A dialog has to restore the state it
+// interrupted, not guess one: a dialog opened while the session is idle, or one
+// that outlives agent_settled, would otherwise leave the pane green/working
+// while Pi is really waiting on the human.
+let lastState = "idle";
+
 async function writeState(
   status: string,
   cwd: string,
 ): Promise<void> {
+  lastState = status;
   const file = stateFile();
   if (!file) return;
 
@@ -82,6 +89,9 @@ export default function (pi: ExtensionAPI) {
   // Any Pi dialog (confirm, select, input) blocks on the human, like Claude
   // Code's permission prompt. Depth handles nested prompts.
   let uiPromptDepth = 0;
+
+  // The state the outermost dialog interrupted, restored when it closes.
+  let stateBeforePrompt = "idle";
 
   // Pi's default title is "π - <session> - <cwd>". The minimap uses the
   // tmux pane title, so keep it to the session name alone, like Claude Code.
@@ -121,13 +131,23 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("ui_prompt_start", async (_event, ctx) => {
-    if (uiPromptDepth++ === 0) await writeState("waiting-permission", ctx.cwd);
+    if (uiPromptDepth++ === 0) {
+      stateBeforePrompt = lastState;
+      await writeState("waiting-permission", ctx.cwd);
+    }
   });
 
   pi.on("ui_prompt_end", async (_event, ctx) => {
+    // agent_start resets the depth, so a stray end after it is an intentional
+    // no-op: the turn already wrote the state this pane should be showing.
     if (uiPromptDepth === 0) return;
     if (--uiPromptDepth === 0) {
-      await writeState(pendingAskUserQuestions.size > 0 ? "waiting-input" : "working", ctx.cwd);
+      // An AskUserQuestion opened behind the dialog outranks whatever the
+      // dialog interrupted; otherwise restore the state, never guess it.
+      await writeState(
+        pendingAskUserQuestions.size > 0 ? "waiting-input" : stateBeforePrompt,
+        ctx.cwd,
+      );
     }
   });
 
