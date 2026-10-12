@@ -152,7 +152,7 @@ new-training() {
   fi
 
   # Validate both newly entered and existing-client selections before using
-  # the value in filesystem paths and tmuxinator templates.
+  # the value in filesystem paths and session templates.
   _training_validate_slug "Client name" "$client" || return 1
 
   # Tool selection: stored preference shown first.
@@ -335,6 +335,7 @@ train() {
   _training_validate_slug "Training name" "$training" || return 1
 
   local session="$ops/sessions/$training.yml"
+  [[ -n $TMUX ]] || session="$ops/sessions/$training.sh"
   if [[ ! -f $session ]]; then
     echo "No session template found: $session"
     return 1
@@ -375,5 +376,11 @@ train() {
     "$vault_dir/$client/$training/repos/training-materials" \
     "$deck_manifest" "$client" "$tool" "$trainer" || return 1
 
-  CLIENT="$client" TRAINER="$trainer" TOOL="$tool" TOOL_COMMAND="$tool_command" tmuxinator start -p "$session"
+  # herdr by default; inside tmux, the old tmuxinator template until tmux is
+  # removed.
+  if [[ -n $TMUX ]]; then
+    CLIENT="$client" TRAINER="$trainer" TOOL="$tool" TOOL_COMMAND="$tool_command" tmuxinator start -p "$session"
+  else
+    TRAINER="$trainer" TOOL="$tool" TOOL_COMMAND="$tool_command" "$ops/scripts/start-session.sh" "$training" "$client"
+  fi
 }
