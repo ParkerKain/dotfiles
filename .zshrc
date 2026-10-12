@@ -179,5 +179,19 @@ if [[ -r "$HOME/.config/devclarity/pi-alloy/pi-shell.zsh" ]]; then
   source "$HOME/.config/devclarity/pi-alloy/pi-shell.zsh"
 fi
 
+# herdr resumes Pi by typing `pi --session <path>` into a fresh shell, which
+# loses the pi-work/pi-personal profile env. Route a resume back to the profile
+# that owns the session file.
+(( $+functions[pi] )) && functions -c pi _pi_base
+pi() {
+  if [[ "$1" == --session ]]; then
+    case "$2" in
+      "$HOME"/.pi/agent-work/*) pi-work "$@"; return ;;
+      "$HOME"/.pi/agent-personal/*) pi-personal "$@"; return ;;
+    esac
+  fi
+  if (( $+functions[_pi_base] )); then _pi_base "$@"; else command pi "$@"; fi
+}
+
 # Use Vim-style command-line editing (Esc for command mode).
 bindkey -v
