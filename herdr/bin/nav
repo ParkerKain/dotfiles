@@ -1,0 +1,15 @@
+#!/bin/sh
+# nav <left|right|up|down> - Ctrl+Arrow in herdr, like vim-tmux-navigator.
+# If the focused pane runs (n)vim, forward the key so nvim moves between its
+# own splits (and calls back into herdr at its edge, see
+# .config/nvim/lua/plugins/navigator.lua). Otherwise move herdr pane focus.
+# Plain sh with no jq: this runs on every keypress.
+dir="$1"
+herdr="${HERDR_BIN_PATH:-herdr}"
+pane="${HERDR_ACTIVE_PANE_ID:?}"
+case "$("$herdr" pane process-info --pane "$pane" 2>/dev/null)" in
+  *'"name":"nvim"'* | *'"name":"vim"'* | *'"name":"vi"'*)
+    exec "$herdr" pane send-keys "$pane" "ctrl+$dir" >/dev/null ;;
+  *)
+    exec "$herdr" pane focus --direction "$dir" --pane "$pane" >/dev/null ;;
+esac

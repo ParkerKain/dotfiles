@@ -69,3 +69,29 @@ command = "$HOME/dotfiles/herdr/bin/ops-timer"
 description = "ops timer"
 width = 60
 height = 12
+
+# Ctrl+Arrow: move between nvim splits and herdr panes (bin/nav, plus the
+# nvim side in .config/nvim/lua/plugins/navigator.lua).
+[[keys.command]]
+key = "ctrl+left"
+type = "shell"
+command = "$HOME/dotfiles/herdr/bin/nav left"
+description = "pane or nvim split left"
+
+[[keys.command]]
+key = "ctrl+down"
+type = "shell"
+command = "$HOME/dotfiles/herdr/bin/nav down"
+description = "pane or nvim split down"
+
+[[keys.command]]
+key = "ctrl+up"
+type = "shell"
+command = "$HOME/dotfiles/herdr/bin/nav up"
+description = "pane or nvim split up"
+
+[[keys.command]]
+key = "ctrl+right"
+type = "shell"
+command = "$HOME/dotfiles/herdr/bin/nav right"
+description = "pane or nvim split right"
