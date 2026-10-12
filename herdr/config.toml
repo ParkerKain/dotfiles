@@ -43,3 +43,20 @@ delivery = "system"
 
 [ui.sound]
 enabled = true
+
+# prefix+a: pick an agent (c Claude, x Codex, p Pi) for a new tab in this
+# workspace and folder.
+[[keys.command]]
+key = "prefix+a"
+type = "popup"
+command = "$HOME/dotfiles/herdr/bin/agent-picker"
+description = "new agent tab"
+width = 34
+height = 11
+
+# prefix+shift+s: new Claude tab in the persistent 'scratch' workspace.
+[[keys.command]]
+key = "prefix+shift+s"
+type = "shell"
+command = "HERDR_ENV=1 $HOME/dotfiles/herdr/bin/herdr-scratch \"$HERDR_ACTIVE_PANE_CWD\""
+description = "scratch Claude"

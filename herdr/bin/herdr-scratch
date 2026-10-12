@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# herdr-scratch [--pi] [dir] - open an agent tab in the persistent 'scratch'
+# workspace (default dir: $HOME) and focus it. Outside herdr, starts the
+# server if needed and attaches.
+set -euo pipefail
+# Key commands run via /bin/sh, which may lack Homebrew (jq) on PATH.
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+kind=claude
+[ "${1:-}" = "--pi" ] && { kind=pi; shift; }
+root="${1:-$HOME}"
+root="$(cd "$root" 2>/dev/null && pwd)" || { echo "herdr-scratch: no such dir: ${1:-$HOME}" >&2; exit 1; }
+here="$(cd "$(dirname "$0")" && pwd)"
+herdr="${HERDR_BIN_PATH:-herdr}"
+
+if ! "$herdr" workspace list >/dev/null 2>&1; then
+  nohup "$herdr" server >/dev/null 2>&1 &
+  for _ in 1 2 3 4 5 6 7 8 9 10; do "$herdr" workspace list >/dev/null 2>&1 && break; sleep 0.5; done
+fi
+
+ws=$("$herdr" workspace list | jq -r '.result.workspaces[] | select(.label=="scratch") | .workspace_id' | head -1)
+if [ -z "$ws" ]; then
+  out=$("$herdr" workspace create --cwd "$root" --label scratch --focus)
+  ws=$(jq -r .result.workspace.workspace_id <<<"$out")
+  pane=$(jq -r .result.root_pane.pane_id <<<"$out")
+  case "$kind" in claude) cmd=claude; label=Claude ;; pi) cmd=pi-work; label=Pi ;; esac
+  "$herdr" tab rename "$(jq -r .result.tab.tab_id <<<"$out")" "$label" >/dev/null
+  "$herdr" pane run "$pane" "$cmd" >/dev/null
+else
+  "$herdr" workspace focus "$ws" >/dev/null
+  "$here/agent-tab" "$kind" "$root" "$ws" >/dev/null
+fi
+
+[ "${HERDR_ENV:-}" = 1 ] || exec "$herdr"

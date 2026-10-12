@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# agent-tab <claude|codex|pi> [cwd] [workspace_id] - open a new herdr tab
+# running an agent. Defaults to the active workspace and the focused pane's
+# cwd, which herdr passes to custom-command keybindings.
+set -euo pipefail
+# Key commands run via /bin/sh, which may lack Homebrew (jq) on PATH.
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+kind="${1:?usage: agent-tab <claude|codex|pi> [cwd] [workspace_id]}"
+cwd="${2:-${HERDR_ACTIVE_PANE_CWD:-$PWD}}"
+ws="${3:-${HERDR_ACTIVE_WORKSPACE_ID:-}}"
+herdr="${HERDR_BIN_PATH:-herdr}"
+
+case "$kind" in
+  claude) label="Claude"; cmd="claude" ;;
+  codex)  label="Codex";  cmd="codex" ;;
+  pi)     label="Pi";     cmd="pi-work" ;;
+  *) echo "agent-tab: unknown agent: $kind" >&2; exit 2 ;;
+esac
+
+args=(tab create --cwd "$cwd" --label "$label" --focus)
+[ -n "$ws" ] && args+=(--workspace "$ws")
+pane=$("$herdr" "${args[@]}" | jq -r .result.root_pane.pane_id)
+# Typed into the pane's shell, so zsh functions like pi-work apply.
+"$herdr" pane run "$pane" "$cmd" >/dev/null
+echo "$pane"

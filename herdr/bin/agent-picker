@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# agent-picker - prefix+a popup: one key picks the agent for a new tab.
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+printf '\n  New agent tab\n\n  c  Claude\n  x  Codex\n  p  Pi (pi-work)\n\n  esc  cancel\n'
+IFS= read -rsn1 key
+case "$key" in
+  c|C) "$here/agent-tab" claude >/dev/null ;;
+  x|X) "$here/agent-tab" codex >/dev/null ;;
+  p|P) "$here/agent-tab" pi >/dev/null ;;
+esac
