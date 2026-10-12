@@ -9,18 +9,22 @@ name = "rose-pine"
 
 # Rose Pine Moon. herdr only ships main and dawn, so override main's tokens
 # with the moon palette (https://rosepinetheme.com/palette).
+# "Rose Glow": sidebar and tab strip sit darker than the terminal background
+# (#232136) so they separate from the panes; unselected tabs get a raised
+# chip and the active tab is rose.
 [theme.custom]
-panel_bg = "#232136"      # base
-surface0 = "#2a273f"      # surface
-surface1 = "#393552"      # overlay
-surface_dim = "#393552"   # overlay
-active_row_bg = "#393552" # overlay
-selection_bg = "#44415a"  # highlight med
-overlay0 = "#6e6a86"      # muted
-overlay1 = "#908caa"      # subtle
+sidebar_bg = "#1f1d2e"     # unset = terminal bg, which blends with panes
+panel_bg = "#191724"       # tab bar strip
+surface0 = "#393552"       # unselected tab chips (overlay)
+surface1 = "#44415a"       # highlight med
+surface_dim = "#2a273f"    # divider lines (surface)
+active_row_bg = "#56526e"  # current workspace/agent row (highlight high)
+selection_bg = "#56526e"   # highlight high
+overlay0 = "#908caa"       # subtle; unselected tab text
+overlay1 = "#908caa"       # subtle
 text = "#e0def4"
-accent = "#c4a7e7"        # iris
-mauve = "#c4a7e7"         # iris
+accent = "#ea9a97"        # rose; active tab
+mauve = "#c4a7e7"         # iris; branch names
 green = "#3e8fb0"         # pine
 blue = "#3e8fb0"          # pine
 teal = "#9ccfd8"          # foam
