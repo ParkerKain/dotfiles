@@ -36,6 +36,7 @@ peach = "#ea9a97"         # rose
 status_indicators = "symbols"
 # Blocked and done agents float to the top of the sidebar.
 agent_panel_sort = "priority"
+tab_bar_position = "bottom"
 tab_bar_right = [
   { type = "hostname" },
   { type = "datetime", format = "%I:%M" },
