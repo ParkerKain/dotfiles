@@ -60,3 +60,12 @@ key = "prefix+shift+s"
 type = "shell"
 command = "HERDR_ENV=1 $HOME/dotfiles/herdr/bin/herdr-scratch \"$HERDR_ACTIVE_PANE_CWD\""
 description = "scratch Claude"
+
+# prefix+t: start a Toggl timer for this tab's task, or stop the running one.
+[[keys.command]]
+key = "prefix+t"
+type = "popup"
+command = "$HOME/dotfiles/herdr/bin/ops-timer"
+description = "ops timer"
+width = 60
+height = 12

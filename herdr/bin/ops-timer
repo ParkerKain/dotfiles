@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# ops-timer - prefix+t popup. Nothing running: start a Toggl timer for the
+# task stamped on this tab (ops-tasks track start --window). A timer running:
+# show it and offer stop, or start this tab's task instead.
+#
+# timer.json is ops-tasks' display cache: it decides what to offer, never
+# what to write. track start/stop read Toggl live.
+set -u
+export PATH="/opt/homebrew/bin:$HOME/go/bin:$HOME/.local/bin:$PATH"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/ops-tasks/timer.json"
+
+pause() { printf '\n[enter to close]'; read -r _; }
+start() { ops-tasks track start --window || pause; }
+
+running=$(jq -r 'select(.start != "") | "\(.project) - \(.description)"' "$state" 2>/dev/null)
+if [ -z "$running" ]; then
+  start
+  exit
+fi
+
+printf '\n  Timer running:\n  %s\n\n  x  stop it\n  s  start this tab'"'"'s task instead\n\n  esc  cancel\n' "$running"
+IFS= read -rsn1 key
+case "$key" in
+  x|X) ops-tasks track stop || pause ;;
+  s|S) start ;;
+esac
