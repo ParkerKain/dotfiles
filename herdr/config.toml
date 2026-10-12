@@ -1,0 +1,45 @@
+# herdr config. Symlinked to ~/.config/herdr/config.toml.
+# Reload a running server with `herdr server reload-config` (or prefix+shift+r).
+# Full reference: `herdr --default-config`.
+
+onboarding = false
+
+[theme]
+name = "rose-pine"
+
+# Rose Pine Moon. herdr only ships main and dawn, so override main's tokens
+# with the moon palette (https://rosepinetheme.com/palette).
+[theme.custom]
+panel_bg = "#232136"      # base
+surface0 = "#2a273f"      # surface
+surface1 = "#393552"      # overlay
+surface_dim = "#393552"   # overlay
+active_row_bg = "#393552" # overlay
+selection_bg = "#44415a"  # highlight med
+overlay0 = "#6e6a86"      # muted
+overlay1 = "#908caa"      # subtle
+text = "#e0def4"
+accent = "#c4a7e7"        # iris
+mauve = "#c4a7e7"         # iris
+green = "#3e8fb0"         # pine
+blue = "#3e8fb0"          # pine
+teal = "#9ccfd8"          # foam
+yellow = "#f6c177"        # gold
+red = "#eb6f92"           # love
+peach = "#ea9a97"         # rose
+
+[ui]
+status_indicators = "symbols"
+# Blocked and done agents float to the top of the sidebar.
+agent_panel_sort = "priority"
+tab_bar_right = [
+  { type = "hostname" },
+  { type = "datetime", format = "%I:%M" },
+]
+window_title = "{workspace}: {tab}"
+
+[ui.toast]
+delivery = "system"
+
+[ui.sound]
+enabled = true
