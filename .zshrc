@@ -29,7 +29,7 @@ unset conf
 alias l="eza --long --header --all --icons"
 # alias l="ls -alhoFr | rg -v '\./$'"
 
-# New Worktree - creates git worktree + tmux session with Neovim, Admin, Claude windows
+# New Worktree - creates a git worktree and opens it as a herdr workspace via hp
 nwt() {
   # Check dependencies
   if ! command -v gum &> /dev/null; then
@@ -37,10 +37,6 @@ nwt() {
     return 1
   fi
 
-  if ! command -v tmux &> /dev/null; then
-    echo "Error: tmux is not installed."
-    return 1
-  fi
 
   # Check if we're in a git repo
   local git_root
@@ -86,12 +82,12 @@ nwt() {
     "" \
     "Branch:    $branch_name $($branch_exists && echo '(existing)' || echo '(new)')" \
     "Directory: $dir_location" \
-    "Session:   $branch_name (tmux)" \
+    "Workspace: $branch_name (herdr)" \
     "" \
     "Windows:   Workspace (nvim+admin) | Claude"
 
   echo ""
-  if ! gum confirm "Create worktree and tmux session?"; then
+  if ! gum confirm "Create worktree and herdr workspace?"; then
     echo "Cancelled."
     return 0
   fi
@@ -112,39 +108,9 @@ nwt() {
     fi
   fi
 
-  # Resolve to absolute path for tmux
-  dir_location=$(cd "$dir_location" && pwd)
-
-  # Create or attach to tmux session
-  local session_name="$branch_name"
-
-  if tmux has-session -t="$session_name" 2>/dev/null; then
-    gum style --foreground 214 "Session '$session_name' already exists. Switching..."
-  else
-    # Create new session with the Workspace window (nvim + admin split)
-    tmux new-session -d -s "$session_name" -n "Workspace" -c "$dir_location"
-    tmux send-keys -t "${session_name}:Workspace" "nvim" Enter
-    tmux split-window -h -t "${session_name}:Workspace" -c "$dir_location"
-    tmux select-layout -t "${session_name}:Workspace" main-vertical
-    tmux select-pane -t "${session_name}:Workspace.1"
-
-    # Create Claude window
-    tmux new-window -t "$session_name" -n "Claude" -c "$dir_location"
-    tmux send-keys -t "${session_name}:Claude" "claude" Enter
-
-    # Select the Workspace window
-    tmux select-window -t "${session_name}:Workspace"
-
-    gum style --foreground 212 "Worktree and session created! Switching..."
-    sleep 0.5
-  fi
-
-  # Switch if inside tmux, attach if not
-  if [[ -n "$TMUX" ]]; then
-    tmux switch-client -t "$session_name"
-  else
-    tmux attach-session -t "$session_name"
-  fi
+  # Lay out the worktree like a project (Workspace + Claude tabs); hp focuses
+  # an existing workspace with the same name and attaches when outside herdr.
+  hp -d "$dir_location" "$branch_name"
 }
 
 # Set up uv

@@ -1,0 +1,17 @@
+# hp project table: name<TAB>folder<TAB>hook
+# hook: none | git-sync (Sync tab: checkout main, warn on local changes, pull) | code (open VS Code)
+automation	~/Documents/internal/repos/automation	none
+dance-app	~/Documents/personal/repos/dance-app	none
+dc-delivery-marketplace	~/Documents/internal/repos/dc-delivery-marketplace	none
+demo-devclarity	~/Documents/internal/repos/demo-devclarity	code
+devclarity-marketplace	~/Documents/internal/repos/devclarity-marketplace	none
+devclarity-ops	~/Documents/internal/repos/devclarity-ops	none
+devclarity-vault	~/Documents/internal/repos/devclarity-vault	none
+dotfiles	~/dotfiles	none
+harness-quality-platform	~/code/harness-quality-platform	none
+ops-tasks	~/Documents/internal/repos/ops-tasks	none
+personal-assistant	~/Documents/personal/repos/personal-assistant	none
+survey-benchmarking	~/Documents/internal/repos/survey-benchmarking	git-sync
+training-materials	~/Documents/internal/repos/training-materials	none
+training-ops	~/Documents/internal/repos/training-ops	none
+transcript-machine	~/Documents/internal/repos/transcript-machine	none

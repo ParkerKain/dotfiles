@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# hp - open a project as a herdr workspace (replaces tmuxinator).
+#   hp                      pick a project with fzf
+#   hp [--wide] <project>   project from ../projects.tsv
+#   hp [--wide] -d <dir> [label]   any folder (used by nwt)
+# Focuses the workspace if it already exists. Default layout: Workspace tab
+# (nvim | shell) + Claude tab. --wide (or MUX_LAYOUT=wide): one tab, nvim and
+# shell on top, Claude across the bottom. Outside herdr, attaches at the end.
+set -euo pipefail
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+here="$(cd "$(dirname "$0")" && pwd)"
+table="$here/../projects.tsv"
+herdr="${HERDR_BIN_PATH:-herdr}"
+
+wide=0; [ "${MUX_LAYOUT:-}" = wide ] && wide=1
+dir=""; name=""; hook=none
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --wide) wide=1; shift ;;
+    -d) dir="${2:?hp: -d needs a folder}"; shift 2 ;;
+    -h|--help) sed -n 2,9p "$0"; exit 0 ;;
+    *) name="$1"; shift ;;
+  esac
+done
+
+if [ -n "$dir" ]; then
+  root="$(cd "$dir" 2>/dev/null && pwd)" || { echo "hp: no such dir: $dir" >&2; exit 1; }
+  name="${name:-$(basename "$root")}"
+else
+  if [ -z "$name" ]; then
+    name=$(grep -v '^#' "$table" | cut -f1 | fzf --prompt 'project> ' --height 40% --reverse) || exit 0
+  fi
+  row=$(awk -F'\t' -v n="$name" '$1==n' "$table")
+  [ -n "$row" ] || { echo "hp: unknown project: $name (see $table)" >&2; exit 1; }
+  root=$(cut -f2 <<<"$row"); root="${root/#\~/$HOME}"
+  hook=$(cut -f3 <<<"$row")
+  [ -d "$root" ] || { echo "hp: folder missing for $name: $root" >&2; exit 1; }
+fi
+
+attach() { [ "${HERDR_ENV:-}" = 1 ] || exec "$herdr"; }
+
+if ! "$herdr" workspace list >/dev/null 2>&1; then
+  nohup "$herdr" server >/dev/null 2>&1 &
+  for _ in 1 2 3 4 5 6 7 8 9 10; do "$herdr" workspace list >/dev/null 2>&1 && break; sleep 0.5; done
+fi
+
+ws=$("$herdr" workspace list | jq -r --arg n "$name" '.result.workspaces[] | select(.label==$n) | .workspace_id' | head -1)
+if [ -n "$ws" ]; then
+  "$herdr" workspace focus "$ws" >/dev/null
+  attach; exit 0
+fi
+
+sync_cmd="git checkout main && git fetch origin; [[ -n \"\$(git status --porcelain)\" ]] && { echo \"WARNING: local changes in $name:\"; git status --short; }; git pull"
+
+out=$("$herdr" workspace create --cwd "$root" --label "$name" --focus)
+ws=$(jq -r .result.workspace.workspace_id <<<"$out")
+editor=$(jq -r .result.root_pane.pane_id <<<"$out")
+"$herdr" tab rename "$(jq -r .result.tab.tab_id <<<"$out")" Workspace >/dev/null
+
+split() { "$herdr" pane split "$1" --direction "$2" --cwd "$root" --no-focus | jq -r .result.pane.pane_id; }
+
+if [ "$wide" = 1 ]; then
+  agent=$(split "$editor" down)
+  shell=$(split "$editor" right)
+  [ "$hook" = git-sync ] && "$herdr" pane run "$(split "$shell" down)" "$sync_cmd" >/dev/null
+else
+  shell=$(split "$editor" right)
+  if [ "$hook" = git-sync ]; then
+    sp=$("$herdr" tab create --workspace "$ws" --cwd "$root" --label Sync --no-focus | jq -r .result.root_pane.pane_id)
+    "$herdr" pane run "$sp" "$sync_cmd" >/dev/null
+  fi
+  agent=$("$herdr" tab create --workspace "$ws" --cwd "$root" --label Claude --no-focus | jq -r .result.root_pane.pane_id)
+fi
+
+"$herdr" pane run "$editor" nvim >/dev/null
+"$herdr" pane run "$agent" claude >/dev/null
+[ "$hook" = code ] && (code "$root" >/dev/null 2>&1 &)
+attach

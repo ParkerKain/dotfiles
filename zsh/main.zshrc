@@ -52,4 +52,8 @@ alias pks="parknotes"
 # Print the cool neofetch thing
 # neofetch
 
-alias mux="tmuxinator"
+# herdr scripts (hp, agent-tab, herdr-scratch). mux opens a project via hp;
+# tmux-mux is the tmuxinator fallback until tmux is removed.
+export PATH="$HOME/dotfiles/herdr/bin:$PATH"
+alias mux="hp"
+alias tmux-mux="tmuxinator"
