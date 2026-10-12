@@ -47,6 +47,8 @@ delivery = "system"
 
 [ui.sound]
 enabled = true
+# Absolute path: relative ones resolve from ~/.config/herdr (the symlink), not dotfiles.
+path = "/Users/parker/dotfiles/herdr/sounds/blow.mp3"  # macOS Blow.aiff as mp3
 
 # prefix+a: pick an agent (c Claude, x Codex, p Pi) for a new tab in this
 # workspace and folder.
