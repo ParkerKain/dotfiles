@@ -51,6 +51,13 @@ enabled = true
 # Absolute path: relative ones resolve from ~/.config/herdr (the symlink), not dotfiles.
 path = "/Users/parker/dotfiles/herdr/sounds/blow.mp3"  # macOS Blow.aiff as mp3
 
+[keys]
+# Hop between agents in the sidebar's (priority) order, across workspaces.
+# Alt is Aerospace's, so direct jumps use Ctrl; ctrl+1 is the agent that most needs me.
+next_agent = "prefix+]"
+previous_agent = "prefix+["
+focus_agent = "ctrl+1..9"
+
 # prefix+a: pick an agent (c Claude, x Codex, p Pi) for a new tab in this
 # workspace and folder.
 [[keys.command]]
