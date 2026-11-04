@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > | File | Stowed to | Scope | Edit it when… |
 > |------|-----------|-------|---------------|
 > | `CLAUDE.md` (this file) | *not stowed* (excluded via `.stow-local-ignore`) | repo-only — read by Claude Code when working **inside this repo** | the instruction is about the dotfiles repo itself (structure, how to apply changes, stow behavior) |
-> | `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | **global** — read by Claude Code in **every** project | the instruction should apply everywhere (personal preferences, global conventions) |
+> | `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | **global** — read by Claude Code in **every** project | rarely: it only imports `context/parker.md` from the private `devclarityai/parker-agent-kit` repo. Put personal preferences and global conventions there, so Codex gets them too. |
 >
 > This file is deliberately kept out of stow so it does not land at `~/CLAUDE.md` and get treated as a home-level instruction file. The git patterns in `.stow-local-ignore` are re-listed there because a custom ignore file replaces stow's built-in defaults.
 
