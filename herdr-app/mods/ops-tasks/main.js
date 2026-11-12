@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, appHome, readTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared } from "herdr";
+import { exec, home, appHome, readTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused } from "herdr";
 
 const REFRESH = "ops-tasks.refresh";
 const cli = () => `${home()}/go/bin/ops-tasks`;
@@ -41,6 +41,17 @@ function relative(date) {
   return days > 0 ? `In ${days} days` : `${-days} days ago`;
 }
 
+// Jump labels, easiest keys first. Rows past what single letters cover get two-letter
+// labels behind reserved prefix letters, so no label is a prefix of another.
+const KEYS = "asdfghjklqwertyuiopzxcvbnm";
+function labels(n) {
+  let p = 0;
+  while (KEYS.length - p + p * KEYS.length < n && p < KEYS.length) p++;
+  const singles = KEYS.slice(0, KEYS.length - p).split(""), out = singles.slice(0, n);
+  for (const prefix of KEYS.slice(KEYS.length - p)) for (const k of KEYS) if (out.length < n) out.push(prefix + k);
+  return out;
+}
+
 // Section colors (theme tokens): the nearer the due date, the louder the heading.
 const TONE = { Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
 
@@ -60,6 +71,15 @@ export default class OpsTasks extends View {
     }
     this.tasks = []; this.error = null; this.loading = false; this.workDir = null;
     this.seenRefresh = shared(REFRESH);
+    // keys.json: ops-tasks.hints labels every row; a letter picks one, then 1/2/3 act on it.
+    this.hinting = false; this.typed = ""; this.picked = null;
+    cx.spawn(async cx => {
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "hints") this.startHints();
+        cx.notify();
+      }
+    });
     this.load(cx);
     cx.timer.every(120000, cx => this.load(cx));
   }
@@ -117,6 +137,39 @@ export default class OpsTasks extends View {
       } catch (e) { this.error = String(e?.message ?? e); cx.notify(); }
     });
   }
+
+  startHints() {
+    if (this.hinting) { this.endHints(); return; }
+    this.returnPane = focused()?.pane ?? null;
+    this.hinting = true; this.typed = ""; this.picked = null;
+    this.handle.focus();
+  }
+
+  // Leave hint mode and hand the keyboard back to the pane that had it.
+  endHints() {
+    this.hinting = false; this.typed = ""; this.picked = null;
+    if (this.returnPane) run("pane.focus", { pane: this.returnPane });
+  }
+
+  hintKey(key, cx) {
+    if (key === "escape") { this.endHints(); return; }
+    if (this.picked) {
+      const task = this.picked;
+      if (key === "1") { this.endHints(); this.start(task, cx); }
+      else if (key === "2") { this.endHints(); this.openRedate(task); }
+      else if (key === "3") { this.endHints(); this.openComplete(task); }
+      return;
+    }
+    if (key === "backspace") { this.typed = this.typed.slice(0, -1); return; }
+    if (!/^[a-z]$/.test(key)) return;
+    const typed = this.typed + key, matches = this.hintMap.filter(([label]) => label.startsWith(typed));
+    if (!matches.length) return;
+    const exact = matches.find(([label]) => label === typed);
+    if (exact) { this.picked = exact[1]; this.typed = ""; } else this.typed = typed;
+  }
+
+  openRedate(task) { openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: task.kind === "project" ? 210 : 190, props: { reschedule: task } }); }
+  openComplete(task) { openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: 180, props: { complete: task } }); }
 
   shift(days, cx) {
     this.day = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + days);
@@ -193,18 +246,35 @@ export default class OpsTasks extends View {
         .child(div().text_color(t.dim).child(String(rows[g].length)))
         .child(div().flex_1().h(1).bg(t.border));
     };
-    return v_flex().id("ops-tasks").size_full().min_h(0).bg(t.background).text_size(12)
+    // Clicking elsewhere takes the keyboard away: drop hint mode once focus has left.
+    if (this.hinting) {
+      const has = this.handle.is_focused();
+      if (has) this.hadFocus = true;
+      else if (this.hadFocus) { this.hinting = false; this.picked = null; this.typed = ""; }
+    } else this.hadFocus = false;
+    // Labels follow display order, so the nearest tasks get single letters.
+    const ordered = groups.flatMap(g => rows[g]), names = labels(ordered.length);
+    this.hintMap = ordered.map((task, i) => [names[i], task]);
+    const labelOf = new Map(this.hintMap.map(([label, task]) => [task, label]));
+    const badge = (task) => {
+      const label = labelOf.get(task), live = label.startsWith(this.typed);
+      return div().flex_none().px(4).rounded(3).font_semibold()
+        .bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(label);
+    };
+    return v_flex().id("ops-tasks").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_size(12)
+      .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key, cx); cx.stop_propagation(); cx.notify(); })
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().font_semibold().text_color(t.foreground).child(`Tasks · ${this.tasks.length}`))
+        .child(div().flex_1().font_semibold().text_color(t.foreground).child(this.hinting ? (this.picked ? "1 start · 2 move · 3 done · Esc" : `Pick a task${this.typed ? ` · ${this.typed}` : ""} · Esc`) : `Tasks · ${this.tasks.length}`))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, el => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.filter(g => rows[g].length).flatMap((g, i) => [
         heading(g, i === 0),
         ...rows[g].map(task => v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
-          .child(h_flex().gap(5).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
+          .when(this.picked === task, el => el.bg(t.hover).border_1().border_color(t.accent))
+          .child(h_flex().gap(5).items_center().when(this.hinting && !this.picked, el => el.child(badge(task))).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
             .child(div().cursor_pointer().text_color(t.accent).child("▶").on_click((_e, cx) => this.start(task, cx)))
-            .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: task.kind === "project" ? 210 : 190, props: { reschedule: task } })))
-            .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: 180, props: { complete: task } }))))
+            .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => this.openRedate(task)))
+            .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => this.openComplete(task))))
           .child(h_flex().gap(8).text_color(t.dim)
             .child(div().flex_1().min_w(0).truncate().child(task.project_name || task.origin || ""))
             .when(g !== "Today" && g !== "Tomorrow" && g !== "No date", el => el.child(div().child(task.due_date || "")))))
