@@ -14,13 +14,17 @@ function decode(result) {
   return value.data;
 }
 
-function group(task, today, end) {
+function group(task, today, tomorrow, end) {
   const date = task.due_date;
   if (!date) return "No date";
   if (date < today) return "Overdue";
   if (date === today) return "Today";
+  if (date === tomorrow) return "Tomorrow";
   return date <= end ? "Upcoming" : "Later";
 }
+
+// Section colors (theme tokens): the nearer the due date, the louder the heading.
+const TONE = { Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
 
 export default class OpsTasks extends View {
   init(_props, cx) {
@@ -100,24 +104,33 @@ export default class OpsTasks extends View {
 
     const latest = shared(REFRESH);
     if (latest !== this.seenRefresh) { this.seenRefresh = latest; this.load(cx); }
-    const today = localDay(new Date()), end = localDay(new Date(Date.now() + 7 * 86400000));
-    const groups = ["Overdue", "Today", "Upcoming", "Later", "No date"];
+    const now = new Date(), inDays = n => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n));
+    const today = inDays(0), tomorrow = inDays(1), end = inDays(7);
+    const groups = ["Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
     const rows = Object.fromEntries(groups.map(g => [g, []]));
-    for (const task of this.tasks) rows[group(task, today, end)].push(task);
+    for (const task of this.tasks) rows[group(task, today, tomorrow, end)].push(task);
+    const heading = (g, first) => {
+      const tone = t[TONE[g]] ?? t.muted;
+      return h_flex().id(`heading-${g}`).px(5).gap(7).items_center().when(!first, el => el.mt(10))
+        .child(div().w(3).h(13).rounded(2).bg(tone))
+        .child(div().font_semibold().text_color(tone).child(g))
+        .child(div().text_color(t.dim).child(String(rows[g].length)))
+        .child(div().flex_1().h(1).bg(t.border));
+    };
     return v_flex().id("ops-tasks").size_full().min_h(0).bg(t.background).text_size(12)
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().font_semibold().text_color(t.foreground).child(`Tasks · ${this.tasks.length}`))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, el => el.child(div().p(10).text_color(t.blocked).child(this.error)))
-      .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.flatMap(g => rows[g].length ? [
-        div().id(`heading-${g}`).px(5).text_color(t.dim).font_semibold().child(`${g} · ${rows[g].length}`),
+      .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.filter(g => rows[g].length).flatMap((g, i) => [
+        heading(g, i === 0),
         ...rows[g].map(task => v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
           .child(h_flex().gap(5).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
             .child(div().cursor_pointer().text_color(t.accent).child("▶").on_click((_e, cx) => this.start(task, cx)))
             .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: 180, props: { complete: task } }))))
           .child(h_flex().gap(8).text_color(t.dim)
             .child(div().flex_1().min_w(0).truncate().child(task.project_name || task.origin || ""))
-            .when(g !== "Today" && g !== "No date", el => el.child(div().child(task.due_date || "")))))
-      ] : [])));
+            .when(g !== "Today" && g !== "Tomorrow" && g !== "No date", el => el.child(div().child(task.due_date || "")))))
+      ])));
   }
 }
