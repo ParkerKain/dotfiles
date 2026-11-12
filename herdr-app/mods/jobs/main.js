@@ -1,5 +1,5 @@
 // Scheduled agent jobs and lightweight hooks from parker-agent-kit/jobs.
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, theme, run, shared } from "herdr";
 
@@ -49,6 +49,8 @@ export default class Jobs extends View {
   load(cx) {
     if (this.loading) return;
     this.loading = true;
+    // Show the spinner for at least 600ms; notify on the next tick since load can run from render.
+    this.spinUntil = Date.now() + 600; cx.timer.after(0, cx => cx.notify());
     cx.spawn(async (cx) => {
       try {
         const r = await exec(cli(), ["status"], { timeout: 20000 });
@@ -63,6 +65,7 @@ export default class Jobs extends View {
       } catch (e) { this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
+      cx.timer.after(Math.max(0, this.spinUntil - Date.now()), cx => cx.notify());
     });
   }
 
@@ -140,7 +143,7 @@ export default class Jobs extends View {
     return v_flex().id("jobs").size_full().min_h(0).bg(t.background).text_size(12)
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().font_semibold().text_color(t.foreground).child("Jobs & Hooks"))
-        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child("↻").on_click((_e, cx) => this.load(cx))))
+        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, (el) => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(6)
         .child(div().p(4).font_semibold().text_color(t.foreground).child(`Jobs · ${this.jobs.length}`))

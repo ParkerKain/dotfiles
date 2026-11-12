@@ -1,4 +1,4 @@
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, readTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared } from "herdr";
 
@@ -38,6 +38,8 @@ export default class OpsTasks extends View {
     if (this.loading && Date.now() - this.loadStarted < 60000) return;
     this.loading = true;
     this.loadStarted = Date.now();
+    // Show the spinner for at least 600ms; notify on the next tick since load can run from render.
+    this.spinUntil = Date.now() + 600; cx.timer.after(0, cx => cx.notify());
     const id = this.loadId = (this.loadId ?? 0) + 1;
     cx.spawn(async cx => {
       try {
@@ -48,6 +50,7 @@ export default class OpsTasks extends View {
       } catch (e) { if (id !== this.loadId) return; this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
+      cx.timer.after(Math.max(0, this.spinUntil - Date.now()), cx => cx.notify());
     });
   }
 
@@ -104,7 +107,7 @@ export default class OpsTasks extends View {
     return v_flex().id("ops-tasks").size_full().min_h(0).bg(t.background).text_size(12)
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().font_semibold().text_color(t.foreground).child(`Tasks · ${this.tasks.length}`))
-        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child("↻").on_click((_e, cx) => this.load(cx))))
+        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, el => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.flatMap(g => rows[g].length ? [
         div().id(`heading-${g}`).px(5).text_color(t.dim).font_semibold().child(`${g} · ${rows[g].length}`),
