@@ -23,3 +23,4 @@ configstore
 tmuxinator
 zsh/devclarity-mac.zshrc
 .worktrees/
+!/herdr-app/mods/

@@ -1,0 +1,13 @@
+{
+  "zoom": 1.3,
+  "sounds": {
+    "enabled": true,
+    "done": "/Users/parker/dotfiles/herdr/sounds/blow.mp3",
+    "blocked": "/Users/parker/dotfiles/herdr/sounds/blow.mp3"
+  },
+  "font": "JetBrains Mono",
+  "font_ligatures": true,
+  "ui_font": "Iosevka Nerd Font",
+  "minimum_contrast": 1.0,
+  "theme": "rose-pine-moon"
+}
