@@ -23,14 +23,41 @@ function group(task, today, tomorrow, end) {
   return date <= end ? "Upcoming" : "Later";
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const parseDay = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+const ordinal = (n) => n + ((n % 100 >= 11 && n % 100 <= 13) ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th");
+// "Monday, July 26th", plus the year when it isn't this year.
+function longDate(date) {
+  const year = date.getFullYear() === new Date().getFullYear() ? "" : ` ${date.getFullYear()}`;
+  return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${ordinal(date.getDate())}${year}`;
+}
+function relative(date) {
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Math.round((date - today) / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days === -1) return "Yesterday";
+  return days > 0 ? `In ${days} days` : `${-days} days ago`;
+}
+
 // Section colors (theme tokens): the nearer the due date, the louder the heading.
 const TONE = { Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
 
 export default class OpsTasks extends View {
   init(_props, cx) {
     this.confirm = props()?.complete ?? null;
+    this.redate = props()?.reschedule ?? null;
     this.handle = cx.focus_handle();
     if (this.confirm) { this.handle.focus(); return; }
+    if (this.redate) {
+      // A task with no due date starts from today.
+      const now = new Date();
+      this.original = this.redate.due_date || null;
+      this.day = this.original ? parseDay(this.original) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      this.handle.focus();
+      return;
+    }
     this.tasks = []; this.error = null; this.loading = false; this.workDir = null;
     this.seenRefresh = shared(REFRESH);
     this.load(cx);
@@ -91,8 +118,57 @@ export default class OpsTasks extends View {
     });
   }
 
+  shift(days, cx) {
+    this.day = new Date(this.day.getFullYear(), this.day.getMonth(), this.day.getDate() + days);
+    cx.notify();
+  }
+
+  reschedule(cx) {
+    const task = this.redate, due = localDay(this.day);
+    if (this.saving) return;
+    if (due === this.original) { closeOverlay(props().overlay); return; }
+    this.saving = true; cx.notify();
+    // A project task's date gets manually pinned; the dialog shows that warning before Enter.
+    const pin = task.kind === "project" ? ["--allow-manual-pin"] : [];
+    cx.spawn(async cx => {
+      try {
+        decode(await exec(cli(), ["reschedule", ...refArgs(task), "--due", due, "--yes", ...pin, "--json"]));
+        setShared(REFRESH, Date.now());
+        closeOverlay(props().overlay);
+      } catch (e) { this.saving = false; this.error = String(e?.message ?? e); cx.notify(); }
+    });
+  }
+
+  renderRedate(t) {
+    const changed = localDay(this.day) !== this.original;
+    const arrow = (label, days) => div().id(`shift-${days}`).cursor_pointer().px(8).rounded(4).text_color(t.muted).hover(s => s.bg(t.hover)).child(label).on_click((_e, cx) => this.shift(days, cx));
+    return v_flex().id("ops-redate").track_focus(this.handle).size_full().p(16).gap(10).bg(t.popover)
+      .on_key_down((e, cx) => {
+        if (e.key === "escape") closeOverlay(props().overlay);
+        else if (e.key === "up") this.shift(1, cx);
+        else if (e.key === "down") this.shift(-1, cx);
+        else if (e.key === "enter") this.reschedule(cx);
+        else return;
+        cx.stop_propagation();
+      })
+      .child(div().truncate().text_color(t.muted).child(this.redate.title))
+      .child(h_flex().items_center().gap(8)
+        .child(v_flex().items_center().child(arrow("▲", 1)).child(arrow("▼", -1)))
+        .child(v_flex().gap(2)
+          .child(div().text_size(16).text_color(changed ? t.accent : t.foreground).child(longDate(this.day)))
+          .child(div().text_color(t.dim).child(`${relative(this.day)}${this.original ? ` · was ${longDate(parseDay(this.original))}` : " · no date set"}`))))
+      .when(this.redate.kind === "project", el => el.child(div().text_color(t.working).child("Pins the date: it stops following its session.")))
+      .when(this.error, el => el.child(div().text_color(t.blocked).child(this.error)))
+      .child(div().flex_1())
+      .child(h_flex().justify_end().gap(12).items_center()
+        .child(div().flex_1().text_color(t.dim).child("↑↓ day · Enter save · Esc cancel"))
+        .child(div().cursor_pointer().child("Cancel").on_click(() => closeOverlay(props().overlay)))
+        .child(div().cursor_pointer().text_color(t.accent).child(this.saving ? "Saving…" : "Save").on_click((_e, cx) => this.reschedule(cx))));
+  }
+
   render(cx) {
     const t = theme();
+    if (this.redate) return this.renderRedate(t);
     if (this.confirm) return v_flex().id("ops-confirm").track_focus(this.handle).size_full().p(16).gap(12).bg(t.popover)
       .on_key_down((e, cx) => { if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); } else if (e.key === "enter") { this.complete(cx); cx.stop_propagation(); } })
       .child(div().text_size(16).text_color(t.foreground).child("Complete task?"))
@@ -127,6 +203,7 @@ export default class OpsTasks extends View {
         ...rows[g].map(task => v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
           .child(h_flex().gap(5).items_center().child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
             .child(div().cursor_pointer().text_color(t.accent).child("▶").on_click((_e, cx) => this.start(task, cx)))
+            .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: task.kind === "project" ? 210 : 190, props: { reschedule: task } })))
             .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: 180, props: { complete: task } }))))
           .child(h_flex().gap(8).text_color(t.dim)
             .child(div().flex_1().min_w(0).truncate().child(task.project_name || task.origin || ""))
