@@ -27,6 +27,15 @@ function cleanName(value, fallback) {
   return String(value || fallback).trim().slice(0, 60) || fallback;
 }
 
+// The textarea consumes Tab before a mod shortcut sees it. Find its inserted
+// tab so the prompt and cursor can be restored before switching agents.
+function insertedTab(previous, next) {
+  if (next.length !== previous.length + 1) return -1;
+  let at = 0;
+  while (at < previous.length && previous[at] === next[at]) at++;
+  return next[at] === "\t" && next.slice(at + 1) === previous.slice(at) ? at : -1;
+}
+
 export default class SessionLauncher extends View {
   init(_props, cx) {
     const task = props()?.task;
@@ -38,7 +47,19 @@ export default class SessionLauncher extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.input = TextareaState.new({ value: this.text, placeholder: "What do you want to work on?", rows: 4 });
-    this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.error = ""; cx.notify(); });
+    this.input.on("change", (_e, cx) => {
+      const next = this.input.value();
+      const tabAt = insertedTab(this.text, next);
+      if (tabAt >= 0) {
+        this.input.set_value(this.text);
+        this.input.set_selected_range({ start: tabAt, end: tabAt });
+        this.toggleAgent(cx);
+        return;
+      }
+      this.text = next;
+      this.error = "";
+      cx.notify();
+    });
     if (!task) this.input.focus();
     cx.spawn(async cx => {
       for (;;) {
@@ -127,7 +148,6 @@ export default class SessionLauncher extends View {
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
         if (e.key === "enter" && !e.modifiers.shift && !e.modifiers.alt) { this.start(cx); cx.stop_propagation(); }
-        if (e.key === "tab" && !e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
       })
       .child(div().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(this.task
