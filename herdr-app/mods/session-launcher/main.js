@@ -27,15 +27,6 @@ function cleanName(value, fallback) {
   return String(value || fallback).trim().slice(0, 60) || fallback;
 }
 
-// The textarea consumes Tab before a mod shortcut sees it. Find its inserted
-// tab so the prompt and cursor can be restored before switching agents.
-function insertedTab(previous, next) {
-  if (next.length !== previous.length + 1) return -1;
-  let at = 0;
-  while (at < previous.length && previous[at] === next[at]) at++;
-  return next[at] === "\t" && next.slice(at + 1) === previous.slice(at) ? at : -1;
-}
-
 export default class SessionLauncher extends View {
   init(_props, cx) {
     const task = props()?.task;
@@ -47,19 +38,7 @@ export default class SessionLauncher extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.input = TextareaState.new({ value: this.text, placeholder: "What do you want to work on?", rows: 4 });
-    this.input.on("change", (_e, cx) => {
-      const next = this.input.value();
-      const tabAt = insertedTab(this.text, next);
-      if (tabAt >= 0) {
-        this.input.set_value(this.text);
-        this.input.set_selected_range({ start: tabAt, end: tabAt });
-        this.toggleAgent(cx);
-        return;
-      }
-      this.text = next;
-      this.error = "";
-      cx.notify();
-    });
+    this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.error = ""; cx.notify(); });
     if (!task) this.input.focus();
     cx.spawn(async cx => {
       for (;;) {
@@ -147,8 +126,8 @@ export default class SessionLauncher extends View {
     return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().p(18).gap(12).bg(t.popover)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
-        if (e.key === "enter" && !e.modifiers.shift && !e.modifiers.alt) { this.start(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
+        if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
       })
       .child(div().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(this.task
@@ -158,7 +137,7 @@ export default class SessionLauncher extends View {
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child("Tab or ⌘⇧A to switch · Enter to start · Shift+Enter for a new line"))))
+        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · Enter adds a line"))))
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)))
       .child(h_flex().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))

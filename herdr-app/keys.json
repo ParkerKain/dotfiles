@@ -64,8 +64,8 @@
     "ctrl-down": "pane.go:down"
   },
   "mod:session-launcher": {
-    "enter": "session-launcher.start",
-    "cmd-shift-a": "session-launcher.toggle-agent"
+    "cmd-shift-a": "session-launcher.toggle-agent",
+    "cmd-shift-s": "session-launcher.start"
   },
   "terminal": {
     "cmd-f": "terminal.search",
