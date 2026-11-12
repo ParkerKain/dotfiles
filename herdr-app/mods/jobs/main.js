@@ -1,7 +1,18 @@
 // Scheduled agent jobs and lightweight hooks from parker-agent-kit/jobs.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, theme, run, shared } from "herdr";
+import { exec, home, theme, run, shared, focused } from "herdr";
+
+const HINTS = "jobs.hints";
+// Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
+const KEYS = "asdfghjklqwertyuiopzxcvbnm";
+function labels(n) {
+  let p = 0;
+  while (KEYS.length - p + p * KEYS.length < n && p < KEYS.length) p++;
+  const out = KEYS.slice(0, KEYS.length - p).split("").slice(0, n);
+  for (const prefix of KEYS.slice(KEYS.length - p)) for (const k of KEYS) if (out.length < n) out.push(prefix + k);
+  return out;
+}
 
 const cli = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
 const mailHook = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/mail_hook.py`;
@@ -42,6 +53,11 @@ function schedule(job) {
 export default class Jobs extends View {
   init(_props, cx) {
     this.jobs = []; this.hooks = []; this.error = null; this.loading = false; this.starting = null;
+    this.handle = cx.focus_handle();
+    this.hinting = false; this.typed = ""; this.picked = null; this.hintMap = [];
+    // Opened by the hint key itself: a stamp from the last two seconds means start labelled.
+    this.seenHints = shared(HINTS);
+    if (this.seenHints && Date.now() - this.seenHints < 2000) cx.timer.after(0, cx => { this.startHints(); cx.notify(); });
     this.load(cx);
     cx.timer.every(60000, (cx) => this.load(cx));
   }
@@ -98,18 +114,76 @@ export default class Jobs extends View {
     });
   }
 
+  // The picked row's number keys: [key, label, action].
+  actions(item) {
+    if (item.kind === "hook") {
+      const hook = item.hook;
+      return [["1", "check now", cx => this.hookAction("check", cx)], ["2", hook.loaded ? "turn off" : "turn on", cx => this.hookAction(hook.loaded ? "uninstall" : "install", cx)]];
+    }
+    const job = item.job, address = job.last?.address;
+    return [["1", "run", cx => this.start(job, cx)], ...(address ? [["2", "go to session", () => run("agent.focus", { terminal: address })]] : [])];
+  }
+
+  startHints() {
+    if (this.hinting) { this.endHints(); return; }
+    this.returnPane = focused()?.pane ?? null;
+    this.hinting = true; this.typed = ""; this.picked = null;
+    this.handle.focus();
+  }
+
+  endHints(restore = true) {
+    this.hinting = false; this.typed = ""; this.picked = null;
+    if (restore && this.returnPane) run("pane.focus", { pane: this.returnPane });
+  }
+
+  hintKey(key, cx) {
+    if (key === "escape") { this.endHints(); return; }
+    if (this.picked) {
+      const action = this.actions(this.picked).find(([k]) => k === key);
+      // "go to session" moves focus itself, so don't send it back to the old pane.
+      if (action) { this.endHints(action[1] !== "go to session"); action[2](cx); }
+      return;
+    }
+    if (key === "backspace") { this.typed = this.typed.slice(0, -1); return; }
+    if (!/^[a-z]$/.test(key)) return;
+    const typed = this.typed + key, matches = this.hintMap.filter(([label]) => label.startsWith(typed));
+    if (!matches.length) return;
+    const exact = matches.find(([label]) => label === typed);
+    if (exact) { this.picked = exact[1]; this.typed = ""; } else this.typed = typed;
+  }
+
   render(cx) {
     // my-tabs bumps this when the refresh key is pressed with Jobs showing.
     const latest = shared("jobs.refresh");
     if (latest !== this.seenRefresh) { this.seenRefresh = latest; this.load(cx); }
+    const hints = shared(HINTS);
+    if (hints !== this.seenHints) { this.seenHints = hints; cx.timer.after(0, cx => { this.startHints(); cx.notify(); }); }
+    if (this.hinting) {
+      if (this.handle.is_focused()) this.hadFocus = true;
+      else if (this.hadFocus) this.endHints(false);
+    } else this.hadFocus = false;
     const t = theme(), now = Date.now();
+    const items = [...this.jobs.map(job => ({ kind: "job", job })), ...this.hooks.map(hook => ({ kind: "hook", hook }))];
+    // Keep the picked row across reloads by matching its name.
+    if (this.picked) this.picked = items.find(i => i.kind === this.picked.kind && (i.job ?? i.hook).name === (this.picked.job ?? this.picked.hook).name) ?? null;
+    const names = labels(items.length);
+    this.hintMap = items.map((item, i) => [names[i], item]);
+    const labelOf = new Map(items.map((item, i) => [item.job ?? item.hook, names[i]]));
+    const badge = (key) => {
+      const label = labelOf.get(key), live = label?.startsWith(this.typed);
+      return div().flex_none().px(4).rounded(3).font_semibold().bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(label ?? "");
+    };
+    const isPicked = (key) => this.picked && (this.picked.job ?? this.picked.hook) === key;
+    const mark = (el, key) => el.when(this.hinting && !this.picked, el => el.child(badge(key)));
+    const ring = (el, key) => el.when(isPicked(key), el => el.bg(t.hover).border_1().border_color(t.accent));
+    const legend = this.picked ? this.actions(this.picked).map(([k, label]) => `${k} ${label}`).join(" · ") + " · Esc" : `Pick a job${this.typed ? ` · ${this.typed}` : ""} · Esc`;
     const row = (job) => {
       const last = job.last;
       const [label, tone] = last ? (STATE[last.state] ?? [last.state, "dim"]) : ["Never run", "dim"];
       const starting = this.starting === job.name;
-      return v_flex().id(`job-${job.name}`).p(8).gap(4).rounded(6).hover((s) => s.bg(t.hover))
+      return ring(v_flex().id(`job-${job.name}`).p(8).gap(4).rounded(6).hover((s) => s.bg(t.hover)), job)
         .when(last?.address, (el) => el.cursor_pointer().on_click(() => run("agent.focus", { terminal: last.address })))
-        .child(h_flex().gap(6).items_center()
+        .child(mark(h_flex().gap(6).items_center(), job)
           .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(job.name))
           .child(div().text_color(t[tone] ?? t.dim).child(starting ? "Starting…" : label))
           .child(div().id(`run-${job.name}`).px(4).cursor_pointer().text_color(starting ? t.dim : t.accent).child("▶")
@@ -126,8 +200,8 @@ export default class Jobs extends View {
       const busy = this.starting === hook.name;
       const checkText = check ? `Checked ${day(check.ts, now)} ${clock(check.ts)} · ${check.result}` : "Never checked";
       const fireText = fired ? `Triggered ${day(fired.ts, now)} ${clock(fired.ts)} · ${fired.subject}` : "Never triggered";
-      return v_flex().id("hook-mail-inbox").p(8).gap(4).rounded(6).hover((s) => s.bg(t.hover))
-        .child(h_flex().gap(6).items_center()
+      return ring(v_flex().id(`hook-${hook.name}`).p(8).gap(4).rounded(6).hover((s) => s.bg(t.hover)), hook)
+        .child(mark(h_flex().gap(6).items_center(), hook)
           .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(hook.name))
           .child(div().text_color(check?.state === "error" ? t.blocked : hook.loaded ? t.done : t.dim)
             .child(hook.loaded ? check?.state === "error" ? "Check failed" : "On" : "Off"))
@@ -140,9 +214,10 @@ export default class Jobs extends View {
         .child(div().text_color(t.dim).child(fireText)
           .when(fired?.address, (el) => el.cursor_pointer().on_click(() => run("agent.focus", { terminal: fired.address }))));
     };
-    return v_flex().id("jobs").size_full().min_h(0).bg(t.background).text_size(12)
+    return v_flex().id("jobs").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_size(12)
+      .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key, cx); cx.stop_propagation(); cx.notify(); })
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().font_semibold().text_color(t.foreground).child("Jobs & Hooks"))
+        .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(this.hinting ? legend : "Jobs & Hooks"))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, (el) => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(6)

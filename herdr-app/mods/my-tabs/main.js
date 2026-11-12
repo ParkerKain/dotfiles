@@ -23,6 +23,7 @@ export default class Tabs extends View {
         const command = await nextCommand();
         if (command.startsWith("panel-")) this.togglePanel(command.slice(6));
         if (command === "refresh") this.refreshPanel();
+        if (command === "hints") this.hintPanel();
         cx.notify();
       }
     });
@@ -38,6 +39,15 @@ export default class Tabs extends View {
   refreshPanel() {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (panel && !panel.hidden && body?.active) setShared(`${body.active}.refresh`, Date.now());
+  }
+
+  // Keyboard row picking: the showing panel watches "<id>.hints" and labels its rows.
+  // A closed panel opens first; its copy may only start now, so it honors a recent stamp.
+  hintPanel() {
+    const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+    if (!body?.active) return;
+    if (!panel || panel.hidden) run("layout.show", { id: "panel" });
+    setShared(`${body.active}.hints`, Date.now());
   }
 
   // The side panel is remembered per space: switching shows that space's choice

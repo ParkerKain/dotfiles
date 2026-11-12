@@ -37,7 +37,7 @@
     "cmd-shift-/": "app.help",
     "cmd-b": "layout.toggle:sidebar",
     "cmd-shift-t": "my-tabs.panel-ops-tasks",
-    "cmd-j": "ops-tasks.hints",
+    "cmd-j": "my-tabs.hints",
     "cmd-shift-j": "my-tabs.panel-jobs",
     "cmd-shift-a": "my-tabs.panel-artifacts",
     "cmd-r": "my-tabs.refresh",

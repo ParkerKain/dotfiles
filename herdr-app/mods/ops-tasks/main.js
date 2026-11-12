@@ -3,6 +3,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { exec, home, appHome, readTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused } from "herdr";
 
 const REFRESH = "ops-tasks.refresh";
+const HINTS = "ops-tasks.hints";
 const cli = () => `${home()}/go/bin/ops-tasks`;
 const refArgs = (task) => ["--source", task.source, "--kind", task.kind, "--id", String(task.id)];
 const localDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -73,6 +74,10 @@ export default class OpsTasks extends View {
     this.seenRefresh = shared(REFRESH);
     // keys.json: ops-tasks.hints labels every row; a letter picks one, then 1/2/3 act on it.
     this.hinting = false; this.typed = ""; this.picked = null;
+    // my-tabs.hints (Cmd+J) stamps this for whichever panel shows; a fresh stamp at
+    // start means the key itself opened the panel.
+    this.seenHints = shared(HINTS);
+    if (this.seenHints && Date.now() - this.seenHints < 2000) cx.timer.after(0, cx => { this.startHints(); cx.notify(); });
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
@@ -233,6 +238,8 @@ export default class OpsTasks extends View {
 
     const latest = shared(REFRESH);
     if (latest !== this.seenRefresh) { this.seenRefresh = latest; this.load(cx); }
+    const hints = shared(HINTS);
+    if (hints !== this.seenHints) { this.seenHints = hints; cx.timer.after(0, cx => { this.startHints(); cx.notify(); }); }
     const now = new Date(), inDays = n => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n));
     const today = inDays(0), tomorrow = inDays(1), end = inDays(7);
     const groups = ["Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
