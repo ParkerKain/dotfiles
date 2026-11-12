@@ -62,7 +62,7 @@ export default class OpsTasks extends View {
     cx.spawn(async cx => {
       try {
         const data = decode(await exec(cli(), ["prompt", ...refArgs(task), "--json"]));
-        run("tab.new", { name: task.title.slice(0, 42), folder: await this.directory(), argv: ["claude", "-n", data.slug], task: data.prompt });
+        openOverlay({ mod: "session-launcher", kind: "dialog", width: 560, height: 255, props: { task: { title: task.title, prompt: data.prompt, slug: data.slug, folder: await this.directory() } } });
         this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
       cx.notify();
