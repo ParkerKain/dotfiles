@@ -148,6 +148,7 @@ export default class SessionLauncher extends View {
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
         if (e.key === "enter" && !e.modifiers.shift && !e.modifiers.alt) { this.start(cx); cx.stop_propagation(); }
+        if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
       })
       .child(div().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(this.task
@@ -157,7 +158,7 @@ export default class SessionLauncher extends View {
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child("Tab to switch · Enter to start · Shift+Enter for a new line"))))
+        .child(div().text_size(11).text_color(t.dim).child("Tab or ⌘⇧A to switch · Enter to start · Shift+Enter for a new line"))))
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)))
       .child(h_flex().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
