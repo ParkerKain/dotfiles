@@ -46,19 +46,28 @@ export default class RunOnce extends View {
 
   render() {
     const t = theme();
-    const chip = (name) => div().cursor_pointer().px(9).py(4).rounded(6).bg(t.raised).text_color(t.muted).child(name)
+    const key = (k) => div().px(5).rounded(4).border_1().border_color(t.border).text_size(11).text_color(t.muted).child(k);
+    const chip = (name) => h_flex().id(`chip-${name}`).items_center().gap(6).cursor_pointer().px(10).py(5).rounded(7)
+      .border_1().border_color(t.border).bg(t.raised).text_size(13).text_color(t.foreground)
+      .hover(s => s.bg(t.hover))
+      .child(div().text_color(t.accent).child("❯"))
+      .child(name)
       .on_click((_e, cx) => { this.input.set_value(name); this.run(name, cx); });
-    return v_flex().id("run-once").track_focus(this.handle).w_full().h_full().p(16).gap(10).bg(t.popover)
+    return v_flex().id("run-once").track_focus(this.handle).w_full().h_full().px(14).py(12).gap(10).bg(t.popover)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(props().overlay); cx.stop_propagation(); }
         if (e.key === "up") { this.recall(1, cx); cx.stop_propagation(); }
         if (e.key === "down") { this.recall(-1, cx); cx.stop_propagation(); }
       })
-      .child(Input.new(this.input))
-      .child(h_flex().items_center().gap(8)
-        .child(chip("demo-on"))
-        .child(chip("demo-off"))
-        .child(div().text_size(11).text_color(t.dim).child(this.busy ? "Running…" : "Enter runs · ↑↓ recent · Esc closes")))
+      .child(h_flex().items_center().gap(10).px(10).py(7).rounded(8).border_1()
+        .border_color(this.error ? t.blocked : t.input).bg(t.background)
+        .child(div().text_size(15).text_color(this.busy ? t.working : t.accent).child(this.busy ? "…" : "❯"))
+        .child(div().flex_1().text_size(15).child(Input.new(this.input))))
+      .child(h_flex().items_center().justify_between()
+        .child(h_flex().gap(8).child(chip("demo-on")).child(chip("demo-off")))
+        .child(h_flex().items_center().gap(5).text_size(11).text_color(t.dim)
+          .child(this.busy ? div().text_color(t.working).child("Running…") : div().child(""))
+          .when(!this.busy, el => el.child(key("↵")).child("run").child(key("↑↓")).child("recent").child(key("esc")).child("close"))))
       .when(Boolean(this.error), el => el.child(div().text_size(12).text_color(t.blocked).child(this.error)));
   }
 }
