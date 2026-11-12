@@ -1,10 +1,10 @@
-// Scheduled jobs from parker-agent-kit/jobs: when each runs next, when it last
-// ran and how that run is doing. Click a job to see its session; ▶ runs it now.
+// Scheduled agent jobs and lightweight hooks from parker-agent-kit/jobs.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, theme, run } from "herdr";
 
 const cli = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
+const mailHook = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/mail_hook.py`;
 const DAYS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATE = {
   working: ["Working", "working"], blocked: ["Needs you", "blocked"], done: ["Done", "done"],
@@ -41,7 +41,7 @@ function schedule(job) {
 
 export default class Jobs extends View {
   init(_props, cx) {
-    this.jobs = []; this.error = null; this.loading = false; this.starting = null;
+    this.jobs = []; this.hooks = []; this.error = null; this.loading = false; this.starting = null;
     this.load(cx);
     cx.timer.every(60000, (cx) => this.load(cx));
   }
@@ -55,10 +55,28 @@ export default class Jobs extends View {
         let data;
         try { data = JSON.parse(r.stdout); } catch { throw new Error(r.stderr.trim().split("\n").pop() || `job status exited ${r.code}`); }
         if (!data.ok) throw new Error(r.stderr.trim() || "job status failed");
-        this.jobs = data.jobs; this.error = null;
+        const h = await exec(mailHook(), ["status"], { timeout: 20000 });
+        let hooks;
+        try { hooks = JSON.parse(h.stdout); } catch { throw new Error(h.stderr.trim() || "hook status failed"); }
+        if (!hooks.ok) throw new Error(h.stderr.trim() || "hook status failed");
+        this.jobs = data.jobs; this.hooks = hooks.hooks; this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
+    });
+  }
+
+  hookAction(command, cx) {
+    if (this.starting) return;
+    this.starting = "Mail inbox";
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const r = await exec(mailHook(), [command], { timeout: 90000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+      let out = {};
+      try { out = JSON.parse(r.stdout); } catch { /* reported below */ }
+      this.error = out.ok ? null : (out.error || r.stderr.trim() || `${command} failed`);
+      this.starting = null;
+      this.load(cx);
     });
   }
 
@@ -97,13 +115,35 @@ export default class Jobs extends View {
           .child(div().flex_1().min_w(0).truncate().child(last ? `Last ${day(last.ts, now)} ${clock(last.ts)}` : "Last: never"))
           .when(job.next && job.loaded, (el) => el.child(div().child(`Next ${day(job.next, now)} ${clock(job.next)}`))));
     };
+    const hookRow = (hook) => {
+      const check = hook.last_check, fired = hook.last_trigger;
+      const busy = this.starting === hook.name;
+      const checkText = check ? `Checked ${day(check.ts, now)} ${clock(check.ts)} · ${check.result}` : "Never checked";
+      const fireText = fired ? `Triggered ${day(fired.ts, now)} ${clock(fired.ts)} · ${fired.subject}` : "Never triggered";
+      return v_flex().id("hook-mail-inbox").p(8).gap(4).rounded(6).hover((s) => s.bg(t.hover))
+        .child(h_flex().gap(6).items_center()
+          .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(hook.name))
+          .child(div().text_color(check?.state === "error" ? t.blocked : hook.loaded ? t.done : t.dim)
+            .child(hook.loaded ? check?.state === "error" ? "Check failed" : "On" : "Off"))
+          .child(div().id("hook-check-now").px(4).cursor_pointer().text_color(busy ? t.dim : t.accent).child(busy ? "Checking…" : "Check now")
+            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction("check", cx); }))
+          .child(div().id("hook-toggle").px(4).cursor_pointer().text_color(t.muted).child(hook.loaded ? "Turn off" : "Turn on")
+            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction(hook.loaded ? "uninstall" : "install", cx); })))
+        .child(div().text_color(t.muted).child(`Checks every ${hook.interval / 60} minutes`))
+        .child(div().text_color(check?.state === "error" ? t.blocked : t.dim).child(checkText))
+        .child(div().text_color(t.dim).child(fireText)
+          .when(fired?.address, (el) => el.cursor_pointer().on_click(() => run("agent.focus", { terminal: fired.address }))));
+    };
     return v_flex().id("jobs").size_full().min_h(0).bg(t.background).text_size(12)
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().font_semibold().text_color(t.foreground).child(`Jobs · ${this.jobs.length}`))
+        .child(div().flex_1().font_semibold().text_color(t.foreground).child("Jobs & Hooks"))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child("↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, (el) => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(6)
+        .child(div().p(4).font_semibold().text_color(t.foreground).child(`Jobs · ${this.jobs.length}`))
         .when(!this.jobs.length && !this.error, (el) => el.child(div().p(8).text_color(t.dim).child("No jobs yet. Add one to parker-agent-kit/jobs/defs.")))
-        .children(this.jobs.map(row)));
+        .children(this.jobs.map(row))
+        .child(div().p(4).font_semibold().text_color(t.foreground).child(`Hooks · ${this.hooks.length}`))
+        .children(this.hooks.map(hookRow)));
   }
 }
