@@ -1,7 +1,7 @@
 // Scheduled agent jobs and lightweight hooks from parker-agent-kit/jobs.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, theme, run } from "herdr";
+import { exec, home, theme, run, shared } from "herdr";
 
 const cli = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
 const mailHook = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/mail_hook.py`;
@@ -96,6 +96,9 @@ export default class Jobs extends View {
   }
 
   render(cx) {
+    // my-tabs bumps this when the refresh key is pressed with Jobs showing.
+    const latest = shared("jobs.refresh");
+    if (latest !== this.seenRefresh) { this.seenRefresh = latest; this.load(cx); }
     const t = theme(), now = Date.now();
     const row = (job) => {
       const last = job.last;
