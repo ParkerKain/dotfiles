@@ -51,6 +51,19 @@ test("api-key reply → unavailable 'No subscription limits', no windows", () =>
   assert.deepEqual(r.windows, []);
 });
 
+test("available but null limits (CLI hit a 429) → error 'rate-limited', flagged", () => {
+  const r = claude.parse(claudeReply(null, { rate_limits_available: true }), NOW);
+  assert.equal(r.status, "error");
+  assert.equal(r.message, "Usage rate-limited, retrying");
+  assert.equal(r.rateLimited, true);
+  assert.deepEqual(r.windows, []);
+});
+
+test("polls every 15 min, 30 min after a rate-limited reply", () => {
+  assert.equal(claude.every, 900);
+  assert.equal(claude.backoffEvery, 1800);
+});
+
 test("legacy reply → 5h 12 and wk 34 from utilization", () => {
   const r = claude.parse(read("claude-get-usage.legacy.json"), NOW);
   assert.deepEqual(r.windows.map((w) => [w.id, w.short, w.percent, w.durationSec]), [

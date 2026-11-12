@@ -69,7 +69,10 @@ export default class UsageLimits extends View {
   tick(cx, force) {
     const st = states();
     for (const p of PROVIDERS) {
-      const every = st[p.id]?.installed === false ? MISSING_EVERY : FETCH_EVERY;
+      const s = st[p.id];
+      const every = s?.installed === false ? MISSING_EVERY
+        : s?.report?.rateLimited ? (p.backoffEvery ?? p.every ?? FETCH_EVERY)
+        : (p.every ?? FETCH_EVERY);
       if (force || now() - (this.lastFetch[p.id] ?? 0) >= every) this.fetch(p, cx);
     }
     this.readSession(cx);
