@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex, TextareaState, Textarea } from "gpui-base";
-import { closeOverlay, exec, focused, home, knownAgents, openOverlay, panes, props, run, spaces, theme } from "herdr";
+import { closeOverlay, exec, focused, home, knownAgents, nextCommand, openOverlay, panes, props, run, spaces, theme } from "herdr";
 
 const REPOS = `${home()}/Documents/internal/repos`;
 const VAULT = `${REPOS}/devclarity-vault`;
@@ -40,6 +40,12 @@ export default class SessionLauncher extends View {
     this.input = TextareaState.new({ value: this.text, placeholder: "What do you want to work on?", rows: 4 });
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.error = ""; cx.notify(); });
     if (!task) this.input.focus();
+    cx.spawn(async cx => {
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "start") this.start(cx);
+      }
+    });
     if (task) cx.timer.after(0, cx => this.start(cx));
   }
 
@@ -113,12 +119,13 @@ export default class SessionLauncher extends View {
     return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().p(18).gap(12).bg(t.popover)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
-        if (e.key === "enter" && (e.modifiers.platform || e.modifiers.control)) { this.start(cx); cx.stop_propagation(); }
+        if (e.key === "enter" && !e.modifiers.shift && !e.modifiers.alt) { this.start(cx); cx.stop_propagation(); }
       })
       .child(div().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(this.task
         ? div().flex_1().text_color(t.muted).child(this.busy ? "Choosing a space, agent, and layout…" : "Ready to launch")
         : Textarea.new(this.input).flex_1().p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+      .when(!this.task, el => el.child(div().text_size(11).text_color(t.dim).child("Enter to start · Shift+Enter for a new line")))
       .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)))
       .child(h_flex().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))

@@ -63,6 +63,9 @@
     "ctrl-up": "pane.go:up",
     "ctrl-down": "pane.go:down"
   },
+  "mod:session-launcher": {
+    "enter": "session-launcher.start"
+  },
   "terminal": {
     "cmd-f": "terminal.search",
     "cmd-c": "terminal.copy",
