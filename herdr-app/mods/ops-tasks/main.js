@@ -34,14 +34,18 @@ export default class OpsTasks extends View {
   }
 
   load(cx) {
-    if (this.loading) return;
+    // A load that never returns must not block every later refresh: after 60s, start a new one.
+    if (this.loading && Date.now() - this.loadStarted < 60000) return;
     this.loading = true;
+    this.loadStarted = Date.now();
+    const id = this.loadId = (this.loadId ?? 0) + 1;
     cx.spawn(async cx => {
       try {
         const data = decode(await exec(cli(), ["list", "--json"]));
+        if (id !== this.loadId) return;
         this.tasks = data.tasks ?? [];
         this.error = null;
-      } catch (e) { this.error = String(e?.message ?? e); }
+      } catch (e) { if (id !== this.loadId) return; this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
     });
@@ -100,7 +104,7 @@ export default class OpsTasks extends View {
     return v_flex().id("ops-tasks").size_full().min_h(0).bg(t.background).text_size(12)
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().font_semibold().text_color(t.foreground).child(`Tasks · ${this.tasks.length}`))
-        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child("↻").on_click(() => this.load(cx))))
+        .child(div().id("refresh").cursor_pointer().text_color(t.muted).child("↻").on_click((_e, cx) => this.load(cx))))
       .when(this.error, el => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.flatMap(g => rows[g].length ? [
         div().id(`heading-${g}`).px(5).text_color(t.dim).font_semibold().child(`${g} · ${rows[g].length}`),
