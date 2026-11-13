@@ -8,6 +8,7 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play
 - `keys.json` - binds Meta+Shift+N to the session launcher
 - `mods/jobs` - Jobs panel
+- `mods/revive` - Cmd+Shift+R popup: recently killed terminals with their last screen; Enter resumes the Claude/Codex session (or reopens the shell) in a new tab
 - `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons
 - `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
 
@@ -18,5 +19,5 @@ H=~/.config/herdr-app; D=~/dotfiles/herdr-app
 ln -sf $D/settings.json $H/settings.json
 ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
-for m in ops-tasks jobs my-tabs usage-limits session-launcher; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in ops-tasks jobs my-tabs usage-limits session-launcher revive; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
