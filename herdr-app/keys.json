@@ -68,7 +68,27 @@
     "ctrl-left": "pane.go:left",
     "ctrl-right": "pane.go:right",
     "ctrl-up": "pane.go:up",
-    "ctrl-down": "pane.go:down"
+    "ctrl-down": "pane.go:down",
+    "cmd-shift-m": "mod.open:demo-mode"
+  },
+  "layout:Demo": {
+    "cmd-]": "terminal",
+    "cmd-[": "terminal",
+    "cmd-alt-]": "terminal",
+    "cmd-alt-[": "terminal",
+    "cmd-shift-l": "terminal",
+    "cmd-p": "terminal",
+    "cmd-shift-r": "terminal",
+    "cmd-b": "terminal",
+    "ctrl-1": "terminal",
+    "ctrl-2": "terminal",
+    "ctrl-3": "terminal",
+    "ctrl-4": "terminal",
+    "ctrl-5": "terminal",
+    "ctrl-6": "terminal",
+    "ctrl-7": "terminal",
+    "ctrl-8": "terminal",
+    "ctrl-9": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",

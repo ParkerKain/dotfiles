@@ -1,0 +1,38 @@
+{
+  "id": "root",
+  "type": "column",
+  "children": [
+    {
+      "id": "main",
+      "type": "block",
+      "content": {
+        "tab": "active",
+        "pane": {
+          "background": "background",
+          "border": {
+            "width": 1,
+            "color": "border"
+          },
+          "focus": {
+            "width": 1,
+            "color": "border"
+          },
+          "radius": 10,
+          "gap": 8,
+          "lone": false
+        }
+      }
+    }
+  ],
+  "padding": 8,
+  "background": "canvas",
+  "terminal_padding": [
+    14,
+    12
+  ],
+  "divider": {
+    "width": 1,
+    "color": "border"
+  },
+  "toast": "demo-quiet"
+}
