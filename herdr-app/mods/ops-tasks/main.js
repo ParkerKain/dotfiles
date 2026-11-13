@@ -61,13 +61,22 @@ function labels(n) {
 // A Play launch labels its agent terminal ops-task=<key>; a live one marks the task Active.
 const TASK_LABEL = "ops-task";
 const URGENCY = { blocked: 0, working: 1, done: 2, idle: 3 };
-function sessions() {
+// Sessions launched without a label (older launches, a missed tag) are matched by the
+// task prompt Play started them with: its "Task:" line, plus "Project:" when there is one.
+function promptKey(argv, tasks) {
+  const prompt = argv?.[argv.length - 1];
+  if (typeof prompt !== "string" || !prompt.startsWith("You are helping me work a DevClarity task.")) return null;
+  const task = tasks.find(task => prompt.includes(`\nTask: ${task.title}\n`) && (!task.project_name || prompt.includes(`\nProject: ${task.project_name}\n`)));
+  return task ? keyOf(task) : null;
+}
+function sessions(tasks) {
   const out = new Map();
   for (const t of terminals()) {
-    const key = t.labels?.[TASK_LABEL];
-    if (!key || (t.state && t.state !== "live")) continue;
-    const prev = out.get(key);
-    if (!prev || (URGENCY[t.status] ?? 9) < (URGENCY[prev.status] ?? 9)) out.set(key, { address: t.address, status: t.status });
+    if (t.state && t.state !== "live") continue;
+    const key = t.labels?.[TASK_LABEL] || promptKey(t.argv, tasks);
+    if (!key) continue;
+    const status = typeof t.status === "string" ? t.status : t.status?.state ?? null, prev = out.get(key);
+    if (!prev || (URGENCY[status] ?? 9) < (URGENCY[prev.status] ?? 9)) out.set(key, { address: t.address, status });
   }
   return out;
 }
@@ -148,7 +157,7 @@ export default class OpsTasks extends View {
 
   start(task, cx) {
     // A task with a live session goes to it rather than starting a second one.
-    const live = sessions().get(keyOf(task));
+    const live = sessions(this.tasks ?? []).get(keyOf(task));
     if (live) { run("agent.focus", { terminal: live.address }); return; }
     cx.spawn(async cx => {
       try {
@@ -306,7 +315,7 @@ export default class OpsTasks extends View {
     const today = inDays(0), tomorrow = inDays(1), end = inDays(7);
     const groups = ["Active", "Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
     const rows = Object.fromEntries(groups.map(g => [g, []]));
-    const live = sessions();
+    const live = sessions(this.tasks);
     for (const task of this.tasks) rows[live.has(keyOf(task)) ? "Active" : group(task, today, tomorrow, end)].push(task);
     // Within a section, dragged tasks keep their place; tasks never dragged follow, in CLI order.
     const rank = new Map(this.order.map((k, i) => [k, i]));

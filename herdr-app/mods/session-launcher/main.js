@@ -126,7 +126,7 @@ export default class SessionLauncher extends View {
   // show the task as active while the session lives. Waits up to 10s for it to appear.
   async tag(before, program, ref, cx) {
     for (let i = 0; i < 40; i++) {
-      const created = terminals().find(t => !before.has(t.address) && (!t.argv?.length || t.argv[0] === program));
+      const created = terminals().find(t => !before.has(t.address) && (!t.argv?.length || t.argv.includes(program)));
       if (created) { await hc(["label", created.address, `ops-task=${ref}`]).catch(() => null); return; }
       await cx.sleep(250);
     }
