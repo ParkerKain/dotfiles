@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex, TextareaState, Textarea } from "gpui-base";
-import { closeOverlay, exec, focused, home, knownAgents, nextCommand, openOverlay, panes, props, run, spaces, theme } from "herdr";
+import { closeOverlay, exec, focused, hc, home, knownAgents, nextCommand, openOverlay, panes, props, run, spaces, terminals, theme } from "herdr";
 
 const REPOS = `${home()}/Documents/internal/repos`;
 const VAULT = `${REPOS}/devclarity-vault`;
@@ -67,7 +67,7 @@ export default class SessionLauncher extends View {
     cx.spawn(async cx => {
       try {
         const plan = await this.plan(request);
-        await this.launch(plan, request, selectedAgent);
+        await this.launch(plan, request, selectedAgent, cx);
         closeOverlay(props().overlay);
       } catch (error) {
         this.error = String(error?.message ?? error);
@@ -106,7 +106,7 @@ export default class SessionLauncher extends View {
     return { ...plan, folder };
   }
 
-  async launch(plan, request, selectedAgent) {
+  async launch(plan, request, selectedAgent, cx) {
     const matches = spaces().filter(s => !s.machine && s.folder === plan.folder);
     const target = plan.space === "existing" ? matches[0] : plan.space === "current" ? spaces().find(s => s.id === focused()?.space && !s.machine && s.folder === plan.folder) : null;
     const agents = await knownAgents();
@@ -115,9 +115,21 @@ export default class SessionLauncher extends View {
     const tabName = cleanName(this.task?.title || plan.tab_name, "New session");
     const argv = this.task?.slug && selectedAgent === "claude" ? [...agent.run, "-n", this.task.slug] : agent.run;
     const args = { name: tabName, folder: plan.folder, argv, task: request };
+    const before = new Set(terminals().map(t => t.address));
     if (target) run("tab.new", { ...args, space: target.id });
     else run("space.new", { name: cleanName(plan.space_name, plan.folder.split("/").pop()), folder: plan.folder, tab: tabName, argv, task: request, machine: "" });
+    if (this.task?.ref) await this.tag(before, argv[0], this.task.ref, cx);
     if (plan.split !== "none") run("pane.split", { direction: plan.split });
+  }
+
+  // Label the agent terminal this launch just made with its task, so the Tasks panel can
+  // show the task as active while the session lives. Waits up to 10s for it to appear.
+  async tag(before, program, ref, cx) {
+    for (let i = 0; i < 40; i++) {
+      const created = terminals().find(t => !before.has(t.address) && (!t.argv?.length || t.argv[0] === program));
+      if (created) { await hc(["label", created.address, `ops-task=${ref}`]).catch(() => null); return; }
+      await cx.sleep(250);
+    }
   }
 
   render() {

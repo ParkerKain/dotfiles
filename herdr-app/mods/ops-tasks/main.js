@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, appHome, readTextFile, writeTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused } from "herdr";
+import { exec, home, appHome, readTextFile, writeTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused, terminals } from "herdr";
 
 const REFRESH = "ops-tasks.refresh";
 const HINTS = "ops-tasks.hints";
@@ -58,7 +58,21 @@ function labels(n) {
 }
 
 // Section colors (theme tokens): the nearer the due date, the louder the heading.
-const TONE = { Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
+// A Play launch labels its agent terminal ops-task=<key>; a live one marks the task Active.
+const TASK_LABEL = "ops-task";
+const URGENCY = { blocked: 0, working: 1, done: 2, idle: 3 };
+function sessions() {
+  const out = new Map();
+  for (const t of terminals()) {
+    const key = t.labels?.[TASK_LABEL];
+    if (!key || (t.state && t.state !== "live")) continue;
+    const prev = out.get(key);
+    if (!prev || (URGENCY[t.status] ?? 9) < (URGENCY[prev.status] ?? 9)) out.set(key, { address: t.address, status: t.status });
+  }
+  return out;
+}
+
+const TONE = { Active: "working", Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
 
 export default class OpsTasks extends View {
   init(_props, cx) {
@@ -133,10 +147,13 @@ export default class OpsTasks extends View {
   }
 
   start(task, cx) {
+    // A task with a live session goes to it rather than starting a second one.
+    const live = sessions().get(keyOf(task));
+    if (live) { run("agent.focus", { terminal: live.address }); return; }
     cx.spawn(async cx => {
       try {
         const data = decode(await exec(cli(), ["prompt", ...refArgs(task), "--json"]));
-        openOverlay({ mod: "session-launcher", kind: "dialog", width: 560, height: 255, props: { task: { title: task.title, prompt: data.prompt, slug: data.slug, folder: await this.directory() } } });
+        openOverlay({ mod: "session-launcher", kind: "dialog", width: 560, height: 255, props: { task: { title: task.title, prompt: data.prompt, slug: data.slug, ref: keyOf(task), folder: await this.directory() } } });
         this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
       cx.notify();
@@ -287,9 +304,10 @@ export default class OpsTasks extends View {
     if (hints !== this.seenHints) { this.seenHints = hints; cx.timer.after(0, cx => { this.startHints(); cx.notify(); }); }
     const now = new Date(), inDays = n => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n));
     const today = inDays(0), tomorrow = inDays(1), end = inDays(7);
-    const groups = ["Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
+    const groups = ["Active", "Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
     const rows = Object.fromEntries(groups.map(g => [g, []]));
-    for (const task of this.tasks) rows[group(task, today, tomorrow, end)].push(task);
+    const live = sessions();
+    for (const task of this.tasks) rows[live.has(keyOf(task)) ? "Active" : group(task, today, tomorrow, end)].push(task);
     // Within a section, dragged tasks keep their place; tasks never dragged follow, in CLI order.
     const rank = new Map(this.order.map((k, i) => [k, i]));
     for (const g of groups) rows[g] = rows[g].map((task, i) => [rank.get(keyOf(task)) ?? this.order.length + i, task]).sort((a, b) => a[0] - b[0]).map(([, task]) => task);
@@ -327,7 +345,8 @@ export default class OpsTasks extends View {
       .when(this.error, el => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.filter(g => rows[g].length).flatMap((g, i) => [
         heading(g, i === 0),
-        ...rows[g].map(task => v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
+        ...rows[g].map(task => { const session = live.get(keyOf(task)); return v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
+          .when(session, el => el.bg(t.selected ?? t.hover))
           .border_t(2).border_b(2).border_color(CLEAR)
           .when(this.dropAt?.key === keyOf(task), el => this.dropAt.after ? el.border_b(2).border_color(t.accent) : el.border_t(2).border_color(t.accent))
           .when(this.drag?.active && this.drag.key === keyOf(task), el => el.opacity(0.4))
@@ -335,12 +354,15 @@ export default class OpsTasks extends View {
           .on_mouse_move((e, cx) => this.dragOver(task, g, e, cx))
           .when(this.picked === task, el => el.bg(t.hover).border_1().border_color(t.accent))
           .child(h_flex().gap(5).items_center().when(this.hinting && !this.picked, el => el.child(badge(task))).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
-            .child(div().cursor_pointer().text_color(t.accent).child("▶").on_click((_e, cx) => this.start(task, cx)))
+            .child(div().cursor_pointer().text_color(t.accent).child(session ? "↗" : "▶").on_click((_e, cx) => this.start(task, cx)))
             .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => this.openRedate(task)))
             .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => this.openComplete(task))))
           .child(h_flex().gap(8).text_color(t.dim)
+            .when(session, el => el.child(h_flex().flex_none().gap(4).items_center()
+              .child(div().size(6).rounded(3).bg(t[session.status] ?? t.accent))
+              .child(div().text_color(t[session.status] ?? t.accent).child(session.status || "running"))))
             .child(div().flex_1().min_w(0).truncate().child(task.project_name || task.origin || ""))
-            .when(g !== "Today" && g !== "Tomorrow" && g !== "No date", el => el.child(div().child(task.due_date || "")))))
+            .when(g !== "Today" && g !== "Tomorrow" && g !== "No date", el => el.child(div().child(task.due_date || "")))); })
       ])));
   }
 }
