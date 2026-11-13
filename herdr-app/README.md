@@ -7,13 +7,13 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 - `mods/ops-tasks` - Tasks panel over the `ops-tasks` CLI
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play
 - `keys.json` - binds Cmd+Shift+N to the session launcher, Cmd+Shift+E to run-once and Cmd+Shift+M to demo mode
-- `layouts/Demo.json` - demo mode's screen: only the shown tab's panes, no sidebar, agents list, tab bar, panels or status bar, and notifications dropped
+- `layouts/Demo.json` - demo mode's screen: Parker without the sidebar, the tab bar showing Files and Changes in place of Tasks, Jobs and Artifacts, and notifications dropped
 - `mods/demo-mode` - Cmd+Shift+M toggles demo mode: switches to the `demo` space (made in `~/demo` if missing) in the Demo layout, and back to the previous layout and space. While Demo shows, the keys that jump to other agents, spaces, layouts or the picker go to the terminal instead
 - `mods/demo-quiet` - the Demo layout's notification mod, which drops every notification so no session name shows mid-demo
 - `mods/run-once` - Cmd+Shift+E popup: type one command (demo-on, demo-off), it runs in zsh and closes
 - `mods/jobs` - Jobs panel
 - `mods/revive` - Cmd+Shift+R popup: recently killed terminals with their last screen; Enter resumes the Claude/Codex session (or reopens the shell) in a new tab
-- `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons
+- `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons (with `props.demo`, Files and Changes only)
 - `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
 
 To link on a new machine:
