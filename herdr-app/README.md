@@ -22,3 +22,5 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 for m in ops-tasks jobs my-tabs usage-limits session-launcher run-once revive; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
+
+Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.
