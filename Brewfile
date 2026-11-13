@@ -6,7 +6,6 @@ brew "stow"                  # dotfile symlinking
 
 # Shell & prompt
 brew "starship"
-brew "fish"
 brew "direnv"
 
 # Terminal utilities
