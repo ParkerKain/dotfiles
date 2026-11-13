@@ -1,10 +1,14 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { exec, home, appHome, readTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused } from "herdr";
+import { exec, home, appHome, readTextFile, writeTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused } from "herdr";
 
 const REFRESH = "ops-tasks.refresh";
 const HINTS = "ops-tasks.hints";
 const cli = () => `${home()}/go/bin/ops-tasks`;
+// Hand-dragged order, kept per task across refreshes and restarts.
+const orderFile = () => `${appHome()}/ops-tasks-order.json`;
+const keyOf = (task) => `${task.source}:${task.kind}:${task.id}`;
+const CLEAR = "#00000000";
 const refArgs = (task) => ["--source", task.source, "--kind", task.kind, "--id", String(task.id)];
 const localDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
@@ -84,6 +88,13 @@ export default class OpsTasks extends View {
         if (command === "hints") this.startHints();
         cx.notify();
       }
+    });
+    // Drag to reorder: press a row, move past 4px, release on another row in the same section.
+    this.order = []; this.orderText = null; this.drag = null; this.dropAt = null;
+    cx.spawn(async cx => {
+      this.orderText = await readTextFile(orderFile()).catch(() => null);
+      try { this.order = JSON.parse(this.orderText ?? "[]"); } catch { this.order = []; }
+      cx.notify();
     });
     this.load(cx);
     cx.timer.every(120000, cx => this.load(cx));
@@ -173,6 +184,40 @@ export default class OpsTasks extends View {
     if (exact) { this.picked = exact[1]; this.typed = ""; } else this.typed = typed;
   }
 
+  saveOrder(keys) {
+    this.order = keys;
+    const text = JSON.stringify(keys);
+    const write = async (retry) => {
+      try { await writeTextFile(orderFile(), text, this.orderText); this.orderText = text; }
+      catch (e) {
+        // Another panel saved first: take its snapshot and write ours over it once.
+        if (!retry) { this.orderText = await readTextFile(orderFile()).catch(() => null); return write(true); }
+        this.error = `Could not save task order: ${e?.message ?? e}`;
+      }
+    };
+    return write(false);
+  }
+
+  dragOver(task, g, e, cx) {
+    const drag = this.drag;
+    if (!drag) return;
+    if (!drag.active) { if (Math.abs(e.position.y - drag.y) < 4) return; drag.active = true; }
+    const key = keyOf(task), after = e.local_position.y > e.bounds.height / 2;
+    const next = drag.group === g && key !== drag.key ? { key, after } : null;
+    if (next?.key !== this.dropAt?.key || next?.after !== this.dropAt?.after) { this.dropAt = next; cx.notify(); }
+  }
+
+  endDrag(cx) {
+    const drag = this.drag, drop = this.dropAt;
+    this.drag = null; this.dropAt = null;
+    if (drag?.active && drop) {
+      const keys = this.ordered.map(keyOf).filter(k => k !== drag.key);
+      const at = keys.indexOf(drop.key);
+      if (at >= 0) { keys.splice(drop.after ? at + 1 : at, 0, drag.key); cx.spawn(async cx => { await this.saveOrder(keys); cx.notify(); }); }
+    }
+    cx.notify();
+  }
+
   openRedate(task) { openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: task.kind === "project" ? 210 : 190, props: { reschedule: task } }); }
   openComplete(task) { openOverlay({ mod: "ops-tasks", kind: "dialog", width: 390, height: 180, props: { complete: task } }); }
 
@@ -245,6 +290,9 @@ export default class OpsTasks extends View {
     const groups = ["Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
     const rows = Object.fromEntries(groups.map(g => [g, []]));
     for (const task of this.tasks) rows[group(task, today, tomorrow, end)].push(task);
+    // Within a section, dragged tasks keep their place; tasks never dragged follow, in CLI order.
+    const rank = new Map(this.order.map((k, i) => [k, i]));
+    for (const g of groups) rows[g] = rows[g].map((task, i) => [rank.get(keyOf(task)) ?? this.order.length + i, task]).sort((a, b) => a[0] - b[0]).map(([, task]) => task);
     const heading = (g, first) => {
       const tone = t[TONE[g]] ?? t.muted;
       return h_flex().id(`heading-${g}`).px(5).gap(7).items_center().when(!first, el => el.mt(10))
@@ -260,7 +308,7 @@ export default class OpsTasks extends View {
       else if (this.hadFocus) { this.hinting = false; this.picked = null; this.typed = ""; }
     } else this.hadFocus = false;
     // Labels follow display order, so the nearest tasks get single letters.
-    const ordered = groups.flatMap(g => rows[g]), names = labels(ordered.length);
+    const ordered = this.ordered = groups.flatMap(g => rows[g]), names = labels(ordered.length);
     this.hintMap = ordered.map((task, i) => [names[i], task]);
     const labelOf = new Map(this.hintMap.map(([label, task]) => [task, label]));
     const badge = (task) => {
@@ -270,6 +318,9 @@ export default class OpsTasks extends View {
     };
     return v_flex().id("ops-tasks").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_size(12)
       .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key, cx); cx.stop_propagation(); cx.notify(); })
+      .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
+      // A release outside the panel never reaches us, so leaving it cancels the drag.
+      .on_hover((hovered, cx) => { if (!hovered && this.drag) { this.drag = null; this.dropAt = null; cx.notify(); } })
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().font_semibold().text_color(t.foreground).child(this.hinting ? (this.picked ? "1 start · 2 move · 3 done · Esc" : `Pick a task${this.typed ? ` · ${this.typed}` : ""} · Esc`) : `Tasks · ${this.tasks.length}`))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
@@ -277,6 +328,11 @@ export default class OpsTasks extends View {
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(groups.filter(g => rows[g].length).flatMap((g, i) => [
         heading(g, i === 0),
         ...rows[g].map(task => v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
+          .border_t(2).border_b(2).border_color(CLEAR)
+          .when(this.dropAt?.key === keyOf(task), el => this.dropAt.after ? el.border_b(2).border_color(t.accent) : el.border_t(2).border_color(t.accent))
+          .when(this.drag?.active && this.drag.key === keyOf(task), el => el.opacity(0.4))
+          .on_mouse_down("left", e => { this.drag = { key: keyOf(task), group: g, y: e.position.y, active: false }; })
+          .on_mouse_move((e, cx) => this.dragOver(task, g, e, cx))
           .when(this.picked === task, el => el.bg(t.hover).border_1().border_color(t.accent))
           .child(h_flex().gap(5).items_center().when(this.hinting && !this.picked, el => el.child(badge(task))).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
             .child(div().cursor_pointer().text_color(t.accent).child("▶").on_click((_e, cx) => this.start(task, cx)))
