@@ -7,6 +7,7 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 - `mods/ops-tasks` - Tasks panel over the `ops-tasks` CLI
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt
 - Calendar panel (`day-view` mod) - source in parker-agent-kit `calendar/herdr-mod/day-view`, symlinked into `~/.config/herdr-app/mods/day-view`. Cmd+Shift+C toggles it
+- `themes/` - 67 color themes for Herdr's theme picker (Settings > Look, or `Use a theme` in the Cmd+Shift+P palette). `rose-pine-moon.json` is hand-tuned, the rest are converted from Ghostty's bundled themes by `themes/import-ghostty.py` (edit its list and rerun)
 - `keys.json` - binds Cmd+Shift+N to the session launcher, Cmd+Shift+E to run-once and Cmd+Shift+M to demo mode
 - `layouts/Demo.json` - demo mode's screen: Parker without the sidebar, the tab bar showing Files and Changes in place of Tasks, Jobs and Artifacts, and notifications dropped
 - `mods/demo-mode` - Cmd+Shift+M toggles demo mode: the Demo layout in the current space (open the space you're demoing first), and back to the previous layout. While Demo shows, the keys that jump to other agents, spaces, layouts or the picker go to the terminal instead
@@ -25,6 +26,7 @@ ln -sf $D/settings.json $H/settings.json
 ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
+for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
 for m in ops-tasks jobs my-tabs usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
