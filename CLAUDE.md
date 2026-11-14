@@ -7,11 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > | File | Stowed to | Scope | Edit it when… |
 > |------|-----------|-------|---------------|
 > | `CLAUDE.md` (this file) | *not stowed* (excluded via `.stow-local-ignore`) | repo-only — read by Claude Code when working **inside this repo** | the instruction is about the dotfiles repo itself (structure, how to apply changes, stow behavior) |
-> | `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | **global** — read by Claude Code in **every** project | rarely: it only imports `context/parker.md` from the private `devclarityai/parker-agent-kit` repo. Put personal preferences and global conventions there, so Codex gets them too. |
+> | `.claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | **global** — read by Claude Code in **every** project | rarely: it only imports `context/parker.md` and `context/local.md` from the private `devclarityai/parker-agent-kit` repo. Put personal preferences and global conventions there, so Codex gets them too. |
 >
 > This file is deliberately kept out of stow so it does not land at `~/CLAUDE.md` and get treated as a home-level instruction file. The git patterns in `.stow-local-ignore` are re-listed there because a custom ignore file replaces stow's built-in defaults.
 
 ## What this repo is
+
+Agent-facing pieces (context, skills, the CLIs skills call, and Herdr mods those skills drive) live in parker-agent-kit. This repo holds machine config, including the Herdr app's keys, layouts, settings and UI-only mods. The kit README's "What goes here versus dotfiles" section has the full rule.
+
 
 Personal dotfiles for macOS. Configs are symlinked (or copied) from here into their expected locations. There is no build system or install script — changes take effect by editing files directly (since they're already symlinked) or by re-sourcing the relevant shell file.
 

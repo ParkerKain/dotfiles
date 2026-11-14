@@ -1,6 +1,9 @@
 # herdr-app
 
-Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-app/`:
+Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-app/`.
+
+Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a parker-agent-kit CLI drives (Calendar, Jobs, Draft review, Report review, Artifacts) lives in parker-agent-kit beside that code, and its `scripts/link.sh` links it. See "What goes here versus dotfiles" in the kit README.
+
 
 - `settings.json` - zoom, sounds, fonts, theme
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the Tasks, Jobs and Calendar panels)
@@ -13,7 +16,7 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 - `mods/demo-mode` - Cmd+Shift+M toggles demo mode: the Demo layout in the current space (open the space you're demoing first), and back to the previous layout. While Demo shows, the keys that jump to other agents, spaces, layouts or the picker go to the terminal instead
 - `mods/demo-quiet` - the Demo layout's notification mod, which drops every notification so no session name shows mid-demo
 - `mods/run-once` - Cmd+Shift+E popup: type one command (demo-on, demo-off), it runs in zsh and closes
-- `mods/jobs` - Jobs panel
+- Jobs panel (`jobs` mod) - source in parker-agent-kit `jobs/herdr-mod/jobs`, linked by the kit's `link.sh`
 - `mods/revive` - Cmd+Shift+R popup: recently killed terminals with their last screen; Enter resumes the Claude/Codex session (or reopens the shell) in a new tab
 - `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons (with `props.demo`, Files and Changes only)
 - `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
@@ -27,7 +30,7 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
 for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
-for m in ops-tasks jobs my-tabs usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in ops-tasks my-tabs usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
 Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.
