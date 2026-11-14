@@ -80,7 +80,7 @@ export default class Jobs extends View {
           const h = await exec(script, ["status"], { timeout: 20000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
           let out = null;
           try { out = JSON.parse(h.stdout); } catch { /* reported below */ }
-          if (out?.ok) hooks.push(...out.hooks.map((hook) => ({ ...hook, script })));
+          if (out?.ok && Array.isArray(out.hooks)) hooks.push(...out.hooks.map((hook) => ({ ...hook, script })));
           else errors.push(`${script.split("/").pop()}: ${h.stderr.trim() || "status failed"}`);
         }
         this.jobs = data.jobs; this.hooks = hooks; this.error = errors.length ? errors.join("\n") : null;
