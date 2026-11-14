@@ -3,7 +3,7 @@
   "sounds": {
     "enabled": true,
     "done": "/Users/parker/dotfiles/herdr/sounds/blow.mp3",
-    "blocked": "/Users/parker/dotfiles/herdr/sounds/blow.mp3"
+    "blocked": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3"
   },
   "font": "JetBrains Mono",
   "font_size": 13.0,
