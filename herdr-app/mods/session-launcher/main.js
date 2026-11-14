@@ -23,6 +23,24 @@ function output(result) {
   return body.structured_output ?? JSON.parse(body.result);
 }
 
+// Writes the clipboard's image to a PNG file. Returns false when it holds no image.
+async function saveClipboardImage(path) {
+  const script = [
+    "try",
+    "  set png to (the clipboard as «class PNGf»)",
+    "on error",
+    "  return \"none\"",
+    "end try",
+    `set f to open for access (POSIX file ${JSON.stringify(path)}) with write permission`,
+    "set eof f to 0",
+    "write png to f",
+    "close access f",
+    "return \"ok\""
+  ].join("\n");
+  const result = await exec("osascript", ["-e", script], { timeout: 10000 });
+  return result.code === 0 && result.stdout.trim() === "ok";
+}
+
 function cleanName(value, fallback) {
   return String(value || fallback).trim().slice(0, 60) || fallback;
 }
@@ -37,10 +55,13 @@ export default class SessionLauncher extends View {
     this.agent = "claude";
     this.busy = false;
     this.error = "";
+    // Pasted images: "[Image #N]" chip text -> saved PNG path.
+    this.images = new Map();
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.input = TextareaState.new({ value: task ? "" : this.text, placeholder: task ? "Anything to add to the prompt? (optional)" : "What do you want to work on?", rows: 4 });
     this.input.on("change", (_e, cx) => { if (task) this.extra = this.input.value(); else this.text = this.input.value(); this.error = ""; cx.notify(); });
+    this.input.on("paste_other", (_e, cx) => this.pasteImage(cx));
     this.input.focus();
     cx.spawn(async cx => {
       for (;;) {
@@ -49,6 +70,28 @@ export default class SessionLauncher extends View {
         if (command === "toggle-agent") this.toggleAgent(cx);
       }
     });
+  }
+
+  pasteImage(cx) {
+    if (this.busy) return;
+    cx.spawn(async cx => {
+      const dir = `${home()}/.cache/herdr-app/pasted-images`;
+      const path = `${dir}/${Date.now()}.png`;
+      await exec("mkdir", ["-p", dir]);
+      if (!(await saveClipboardImage(path))) { this.error = "The clipboard has no image to paste."; cx.notify(); return; }
+      const label = `[Image #${this.images.size + 1}]`;
+      this.images.set(label, path);
+      this.input.replace_with_token({ id: label, text: label, label });
+      this.error = "";
+      cx.notify();
+    });
+  }
+
+  // Swaps each image chip still in the text for the image's file path, so the agent can open it.
+  withImages(text) {
+    let out = text;
+    for (const [label, path] of this.images) out = out.split(label).join(`${label} (${path})`);
+    return out;
   }
 
   toggleAgent(cx) {
@@ -62,8 +105,9 @@ export default class SessionLauncher extends View {
     if (this.busy || !this.text.trim()) return;
     this.busy = true;
     this.error = "";
-    const extra = this.task ? this.extra.trim() : "";
-    const request = extra ? `${this.text.trim()}\n\nAdditional instructions from me:\n${extra}` : this.text.trim();
+    const extra = this.task ? this.withImages(this.extra.trim()) : "";
+    const text = this.task ? this.text.trim() : this.withImages(this.text.trim());
+    const request = extra ? `${text}\n\nAdditional instructions from me:\n${extra}` : text;
     const selectedAgent = this.agent;
     cx.notify();
     cx.spawn(async cx => {
@@ -145,12 +189,12 @@ export default class SessionLauncher extends View {
       })
       .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-      .when(Boolean(this.task), el => el.child(div().flex_shrink_0().text_size(11).text_color(t.dim).child(this.busy ? "Choosing a space, agent, and layout…" : "⌘⇧S start · Esc cancel · Enter adds a line")))
+      .when(Boolean(this.task), el => el.child(div().flex_shrink_0().text_size(11).text_color(t.dim).child(this.busy ? "Choosing a space, agent, and layout…" : "⌘⇧S start · Esc cancel · Enter adds a line · ⌘V pastes an image")))
       .when(!this.task, el => el.child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · Enter adds a line"))))
+        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · ⌘V pastes an image"))))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
