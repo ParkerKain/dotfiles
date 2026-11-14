@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frosted-glass look for Herdr: a sharp wallpaper on the desktop, a blurred copy behind Herdr.
+"""Image background behind Herdr's panes, blurred by default, with translucent terminals and panels.
 
 Usage:
   frost.py <image>            put this image behind the panes (blurred), rebuild the Frosted layout
