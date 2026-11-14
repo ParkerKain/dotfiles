@@ -80,7 +80,8 @@ export default class Wallpaper extends View {
     this.error = "";
     cx.notify();
     cx.spawn(async cx => {
-      const r = await exec("python3", [`${home()}/dotfiles/herdr-app/frost.py`, w.path, "--blur", String(this.blur)], { timeout: 60000 });
+      // Through an interactive zsh so python3 is the shell's (Homebrew, with Pillow), not /usr/bin's.
+      const r = await exec("zsh", ["-ic", 'python3 "$@"', "zsh", `${home()}/dotfiles/herdr-app/frost.py`, w.path, "--blur", String(this.blur)], { cwd: home(), timeout: 60000 });
       this.busy = false;
       if (r.code !== 0) {
         this.error = (r.stderr.trim() || r.stdout.trim()).split("\n").pop();
