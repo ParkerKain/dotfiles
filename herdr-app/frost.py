@@ -27,8 +27,11 @@ LOOK = {
     "terminal_opacity": 0.5,
     "sidebar": "#19172480",
     "pane": "#2321362e",
-    "colors": {"border": "#e0def426", "chrome": "#1917248c", "surface": "#2321368c"},
+    "colors": {"border": "#e0def426", "chrome": "#1917248c", "surface": "#2321368c", "background": "#2321368c"},
 }
+
+
+GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts"}
 
 
 def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
@@ -65,6 +68,9 @@ def build_layout(background: Path) -> None:
         pane = node.get("content", {}).get("pane") if isinstance(node.get("content"), dict) else None
         if pane:
             pane["background"] = LOOK["pane"]
+        # Panel mods paint theme().background, which stays opaque. With glass they paint chrome instead.
+        if node.get("id") in GLASS_PANELS:
+            node["content"]["props"] = {**node["content"].get("props", {}), "glass": True}
         for child in node.get("children", []):
             walk(child)
 

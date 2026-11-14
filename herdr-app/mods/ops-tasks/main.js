@@ -343,7 +343,7 @@ export default class OpsTasks extends View {
       return div().flex_none().px(4).rounded(3).font_semibold()
         .bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(label);
     };
-    return v_flex().id("ops-tasks").track_focus(this.handle).size_full().min_h(0).bg(t.background).text_size(12)
+    return v_flex().id("ops-tasks").track_focus(this.handle).size_full().min_h(0).bg(props()?.glass ? t.chrome : t.background).text_size(12)
       .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key, cx); cx.stop_propagation(); cx.notify(); })
       .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
       // A release outside the panel never reaches us, so leaving it cancels the drag.
