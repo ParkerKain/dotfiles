@@ -162,7 +162,7 @@ export default class OpsTasks extends View {
     cx.spawn(async cx => {
       try {
         const data = decode(await exec(cli(), ["prompt", ...refArgs(task), "--json"]));
-        openOverlay({ mod: "session-launcher", kind: "dialog", width: 560, height: 255, props: { task: { title: task.title, prompt: data.prompt, slug: data.slug, ref: keyOf(task), folder: await this.directory() } } });
+        openOverlay({ mod: "session-launcher", kind: "dialog", width: 560, height: 300, props: { task: { title: task.title, prompt: data.prompt, slug: data.slug, ref: keyOf(task), folder: await this.directory() } } });
         this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
       cx.notify();

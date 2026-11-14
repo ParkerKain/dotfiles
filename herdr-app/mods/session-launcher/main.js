@@ -135,23 +135,23 @@ export default class SessionLauncher extends View {
   render() {
     const t = theme();
     const p = props() ?? {};
-    return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().p(18).gap(12).bg(t.popover)
+    return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().overflow_hidden().p(18).gap(12).bg(t.popover)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
       })
-      .child(div().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
+      .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(this.task
-        ? div().flex_1().text_color(t.muted).child(this.busy ? "Choosing a space, agent, and layout…" : "Ready to launch")
-        : Textarea.new(this.input).flex_1().p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-      .when(!this.task, el => el.child(h_flex().items_center().gap(8)
+        ? div().flex_1().min_h(0).text_color(t.muted).child(this.busy ? "Choosing a space, agent, and layout…" : "Ready to launch")
+        : Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+      .when(!this.task, el => el.child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
         .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · Enter adds a line"))))
-      .when(Boolean(this.error), el => el.child(div().text_color(t.blocked).child(this.error)))
-      .child(h_flex().justify_end().gap(10)
+      .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
+      .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
         .when(!this.task || Boolean(this.error), el => el.child(div().cursor_pointer().px(12).py(7).rounded(7).bg(t.solid).text_color(t.solid_foreground).child(this.busy ? "Starting…" : "Start").on_click((_e, cx) => this.start(cx)))));
   }
