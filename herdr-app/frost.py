@@ -2,8 +2,9 @@
 """Frosted-glass look for Herdr: a sharp wallpaper on the desktop, a blurred copy behind Herdr.
 
 Usage:
-  frost.py <image>            frost this wallpaper, set it on the desktop, rebuild the Frosted layout
-  frost.py <image> --no-desktop   leave the desktop wallpaper alone
+  frost.py <image>            put this image behind the panes (blurred), rebuild the Frosted layout
+  frost.py <image> --blur 0   the image sharp, unblurred
+  frost.py <image> --desktop  also set it as the macOS desktop wallpaper
   frost.py --list             wallpapers in ~/Pictures/wallpapers
 
 The Frosted layout is rebuilt from layouts/Parker.json on every run, so it keeps up with
@@ -80,10 +81,10 @@ def set_desktop(src: Path) -> None:
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("image", nargs="?", type=Path)
-    p.add_argument("--blur", type=float, default=90, help="blur radius in screen px (default 90)")
+    p.add_argument("--blur", type=float, default=90, help="blur radius in screen px, 0 for sharp (default 90)")
     p.add_argument("--tint", default="#232136", help="color mixed over the blur (default rose-pine-moon base)")
     p.add_argument("--tint-amount", type=float, default=0.2, help="0..1 (default 0.35)")
-    p.add_argument("--no-desktop", action="store_true")
+    p.add_argument("--desktop", action="store_true", help="also set the sharp wallpaper on the macOS desktop")
     p.add_argument("--list", action="store_true")
     args = p.parse_args()
 
@@ -95,7 +96,7 @@ def main():
     src = args.image.expanduser().resolve()
     bg = frost(src, args.blur, args.tint, args.tint_amount)
     build_layout(bg)
-    if not args.no_desktop:
+    if args.desktop:
         set_desktop(src)
     print(f"frosted {src.name} -> {bg}")
 
