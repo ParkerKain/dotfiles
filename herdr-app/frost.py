@@ -35,7 +35,7 @@ LOOK = {
 }
 
 
-GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts"}
+GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"}
 
 
 def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:

@@ -43,6 +43,7 @@
     "cmd-shift-j": "my-tabs.panel-jobs",
     "cmd-shift-c": "my-tabs.panel-day-view",
     "cmd-shift-a": "my-tabs.panel-artifacts",
+    "cmd-shift-k": "my-tabs.panel-call-sheet",
     "cmd-r": "my-tabs.refresh",
     "cmd-=": "app.zoom_in",
     "cmd-+": "app.zoom_in",

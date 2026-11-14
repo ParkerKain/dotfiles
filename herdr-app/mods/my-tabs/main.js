@@ -121,7 +121,7 @@ export default class Tabs extends View {
     const panel = find(root, "panel"), body = find(root, "panel-body");
     // The Demo layout passes {demo: true}: Files and Changes only, none of the work panels.
     const demo = Boolean(props()?.demo);
-    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts"])];
+    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"])];
     this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
@@ -142,7 +142,8 @@ export default class Tabs extends View {
       .when(!demo, el => el.child(panelButton("ops-tasks", "Tasks", "mods/workspace-chrome/check.svg"))
         .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg"))
         .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg"))
-        .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg")))
+        .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg"))
+        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

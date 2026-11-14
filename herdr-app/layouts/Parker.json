@@ -168,6 +168,13 @@
                       "content": {
                         "mod": "artifacts"
                       }
+                    },
+                    {
+                      "id": "call-sheet",
+                      "type": "block",
+                      "content": {
+                        "mod": "call-sheet"
+                      }
                     }
                   ],
                   "active": "files"
