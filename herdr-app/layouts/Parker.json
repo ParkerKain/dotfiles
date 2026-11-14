@@ -156,6 +156,13 @@
                       }
                     },
                     {
+                      "id": "day-view",
+                      "type": "block",
+                      "content": {
+                        "mod": "day-view"
+                      }
+                    },
+                    {
                       "id": "artifacts",
                       "type": "block",
                       "content": {
