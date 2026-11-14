@@ -7,7 +7,7 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 
 - `settings.json` - zoom, sounds, fonts, theme
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the Tasks, Jobs and Calendar panels)
-- `mods/ops-tasks` - Tasks panel over the `ops-tasks` CLI
+- Tasks panel (`ops-tasks` mod) - source in parker-agent-kit `tasks/herdr-mod/ops-tasks`, linked by its `scripts/link.sh`
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt
 - Calendar panel (`day-view` mod) - source in parker-agent-kit `calendar/herdr-mod/day-view`, symlinked into `~/.config/herdr-app/mods/day-view`. Cmd+Shift+C toggles it
 - `themes/` - 67 color themes for Herdr's theme picker (Settings > Look, or `Use a theme` in the Cmd+Shift+P palette). `rose-pine-moon.json` is hand-tuned, the rest are converted from Ghostty's bundled themes by `themes/import-ghostty.py` (edit its list and rerun)
@@ -31,7 +31,7 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
 for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
-for m in ops-tasks my-tabs usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in my-tabs usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
 Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.
