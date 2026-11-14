@@ -5,7 +5,7 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 - `settings.json` - zoom, sounds, fonts, theme
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the Tasks and Jobs panels)
 - `mods/ops-tasks` - Tasks panel over the `ops-tasks` CLI
-- `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play
+- `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt
 - `keys.json` - binds Cmd+Shift+N to the session launcher, Cmd+Shift+E to run-once and Cmd+Shift+M to demo mode
 - `layouts/Demo.json` - demo mode's screen: Parker without the sidebar, the tab bar showing Files and Changes in place of Tasks, Jobs and Artifacts, and notifications dropped
 - `mods/demo-mode` - Cmd+Shift+M toggles demo mode: the Demo layout in the current space (open the space you're demoing first), and back to the previous layout. While Demo shows, the keys that jump to other agents, spaces, layouts or the picker go to the terminal instead

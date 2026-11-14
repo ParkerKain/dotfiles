@@ -32,14 +32,16 @@ export default class SessionLauncher extends View {
     const task = props()?.task;
     this.task = task ?? null;
     this.text = task?.prompt ?? "";
+    // Tasks Play: optional extra instructions appended to the task's prompt.
+    this.extra = "";
     this.agent = "claude";
     this.busy = false;
     this.error = "";
     this.handle = cx.focus_handle();
     this.handle.focus();
-    this.input = TextareaState.new({ value: this.text, placeholder: "What do you want to work on?", rows: 4 });
-    this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.error = ""; cx.notify(); });
-    if (!task) this.input.focus();
+    this.input = TextareaState.new({ value: task ? "" : this.text, placeholder: task ? "Anything to add to the prompt? (optional)" : "What do you want to work on?", rows: 4 });
+    this.input.on("change", (_e, cx) => { if (task) this.extra = this.input.value(); else this.text = this.input.value(); this.error = ""; cx.notify(); });
+    this.input.focus();
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
@@ -47,7 +49,6 @@ export default class SessionLauncher extends View {
         if (command === "toggle-agent") this.toggleAgent(cx);
       }
     });
-    if (task) cx.timer.after(0, cx => this.start(cx));
   }
 
   toggleAgent(cx) {
@@ -61,7 +62,8 @@ export default class SessionLauncher extends View {
     if (this.busy || !this.text.trim()) return;
     this.busy = true;
     this.error = "";
-    const request = this.text.trim();
+    const extra = this.task ? this.extra.trim() : "";
+    const request = extra ? `${this.text.trim()}\n\nAdditional instructions from me:\n${extra}` : this.text.trim();
     const selectedAgent = this.agent;
     cx.notify();
     cx.spawn(async cx => {
@@ -142,9 +144,8 @@ export default class SessionLauncher extends View {
         if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
       })
       .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
-      .child(this.task
-        ? div().flex_1().min_h(0).text_color(t.muted).child(this.busy ? "Choosing a space, agent, and layout…" : "Ready to launch")
-        : Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+      .child(Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+      .when(Boolean(this.task), el => el.child(div().flex_shrink_0().text_size(11).text_color(t.dim).child(this.busy ? "Choosing a space, agent, and layout…" : "⌘⇧S start · Esc cancel · Enter adds a line")))
       .when(!this.task, el => el.child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
@@ -153,6 +154,6 @@ export default class SessionLauncher extends View {
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
-        .when(!this.task || Boolean(this.error), el => el.child(div().cursor_pointer().px(12).py(7).rounded(7).bg(t.solid).text_color(t.solid_foreground).child(this.busy ? "Starting…" : "Start").on_click((_e, cx) => this.start(cx)))));
+        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(t.solid).text_color(t.solid_foreground).child(this.busy ? "Starting…" : "Start").on_click((_e, cx) => this.start(cx))));
   }
 }
