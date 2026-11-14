@@ -6,6 +6,7 @@ Usage:
   frost.py <image> --blur 0   the image sharp, unblurred
   frost.py <image> --desktop  also set it as the macOS desktop wallpaper
   frost.py --list             wallpapers in ~/Pictures/wallpapers
+  frost.py --thumbs           rebuild the wallpaper picker's thumbnails and index (Cmd+Shift+B)
 
 The Frosted layout is rebuilt from layouts/Parker.json on every run, so it keeps up with
 Parker's blocks and only differs in look. Switch to it with Cmd+Shift+L or Settings > Look.
@@ -21,6 +22,9 @@ HERE = Path(__file__).resolve().parent
 HOME = Path.home() / ".config/herdr-app"
 WALLPAPERS = Path.home() / "Pictures/wallpapers"
 SCREEN = (3024, 1964)  # built-in display, px
+# The picker's thumbnails. A real folder under mods/: Herdr doesn't load images through a symlink.
+THUMBS = HOME / "mods/wallpaper-thumbs"
+IMAGE_TYPES = {".jpg", ".jpeg", ".png"}
 
 # Translucent overrides on top of the theme. Alpha is the last two hex digits.
 LOOK = {
@@ -79,6 +83,34 @@ def build_layout(background: Path) -> None:
     (HOME / "layouts/Frosted.json").write_text(json.dumps(layout, indent=2) + "\n")
 
 
+def wallpapers() -> list[Path]:
+    seen, out = set(), []
+    for f in sorted(WALLPAPERS.rglob("*")):
+        if f.suffix.lower() in IMAGE_TYPES and f.stem not in seen:
+            seen.add(f.stem)
+            out.append(f)
+    return out
+
+
+def build_thumbs() -> None:
+    THUMBS.mkdir(parents=True, exist_ok=True)
+    for old in THUMBS.glob("*.jpg"):
+        old.unlink()
+    index = []
+    for i, f in enumerate(wallpapers()):
+        im = Image.open(f).convert("RGB")
+        im.draft("RGB", (640, 400))
+        scale = max(320 / im.width, 200 / im.height)
+        im = im.resize((round(im.width * scale) + 1, round(im.height * scale) + 1), Image.Resampling.LANCZOS)
+        left, top = (im.width - 320) // 2, (im.height - 200) // 2
+        thumb = THUMBS / f"{i:03d}.jpg"
+        im.crop((left, top, left + 320, top + 200)).save(thumb, quality=85)
+        index.append({"path": str(f), "name": f.stem.replace("-", " "), "group": f.parent.name,
+                      "thumb": str(thumb.relative_to(HOME))})
+    (THUMBS / "index.json").write_text(json.dumps(index, indent=1) + "\n")
+    print(f"{len(index)} thumbnails in {THUMBS}")
+
+
 def set_desktop(src: Path) -> None:
     script = f'tell application "System Events" to tell every desktop to set picture to POSIX file "{src}"'
     subprocess.run(["osascript", "-e", script], check=True)
@@ -89,21 +121,26 @@ def main():
     p.add_argument("image", nargs="?", type=Path)
     p.add_argument("--blur", type=float, default=90, help="blur radius in screen px, 0 for sharp (default 90)")
     p.add_argument("--tint", default="#232136", help="color mixed over the blur (default rose-pine-moon base)")
-    p.add_argument("--tint-amount", type=float, default=0.2, help="0..1 (default 0.35)")
+    p.add_argument("--tint-amount", type=float, default=0.2, help="0..1 (default 0.2)")
     p.add_argument("--desktop", action="store_true", help="also set the sharp wallpaper on the macOS desktop")
     p.add_argument("--list", action="store_true")
+    p.add_argument("--thumbs", action="store_true")
     args = p.parse_args()
 
+    if args.thumbs:
+        build_thumbs()
+        return
     if args.list or not args.image:
-        for f in sorted(WALLPAPERS.rglob("*")):
-            if f.suffix.lower() in {".jpg", ".jpeg", ".png", ".heic"}:
-                print(f)
+        for f in wallpapers():
+            print(f)
         return
     src = args.image.expanduser().resolve()
     bg = frost(src, args.blur, args.tint, args.tint_amount)
     build_layout(bg)
     if args.desktop:
         set_desktop(src)
+    THUMBS.mkdir(parents=True, exist_ok=True)
+    (THUMBS / "current.json").write_text(json.dumps({"path": str(src), "blur": args.blur}) + "\n")
     print(f"frosted {src.name} -> {bg}")
 
 

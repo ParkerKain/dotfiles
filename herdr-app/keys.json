@@ -70,7 +70,8 @@
     "ctrl-right": "pane.go:right",
     "ctrl-up": "pane.go:up",
     "ctrl-down": "pane.go:down",
-    "cmd-shift-m": "mod.open:demo-mode"
+    "cmd-shift-m": "mod.open:demo-mode",
+    "cmd-shift-b": "mod.open:wallpaper"
   },
   "layout:Demo": {
     "cmd-]": "terminal",
