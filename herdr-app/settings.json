@@ -6,9 +6,10 @@
     "blocked": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3"
   },
   "font": "JetBrains Mono",
-  "font_size": 13.0,
+  "font_size": 13,
   "font_ligatures": true,
   "ui_font": "Iosevka Nerd Font",
-  "minimum_contrast": 1.0,
-  "theme": "rose-pine-moon"
+  "minimum_contrast": 1,
+  "theme": "rose-pine-moon",
+  "appearance": "dark"
 }
