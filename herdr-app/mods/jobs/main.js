@@ -15,7 +15,8 @@ function labels(n) {
 }
 
 const cli = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
-const mailHook = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/mail_hook.py`;
+// One script per hook; each answers `status` with {ok, hooks: [...]} and takes check/install/uninstall.
+const HOOK_SCRIPTS = () => ["mail_hook.py", "meeting_hook.py"].map((f) => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/${f}`);
 const DAYS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATE = {
   working: ["Working", "working"], blocked: ["Needs you", "blocked"], done: ["Done", "done"],
@@ -73,11 +74,16 @@ export default class Jobs extends View {
         let data;
         try { data = JSON.parse(r.stdout); } catch { throw new Error(r.stderr.trim().split("\n").pop() || `job status exited ${r.code}`); }
         if (!data.ok) throw new Error(r.stderr.trim() || "job status failed");
-        const h = await exec(mailHook(), ["status"], { timeout: 20000 });
-        let hooks;
-        try { hooks = JSON.parse(h.stdout); } catch { throw new Error(h.stderr.trim() || "hook status failed"); }
-        if (!hooks.ok) throw new Error(h.stderr.trim() || "hook status failed");
-        this.jobs = data.jobs; this.hooks = hooks.hooks; this.error = null;
+        // A failing hook script shows its error without hiding the other hooks.
+        const hooks = [], errors = [];
+        for (const script of HOOK_SCRIPTS()) {
+          const h = await exec(script, ["status"], { timeout: 20000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+          let out = null;
+          try { out = JSON.parse(h.stdout); } catch { /* reported below */ }
+          if (out?.ok) hooks.push(...out.hooks.map((hook) => ({ ...hook, script })));
+          else errors.push(`${script.split("/").pop()}: ${h.stderr.trim() || "status failed"}`);
+        }
+        this.jobs = data.jobs; this.hooks = hooks; this.error = errors.length ? errors.join("\n") : null;
       } catch (e) { this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
@@ -85,12 +91,12 @@ export default class Jobs extends View {
     });
   }
 
-  hookAction(command, cx) {
+  hookAction(hook, command, cx) {
     if (this.starting) return;
-    this.starting = "Mail inbox";
+    this.starting = hook.name;
     cx.notify();
     cx.spawn(async (cx) => {
-      const r = await exec(mailHook(), [command], { timeout: 90000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+      const r = await exec(hook.script, [command], { timeout: 90000 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
       let out = {};
       try { out = JSON.parse(r.stdout); } catch { /* reported below */ }
       this.error = out.ok ? null : (out.error || r.stderr.trim() || `${command} failed`);
@@ -118,7 +124,7 @@ export default class Jobs extends View {
   actions(item) {
     if (item.kind === "hook") {
       const hook = item.hook;
-      return [["1", "check now", cx => this.hookAction("check", cx)], ["2", hook.loaded ? "turn off" : "turn on", cx => this.hookAction(hook.loaded ? "uninstall" : "install", cx)]];
+      return [["1", "check now", cx => this.hookAction(hook, "check", cx)], ["2", hook.loaded ? "turn off" : "turn on", cx => this.hookAction(hook, hook.loaded ? "uninstall" : "install", cx)]];
     }
     const job = item.job, address = job.last?.address;
     return [["1", "run", cx => this.start(job, cx)], ...(address ? [["2", "go to session", () => run("agent.focus", { terminal: address })]] : [])];
@@ -206,9 +212,9 @@ export default class Jobs extends View {
           .child(div().text_color(check?.state === "error" ? t.blocked : hook.loaded ? t.done : t.dim)
             .child(hook.loaded ? check?.state === "error" ? "Check failed" : "On" : "Off"))
           .child(div().id("hook-check-now").px(4).cursor_pointer().text_color(busy ? t.dim : t.accent).child(busy ? "Checking…" : "Check now")
-            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction("check", cx); }))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction(hook, "check", cx); }))
           .child(div().id("hook-toggle").px(4).cursor_pointer().text_color(t.muted).child(hook.loaded ? "Turn off" : "Turn on")
-            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction(hook.loaded ? "uninstall" : "install", cx); })))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.hookAction(hook, hook.loaded ? "uninstall" : "install", cx); })))
         .child(div().text_color(t.muted).child(`Checks every ${hook.interval / 60} minutes`))
         .child(div().text_color(check?.state === "error" ? t.blocked : t.dim).child(checkText))
         .child(div().text_color(t.dim).child(fireText)
