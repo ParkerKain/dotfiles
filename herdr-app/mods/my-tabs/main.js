@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props } from "herdr";
+import { spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -32,7 +32,12 @@ export default class Tabs extends View {
   togglePanel(id) {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
-    else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
+    else {
+      const previous = id === "call-sheet" ? focused() : null;
+      run("layout.select", { stack: "panel-body", child: id });
+      run("layout.show", { id: "panel" });
+      if (id === "call-sheet") setShared("call-sheet.open", { at: Date.now(), pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: previous?.tab ?? null });
+    }
   }
 
   // Tasks, Jobs, Calendar and Artifacts reload when their "<id>.refresh" shared key changes.
