@@ -95,7 +95,7 @@ export default class SessionLauncher extends View {
   }
 
   toggleAgent(cx) {
-    if (this.busy || this.task) return;
+    if (this.busy) return;
     this.agent = this.agent === "claude" ? "codex" : "claude";
     this.input.focus();
     cx.notify();
@@ -191,12 +191,11 @@ export default class SessionLauncher extends View {
       })
       .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       .child(Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
-      .when(Boolean(this.task), el => el.child(div().flex_shrink_0().text_size(11).text_color(t.dim).child(this.busy ? "Choosing a space, agent, and layout…" : "⌘⇧S start · Esc cancel · Enter adds a line · ⌘V or ⌃V pastes an image")))
-      .when(!this.task, el => el.child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
+      .child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image"))))
+        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image")))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
