@@ -38,7 +38,8 @@ export default class Tabs extends View {
       run("layout.show", { id: "panel" });
       if (id === "call-sheet") {
         const at = Date.now(), tab = previous?.tab;
-        setShared("call-sheet.open", { at, pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: tab ?? null });
+        const opening = { at, pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: tab ?? null };
+        setShared("call-sheet.open", opening);
         const entryPane = panes().filter(p => p.tab === tab).at(-1)?.pane;
         const stillOpen = () => {
           const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
@@ -46,8 +47,14 @@ export default class Tabs extends View {
         };
         cx.timer.after(150, cx => {
           if (!stillOpen()) return;
+          // The newly shown mod must render before pane.go can hand it focus.
+          setShared("call-sheet.open", { ...opening, ready: true });
           if (entryPane) run("pane.focus", { pane: entryPane });
-          cx.timer.after(50, () => { if (stillOpen()) run("pane.go", { direction: "right" }); });
+          cx.timer.after(50, () => {
+            if (!stillOpen()) return;
+            setShared("call-sheet.open", { ...opening, ready: true, handoff: true });
+            run("pane.go", { direction: "right" });
+          });
         });
       }
     }
