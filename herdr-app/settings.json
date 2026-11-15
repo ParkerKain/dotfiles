@@ -1,15 +1,14 @@
 {
-  "zoom": 1.1,
-  "sounds": {
-    "enabled": true,
-    "done": "/Users/parker/dotfiles/herdr/sounds/blow.mp3",
-    "blocked": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3"
-  },
+  "appearance": "dark",
   "font": "JetBrains Mono",
-  "font_size": 13,
   "font_ligatures": true,
-  "ui_font": "Iosevka Nerd Font",
+  "font_size": 13,
   "minimum_contrast": 1,
+  "sounds": {
+    "blocked": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3",
+    "done": "/Users/parker/dotfiles/herdr/sounds/blow.mp3",
+    "enabled": true
+  },
   "theme": "rose-pine-moon",
-  "appearance": "dark"
+  "ui_font": "Iosevka Nerd Font"
 }

@@ -5,7 +5,7 @@ Config for the Herdr desktop app. Each item is symlinked into `~/.config/herdr-a
 Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a parker-agent-kit CLI drives (Calendar, Jobs, Draft review, Report review, Artifacts) lives in parker-agent-kit beside that code, and its `scripts/link.sh` links it. See "What goes here versus dotfiles" in the kit README.
 
 
-- `settings.json` - zoom, sounds, fonts, theme
+- `settings.json` - sounds, fonts, theme. Herdr saves the zoom here on every Cmd+= or Cmd+-, so a git clean filter (`settings-clean.py`, wired in `.gitattributes`) drops `zoom` and normalizes the rest before git sees it. Zoom stays local to each Mac
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the Tasks, Jobs and Calendar panels)
 - Tasks panel (`ops-tasks` mod) - source in parker-agent-kit `tasks/herdr-mod/ops-tasks`, linked by its `scripts/link.sh`
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt
@@ -27,6 +27,7 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 To link on a new machine:
 
 ```sh
+git -C ~/dotfiles config filter.herdr-settings.clean "python3 herdr-app/settings-clean.py"
 H=~/.config/herdr-app; D=~/dotfiles/herdr-app
 ln -sf $D/settings.json $H/settings.json
 ln -sf $D/keys.json $H/keys.json
