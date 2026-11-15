@@ -1,7 +1,7 @@
 {
   "global": {
     "cmd-q": "app.quit",
-    "cmd-h": "app.hide",
+    "cmd-h": "mod.open:keybind-help",
     "cmd-alt-h": "app.hide_others",
     "cmd-t": "tab.new",
     "cmd-w": "tab.close",
