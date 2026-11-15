@@ -21,7 +21,7 @@ export default class Tabs extends View {
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
-        if (command.startsWith("panel-")) this.togglePanel(command.slice(6));
+        if (command.startsWith("panel-")) this.togglePanel(command.slice(6), cx);
         if (command === "refresh") this.refreshPanel();
         if (command === "hints") this.hintPanel();
         cx.notify();
@@ -29,14 +29,27 @@ export default class Tabs extends View {
     });
   }
 
-  togglePanel(id) {
+  togglePanel(id, cx) {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
     else {
       const previous = id === "call-sheet" ? focused() : null;
       run("layout.select", { stack: "panel-body", child: id });
       run("layout.show", { id: "panel" });
-      if (id === "call-sheet") setShared("call-sheet.open", { at: Date.now(), pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: previous?.tab ?? null });
+      if (id === "call-sheet") {
+        const at = Date.now(), tab = previous?.tab;
+        setShared("call-sheet.open", { at, pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: tab ?? null });
+        const entryPane = panes().filter(p => p.tab === tab).at(-1)?.pane;
+        const stillOpen = () => {
+          const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+          return panel && !panel.hidden && body?.active === "call-sheet" && focused()?.tab === tab && shared("call-sheet.open")?.at === at;
+        };
+        cx.timer.after(150, cx => {
+          if (!stillOpen()) return;
+          if (entryPane) run("pane.focus", { pane: entryPane });
+          cx.timer.after(50, () => { if (stillOpen()) run("pane.go", { direction: "right" }); });
+        });
+      }
     }
   }
 
@@ -133,7 +146,7 @@ export default class Tabs extends View {
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
         .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
-        .on_click(() => this.togglePanel(id)).child(svg(icon).size(14)).child(label);
+        .on_click((_e, cx) => this.togglePanel(id, cx)).child(svg(icon).size(14)).child(label);
     };
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
