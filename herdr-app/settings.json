@@ -6,7 +6,7 @@
   "minimum_contrast": 1,
   "sounds": {
     "blocked": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3",
-    "done": "/Users/parker/dotfiles/herdr/sounds/blow.mp3",
+    "done": "/Users/parker/dotfiles/herdr/sounds/rising-two-note.mp3",
     "enabled": true
   },
   "theme": "rose-pine-moon",
