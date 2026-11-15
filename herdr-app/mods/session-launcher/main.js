@@ -190,7 +190,9 @@ export default class SessionLauncher extends View {
         if (e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
       })
       .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
-      .child(Textarea.new(this.input).flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background).text_color(t.foreground))
+      // Keep padding outside the native editor so its scroll viewport matches its visible height.
+      .child(v_flex().flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background)
+        .child(Textarea.new(this.input).flex_1().min_h(0).w_full().text_color(t.foreground)))
       .child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
