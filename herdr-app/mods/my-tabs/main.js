@@ -45,9 +45,13 @@ export default class Tabs extends View {
           return panel && !panel.hidden && body?.active === "call-sheet" && focused()?.tab === tab && shared("call-sheet.open")?.at === at;
         };
         cx.timer.after(150, cx => {
+          setShared("call-sheet.focus-trace", { stage: "first", open: !!stillOpen(), entryPane, focus: focused(), at });
           if (!stillOpen()) return;
           if (entryPane) run("pane.focus", { pane: entryPane });
-          cx.timer.after(50, () => { if (stillOpen()) run("pane.go", { direction: "right" }); });
+          cx.timer.after(50, () => {
+            setShared("call-sheet.focus-trace", { stage: "second", open: !!stillOpen(), focus: focused(), at });
+            if (stillOpen()) run("pane.go", { direction: "right" });
+          });
         });
       }
     }
