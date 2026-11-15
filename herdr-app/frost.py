@@ -40,16 +40,18 @@ GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"}
 
 def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
     im = Image.open(src).convert("RGB")
-    scale = max(SCREEN[0] / im.width, SCREEN[1] / im.height)
-    im = im.resize((round(im.width * scale), round(im.height * scale)), Image.Resampling.LANCZOS)
-    left, top = (im.width - SCREEN[0]) // 2, (im.height - SCREEN[1]) // 2
-    im = im.crop((left, top, left + SCREEN[0], top + SCREEN[1]))
-    # Blur small first: much faster than a huge radius at full size, same look.
-    small = im.resize((SCREEN[0] // 4, SCREEN[1] // 4), Image.Resampling.LANCZOS)
-    small = small.filter(ImageFilter.GaussianBlur(blur / 4))
-    im = small.resize(SCREEN, Image.Resampling.LANCZOS)
+    # Sharp mode keeps the source resolution and lets Herdr fit it to the window.
+    if blur > 0:
+        scale = max(SCREEN[0] / im.width, SCREEN[1] / im.height)
+        im = im.resize((round(im.width * scale), round(im.height * scale)), Image.Resampling.LANCZOS)
+        left, top = (im.width - SCREEN[0]) // 2, (im.height - SCREEN[1]) // 2
+        im = im.crop((left, top, left + SCREEN[0], top + SCREEN[1]))
+        # Blur small first: much faster than a huge radius at full size, same look.
+        small = im.resize((SCREEN[0] // 4, SCREEN[1] // 4), Image.Resampling.LANCZOS)
+        small = small.filter(ImageFilter.GaussianBlur(blur / 4))
+        im = small.resize(SCREEN, Image.Resampling.LANCZOS)
     im = ImageEnhance.Color(im).enhance(1.15)
-    im = Image.blend(im, Image.new("RGB", SCREEN, tint), tint_amount)
+    im = Image.blend(im, Image.new("RGB", im.size, tint), tint_amount)
     out_dir = HOME / "backgrounds"
     out_dir.mkdir(exist_ok=True)
     for old in out_dir.glob("frosted-*.jpg"):
