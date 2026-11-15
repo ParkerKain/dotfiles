@@ -28,16 +28,31 @@ def read_screen(t):
     return [l for l in lines if l.strip() and not NOISE.search(l)]
 
 
+def launch_argv(info):
+    """Unwrap Herdr's login shell without treating prompt text as a command."""
+    argv = info.get("argv") or []
+    if len(argv) >= 5 and argv[2] == '\"$@\"; exec \"$0\" -li':
+        return argv[4:]
+    return argv
+
+
 def kind_of(term, info, screen):
     agent = (term.get("agent") or "").lower()
-    argv = " ".join(info.get("argv") or []).lower()
-    text = "\n".join(screen)
-    if agent.startswith("claude") or " claude " in f" {argv} " or "⏵⏵" in text or "✻ " in text:
+    if agent.startswith("claude"):
         return "claude"
+    if agent == "codex":
+        return "codex"
+    argv = launch_argv(info)
+    program = os.path.basename(argv[0]) if argv else ""
+    if program in ("claude", "codex"):
+        return program
     title = info.get("title") or ""
     codex_title = title.endswith(" | " + os.path.basename(info.get("cwd") or "/"))
-    if agent == "codex" or (info.get("argv") or [""])[0] == "codex" or " codex " in f" {argv} " or codex_title:
+    if codex_title:
         return "codex"
+    text = "\n".join(screen)
+    if "⏵⏵" in text or "✻ " in text:
+        return "claude"
     if agent in ("zsh", "bash", "fish", "sh"):
         return "shell"
     return None
@@ -125,8 +140,12 @@ def claude_session(info, screen):
 
 
 def codex_session(info):
-    argv = info.get("argv") or []
-    task = argv[1] if argv and argv[0] == "codex" and len(argv) > 1 else (argv[-1] if "codex" in argv else "")
+    argv = launch_argv(info)
+    # A revived terminal already carries the exact conversation id.
+    for i, arg in enumerate(argv[:-1]):
+        if arg == "resume" and re.fullmatch(r"[0-9a-fA-F-]{36}", argv[i + 1]):
+            return argv[i + 1]
+    task = argv[-1] if len(argv) > 1 and not argv[-1].startswith("-") else ""
     probe = json.dumps(norm(task)[:50])[1:-1] if task else ""
     start = datetime.fromtimestamp((info.get("created_ms") or 0) / 1000, timezone.utc) - timedelta(days=1)
     end = datetime.fromtimestamp((info.get("finished_ms") or info.get("created_ms") or 0) / 1000, timezone.utc)
@@ -161,8 +180,8 @@ def cmd_resume(t):
               {"argv": ["claude", "--resume"], "how": "session not found: Claude's resume picker"}
     elif kind == "codex":
         sid = codex_session(info)
-        out = {"argv": ["codex", "resume", sid], "how": f"codex resume {sid}"} if sid else \
-              {"argv": ["codex", "resume"], "how": "session not found: Codex's resume picker"}
+        out = {"argv": ["codex", "--no-daemon", "resume", sid], "how": f"codex resume {sid}"} if sid else \
+              {"argv": ["codex", "--no-daemon", "resume"], "how": "session not found: Codex's resume picker"}
     else:
         out = {"argv": None, "how": "a new shell"}
     print(json.dumps(out))
