@@ -12,6 +12,8 @@ The Frosted layout is rebuilt from layouts/Parker.json on every run, so it keeps
 Parker's blocks and only differs in look. Switch to it with Cmd+Shift+L or Settings > Look.
 """
 import argparse
+import hashlib
+import io
 import json
 import subprocess
 from pathlib import Path
@@ -56,8 +58,13 @@ def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
     out_dir.mkdir(exist_ok=True)
     for old in out_dir.glob("frosted-*.jpg"):
         old.unlink()
-    out = out_dir / f"frosted-{src.stem.replace(' ', '-')}.jpg"
-    im.save(out, quality=92)
+    # A new image path makes Herdr reload pixels instead of reusing its cached image.
+    encoded = io.BytesIO()
+    im.save(encoded, format="JPEG", quality=92)
+    data = encoded.getvalue()
+    digest = hashlib.sha256(data).hexdigest()[:12]
+    out = out_dir / f"frosted-{src.stem.replace(' ', '-')}-{digest}.jpg"
+    out.write_bytes(data)
     return out
 
 
