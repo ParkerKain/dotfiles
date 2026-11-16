@@ -20,7 +20,9 @@ function ago(ms) {
 // Codex titles its terminal "<task> | <folder>"; drop the folder.
 function label(row) {
   const base = row.cwd.split("/").pop();
-  const title = (row.title || row.name || "").replace(new RegExp(` \\| ${base}$`), "");
+  const suffix = ` | ${base}`;
+  const raw = row.title || row.name || "";
+  const title = raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw;
   return title || row.tab || row.address;
 }
 
@@ -42,11 +44,17 @@ export default class Revive extends View {
     this.input.on("submit", (_e, cx) => this.restore(cx));
     this.input.focus();
     cx.spawn(async cx => {
-      const r = await exec("python3", [HELPER, "list"], { timeout: 20000 });
-      this.loading = false;
-      if (r.code === 0) this.rows = JSON.parse(r.stdout);
-      else this.error = r.stderr.trim().split("\n").pop() || "Could not list terminals.";
-      cx.notify();
+      try {
+        const r = await exec("python3", [HELPER, "list"], { timeout: 20000 });
+        this.loading = false;
+        if (r.code === 0) this.rows = JSON.parse(r.stdout);
+        else this.error = r.stderr.trim().split("\n").pop() || "Could not list terminals.";
+      } catch (error) {
+        this.error = String(error?.message ?? error);
+      } finally {
+        this.loading = false;
+        cx.notify();
+      }
     });
   }
 
@@ -70,21 +78,28 @@ export default class Revive extends View {
     this.busy = true;
     cx.notify();
     cx.spawn(async cx => {
-      const r = await exec("python3", [HELPER, "resume", row.address], { timeout: 30000 });
-      if (r.code !== 0) {
+      try {
+        const r = await exec("python3", [HELPER, "resume", row.address], { timeout: 30000 });
+        if (r.code !== 0) {
+          this.busy = false;
+          this.error = r.stderr.trim().split("\n").pop() || "Could not find how to restore it.";
+          cx.notify();
+          return;
+        }
+        const plan = JSON.parse(r.stdout);
+        const args = { name: tabName(row), folder: row.cwd };
+        if (spaces().some(s => s.id === row.space)) args.space = row.space;
+        if (plan.argv) args.argv = plan.argv;
+        run("tab.new", args);
+        await hc(["label", row.address, `revive.restored=${Date.now()}`]);
+        notify({ title: `Restored ${label(row)}`, body: plan.how, level: "success", timeout: 4000 });
+        closeOverlay(props().overlay);
+      } catch (error) {
+        this.error = String(error?.message ?? error);
+      } finally {
         this.busy = false;
-        this.error = r.stderr.trim().split("\n").pop() || "Could not find how to restore it.";
         cx.notify();
-        return;
       }
-      const plan = JSON.parse(r.stdout);
-      const args = { name: tabName(row), folder: row.cwd };
-      if (spaces().some(s => s.id === row.space)) args.space = row.space;
-      if (plan.argv) args.argv = plan.argv;
-      run("tab.new", args);
-      await hc(["label", row.address, `revive.restored=${Date.now()}`]);
-      notify({ title: `Restored ${label(row)}`, body: plan.how, level: "success", timeout: 4000 });
-      closeOverlay(props().overlay);
     });
   }
 

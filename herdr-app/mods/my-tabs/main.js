@@ -15,7 +15,8 @@ export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
     this.scroll = ScrollHandle.new();
-    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
+    if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
     // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button;
     // my-tabs.refresh reloads whichever panel is showing.
     cx.spawn(async cx => {
@@ -31,6 +32,7 @@ export default class Tabs extends View {
 
   togglePanel(id, cx) {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+    if (!body?.children?.some(child => child.id === id)) return;
     if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
     else {
       const previous = id === "call-sheet" ? focused() : null;

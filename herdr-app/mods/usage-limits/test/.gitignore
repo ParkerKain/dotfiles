@@ -1,0 +1,2 @@
+# Keep the CLI test double despite the root rule for personal Claude files.
+!fake-cli/claude

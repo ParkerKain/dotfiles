@@ -16,24 +16,30 @@ export default class Wallpaper extends View {
     this.scroll = ScrollHandle.new();
     this.items = [];
     this.rows = [];
+    this.rowOf = [];
     this.sel = 0;
     this.blur = 0;
     this.current = null;
     this.busy = false;
     this.error = "";
     cx.spawn(async cx => {
-      const dir = `${home()}/.config/herdr-app/mods/wallpaper-thumbs`;
-      const index = JSON.parse((await readTextFile(`${dir}/index.json`)) || "[]");
-      const cur = JSON.parse((await readTextFile(`${dir}/current.json`)) || "null");
-      const rank = g => (GROUPS.indexOf(g) + 1 || GROUPS.length + 1);
-      this.items = index.sort((a, b) => rank(a.group) - rank(b.group));
-      if (cur) { this.current = cur.path; this.blur = cur.blur ? 90 : 0; }
-      this.layoutRows();
-      const at = this.items.findIndex(w => w.path === this.current);
-      if (at >= 0) this.sel = at;
-      if (!this.items.length) this.error = "No thumbnails yet. Run: python3 ~/dotfiles/herdr-app/frost.py --thumbs";
-      cx.notify();
-      this.reveal();
+      try {
+        const dir = `${home()}/.config/herdr-app/mods/wallpaper-thumbs`;
+        const index = JSON.parse((await readTextFile(`${dir}/index.json`)) || "[]");
+        const cur = JSON.parse((await readTextFile(`${dir}/current.json`)) || "null");
+        const rank = g => (GROUPS.indexOf(g) + 1 || GROUPS.length + 1);
+        this.items = index.sort((a, b) => rank(a.group) - rank(b.group));
+        if (cur) { this.current = cur.path; this.blur = cur.blur ? 90 : 0; }
+        this.layoutRows();
+        const at = this.items.findIndex(w => w.path === this.current);
+        if (at >= 0) this.sel = at;
+        if (!this.items.length) this.error = "No thumbnails yet. Run: python3 ~/dotfiles/herdr-app/frost.py --thumbs";
+        cx.notify();
+        this.reveal();
+      } catch (error) {
+        this.error = `Could not load wallpapers: ${error?.message ?? error}`;
+        cx.notify();
+      }
     });
   }
 
@@ -58,7 +64,9 @@ export default class Wallpaper extends View {
 
   // Up/down move to the card in the same column of the previous/next row, across group headings.
   step(dir) {
-    const r = this.rowOf[this.sel], col = this.rows[r].items.indexOf(this.sel);
+    const r = this.rowOf[this.sel];
+    if (r === undefined || !this.rows[r]?.items) return this.sel;
+    const col = this.rows[r].items.indexOf(this.sel);
     for (let k = r + dir; k >= 0 && k < this.rows.length; k += dir) {
       const items = this.rows[k].items;
       if (items) return items[Math.min(col, items.length - 1)];
@@ -80,16 +88,22 @@ export default class Wallpaper extends View {
     this.error = "";
     cx.notify();
     cx.spawn(async cx => {
-      // Through an interactive zsh so python3 is the shell's (Homebrew, with Pillow), not /usr/bin's.
-      const r = await exec("zsh", ["-ic", 'python3 "$@"', "zsh", `${home()}/dotfiles/herdr-app/frost.py`, w.path, "--blur", String(this.blur)], { cwd: home(), timeout: 60000 });
-      this.busy = false;
-      if (r.code !== 0) {
-        this.error = (r.stderr.trim() || r.stdout.trim()).split("\n").pop();
-      } else {
-        this.current = w.path;
-        run("layout.switch", { name: "Frosted" });
+      try {
+        // Through an interactive zsh so python3 is the shell's (Homebrew, with Pillow), not /usr/bin's.
+        const r = await exec("zsh", ["-ic", 'python3 "$@"', "zsh", `${home()}/dotfiles/herdr-app/frost.py`, w.path, "--blur", String(this.blur)], { cwd: home(), timeout: 60000 });
+        this.busy = false;
+        if (r.code !== 0) {
+          this.error = (r.stderr.trim() || r.stdout.trim()).split("\n").pop();
+        } else {
+          this.current = w.path;
+          run("layout.switch", { name: "Frosted" });
+        }
+      } catch (error) {
+        this.error = String(error?.message ?? error);
+      } finally {
+        this.busy = false;
+        cx.notify();
       }
-      cx.notify();
     });
   }
 

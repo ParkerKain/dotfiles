@@ -35,12 +35,18 @@ export default class RunOnce extends View {
     recent.unshift(cmd);
     cx.notify();
     cx.spawn(async cx => {
-      const r = await exec("zsh", ["-ic", cmd], { cwd: home(), timeout: 120000 });
-      this.busy = false;
-      if (r.code === 0) { closeOverlay(props().overlay); return; }
-      const out = (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-3).join("\n");
-      this.error = `exit ${r.code}${out ? `: ${out}` : ""}`;
-      cx.notify();
+      try {
+        const r = await exec("zsh", ["-ic", cmd], { cwd: home(), timeout: 120000 });
+        this.busy = false;
+        if (r.code === 0) { closeOverlay(props().overlay); return; }
+        const out = (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-3).join("\n");
+        this.error = `exit ${r.code}${out ? `: ${out}` : ""}`;
+      } catch (error) {
+        this.error = String(error?.message ?? error);
+      } finally {
+        this.busy = false;
+        cx.notify();
+      }
     });
   }
 

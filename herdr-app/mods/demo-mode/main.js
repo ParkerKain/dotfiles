@@ -6,7 +6,7 @@
 // demoing (say, a customer folder in the vault) first. Opens as a 1px overlay,
 // closes itself at once, then switches.
 import { View, div } from "gpui-kit";
-import { closeOverlay, exec, home, layouts, props, run, setShared, shared } from "herdr";
+import { checking, closeOverlay, exec, home, layouts, props, run, setShared, shared } from "herdr";
 
 const DEMO_LAYOUT = "Demo";
 const JOB = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
@@ -20,6 +20,7 @@ function jobs(command) {
 
 export default class DemoMode extends View {
   init() {
+    if (checking()) return;
     // Close first: an open dialog would cover the demo screen.
     const id = props()?.overlay;
     if (id) closeOverlay(id);

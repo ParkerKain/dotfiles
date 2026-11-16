@@ -94,7 +94,10 @@
     "ctrl-9": "terminal",
     "cmd-shift-t": "terminal",
     "cmd-shift-j": "terminal",
-    "cmd-shift-a": "terminal"
+    "cmd-shift-a": "terminal",
+    "cmd-shift-c": "terminal",
+    "cmd-shift-k": "terminal",
+    "cmd-shift-b": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
