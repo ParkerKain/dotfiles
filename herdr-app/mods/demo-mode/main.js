@@ -1,12 +1,22 @@
 // demo-mode: Cmd+Shift+M toggles the Demo layout (no sidebar; the tab bar shows
 // Files and Changes only; notifications dropped) and back to the layout that
-// was showing before. It stays in the current space, so open the space you're
+// was showing before. Entering Demo pauses scheduled jobs and hooks (`job pause
+// --by demo`, shown in the Jobs panel); leaving resumes them unless the pause was
+// made by hand. It stays in the current space, so open the space you're
 // demoing (say, a customer folder in the vault) first. Opens as a 1px overlay,
 // closes itself at once, then switches.
 import { View, div } from "gpui-kit";
-import { closeOverlay, layouts, props, run, shared } from "herdr";
+import { closeOverlay, exec, home, layouts, props, run, setShared, shared } from "herdr";
 
 const DEMO_LAYOUT = "Demo";
+const JOB = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
+
+// Pause or resume jobs, then tell the Jobs panel to reload. A failure must not block the switch.
+function jobs(command) {
+  exec(JOB(), [command, "--by", "demo"], { timeout: 20000 })
+    .then(() => setShared("jobs.refresh", Date.now()))
+    .catch(() => {});
+}
 
 export default class DemoMode extends View {
   init() {
@@ -17,8 +27,10 @@ export default class DemoMode extends View {
       let before = null;
       try { before = localStorage.getItem("before"); } catch {}
       run("layout.switch", { name: layouts().includes(before) ? before : "Parker" });
+      jobs("resume");
     } else {
       try { localStorage.setItem("before", shared("layout")); } catch {}
+      jobs("pause");
       run("layout.switch", { name: DEMO_LAYOUT });
     }
   }
