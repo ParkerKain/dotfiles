@@ -299,7 +299,7 @@ export default class Music extends View {
             SliderTrack.new(this.volumeSlider).flex().items_center().h(24).w_full().child(
               SliderIndicator.new(this.volumeSlider).relative().w_full().h(3).rounded(2).bg(t.border)
                 .range_style(fill => fill.rounded(2).bg(t.muted))
-                .child(SliderThumb.new(this.volumeSlider).size(11).rounded(6).bg(t.foreground).ml(-5))))),
+                .child(SliderThumb.new(this.volumeSlider).size(11).rounded(6).bg(t.foreground).ml(-5.5).mt(-4))))),
           div().w(36).text_size(11).text_color(t.muted).child(`${state?.volume ?? "?"}%`)))
         .child(h_flex().items_center().justify_between()
           .child(row(svg("mods/music/shuffle.svg").size(15).text_color("#fa586a"),
