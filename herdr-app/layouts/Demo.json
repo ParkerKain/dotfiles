@@ -84,7 +84,18 @@
               },
               "min": 280,
               "max": 900,
-              "hidden": true
+              "hidden": true,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "radius": 10,
+              "focus": {
+                "border": {
+                  "width": 1,
+                  "color": "accent"
+                }
+              }
             }
           ],
           "padding": 8,
