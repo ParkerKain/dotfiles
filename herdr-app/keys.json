@@ -116,5 +116,26 @@
     "cmd-left": "send:\u0001",
     "cmd-right": "send:\u0005",
     "cmd-backspace": "send:\u0015"
+  },
+  "mod:files": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:changes": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:ops-tasks": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:jobs": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:day-view": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:artifacts": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:call-sheet": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
   }
 }

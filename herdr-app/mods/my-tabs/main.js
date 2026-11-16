@@ -25,12 +25,53 @@ export default class Tabs extends View {
         if (command.startsWith("panel-")) this.togglePanel(command.slice(6), cx);
         if (command === "refresh") this.refreshPanel();
         if (command === "hints") this.hintPanel();
+        if (command === "zoom-panel") this.zoomPanel();
         cx.notify();
       }
     });
   }
 
+  // Layout mods are outside the tab's pane tree, so pane.zoom cannot expand them.
+  // Shared state survives a tab-bar reload while the panel fills the work area.
+  restorePanelZoom() {
+    const key = `my-tabs.panel-zoom.${shared("layout")}`;
+    const saved = shared(key);
+    if (!saved) return false;
+    const root = JSON.parse(JSON.stringify(layout()));
+    const main = find(root, "main"), panel = find(root, "panel");
+    if (main && panel) {
+      for (const [node, fields] of [[main, saved.main], [panel, saved.panel]]) {
+        for (const [field, value] of Object.entries(fields)) {
+          if (value === null) delete node[field];
+          else node[field] = value;
+        }
+      }
+      run("layout.set", { layout: root });
+    }
+    setShared(key, null);
+    return true;
+  }
+
+  zoomPanel() {
+    if (this.restorePanelZoom()) return;
+    const root = JSON.parse(JSON.stringify(layout()));
+    const main = find(root, "main"), panel = find(root, "panel");
+    if (!main || !panel || panel.hidden) return;
+    const fields = (node, names) => Object.fromEntries(names.map(name => [name, node[name] ?? null]));
+    setShared(`my-tabs.panel-zoom.${shared("layout")}`, {
+      space: focused()?.space,
+      main: fields(main, ["hidden"]),
+      panel: fields(panel, ["size", "min", "max"]),
+    });
+    main.hidden = true;
+    panel.size = { weight: 1 };
+    delete panel.min;
+    delete panel.max;
+    run("layout.set", { layout: root });
+  }
+
   togglePanel(id, cx) {
+    this.restorePanelZoom();
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (!body?.children?.some(child => child.id === id)) return;
     if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
@@ -81,6 +122,8 @@ export default class Tabs extends View {
   // (closed if it never had one), and opening or closing it records it.
   syncPanel(space, panel, body, enabled) {
     if (!space || !panel) return;
+    const zoom = shared(`my-tabs.panel-zoom.${shared("layout")}`);
+    if (zoom && (zoom.space !== space.id || panel.hidden)) this.restorePanelZoom();
     const now = panel.hidden ? null : body?.active ?? null;
     if (space.id !== this.space) {
       const first = this.space === undefined;
