@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props } from "herdr";
+import { appHome, checking, exec, spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -17,6 +17,11 @@ export default class Tabs extends View {
     this.scroll = ScrollHandle.new();
     try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
     if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
+    this.musicReading = false;
+    if (!checking()) {
+      this.refreshMusic(cx);
+      cx.timer.every(8000, cx => this.refreshMusic(cx));
+    }
     // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button;
     // my-tabs.refresh reloads whichever panel is showing.
     cx.spawn(async cx => {
@@ -28,6 +33,31 @@ export default class Tabs extends View {
         if (command === "zoom-panel") this.zoomPanel();
         cx.notify();
       }
+    });
+  }
+
+  // Keep the pill accurate even when the popup is closed, without launching Music.
+  refreshMusic(cx) {
+    if (checking() || this.musicReading || props()?.demo) return;
+    const config = shared("music.config");
+    if (!config?.connected) return;
+    this.musicReading = true;
+    cx.spawn(async cx => {
+      try {
+        const result = await exec("/usr/bin/python3", [`${appHome()}/mods/music/music-control.py`, '{"action":"status"}'], {timeout: 28000});
+        const reply = JSON.parse(result.stdout);
+        if (reply.error?.code === "busy") return;
+        if (reply.error?.code === "permission_denied") {
+          setShared("music.config", {...shared("music.config"), connected: false});
+        }
+        const playback = reply.ok ? reply.state?.playback || "stopped" : "unknown";
+        const old = shared("music.playback");
+        if (old?.playback !== playback || Date.now() - (old?.at || 0) > 20000)
+          setShared("music.playback", {playback, at: Date.now()});
+      } catch (_) {
+        if (shared("music.playback")?.playback !== "unknown")
+          setShared("music.playback", {playback: "unknown", at: Date.now()});
+      } finally { this.musicReading = false; }
     });
   }
 
@@ -200,6 +230,10 @@ export default class Tabs extends View {
         .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
         .on_click((_e, cx) => this.togglePanel(id, cx)).child(svg(icon).size(14)).child(label);
     };
+    const music = shared("music.playback");
+    const playback = shared("music.config")?.connected && Date.now() - (music?.at || 0) < 30000 ? music?.playback : "unknown";
+    const musicPlaying = playback === "playing";
+    const musicIcon = playback === "paused" ? "paused" : musicPlaying ? "playing" : "music";
     return h_flex().size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
@@ -210,9 +244,11 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(!demo, el => el
-        .child(div().id("music-controls").h(26).px(8).rounded(6).text_size(12).text_color(t.muted)
+        .child(h_flex().id("music-controls").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
+          .text_size(12).bg(musicPlaying ? t.selected : t.chrome).text_color(musicPlaying ? t.accent : t.muted)
           .cursor_pointer().hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
-          .on_click(() => run("mod.open", {name: "music"})).child("Music"))
+          .on_click(() => run("mod.open", {name: "music"}))
+          .child(svg(`mods/music/${musicIcon}.svg`).size(14)).child("Music"))
         .child(panelButton("ops-tasks", "Tasks", "mods/workspace-chrome/check.svg"))
         .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg"))
         .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg"))

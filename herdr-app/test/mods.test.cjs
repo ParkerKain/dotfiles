@@ -43,6 +43,23 @@ test('tab bar ignores panels absent from the current layout', () => {
   const mod = load('my-tabs', {layout: () => ({id: 'panel-body', children: [{id: 'files'}]})});
   mod.togglePanel('call-sheet', {});
 });
+
+test('Music pill polling waits for explicit connection and skips Demo', () => {
+  const mod = load('my-tabs', {checking: () => false, shared: () => null});
+  mod.refreshMusic({spawn() { throw Error('must not poll before Connect'); }});
+  const demo = load('my-tabs', {checking: () => false, shared: () => ({connected: true}), props: () => ({demo: true})});
+  demo.refreshMusic({spawn() { throw Error('must not poll in Demo'); }});
+});
+
+test('Music pill tracks external playback changes without issuing mutations', async () => {
+  const state = new Map([['music.config', {connected: true}]]);
+  const mod = load('my-tabs', {checking: () => false, shared: key => state.get(key), setShared: (key, value) => state.set(key, value),
+    exec: async (_cmd, args) => { assert.equal(JSON.parse(args[1]).action, 'status'); return {stdout: JSON.stringify({ok: true, state: {playback: 'paused'}})}; }});
+  const {cx, done} = tasks();
+  mod.refreshMusic(cx); await done();
+  assert.equal(state.get('music.playback').playback, 'paused');
+  assert.equal(mod.musicReading, false);
+});
 test('Demo blocks every work panel shortcut and the wallpaper switcher', () => {
   const keys = JSON.parse(readFileSync(join(root, 'keys.json')));
   for (const [key, action] of Object.entries(keys.global)) {

@@ -2,11 +2,15 @@
 
 Open Music in Herdr's tab bar or press Cmd+Shift+U. Escape closes the controls while Music keeps playing. The button appears in Parker and Frosted. Demo passes the shortcut to the terminal.
 
+The pill uses the same shape, spacing and theme colors as the other tab-bar controls. While playing, it shows an equalizer icon and the selected background with an accent color. Paused playback uses a pause icon, and stopped playback uses a music-note icon with the regular inactive style.
+
+The default screen shows the song, artist, playlist, volume and transport controls. Previous, Skip and Play/Pause control the queue. Stop music sends Music's stop command without quitting the app or deleting the queue. Change playlist opens the separate playlist screen. Starting a preset returns to the player, and Back to player or Escape returns without changing playback.
+
 ## First setup
 
 1. Choose Open Music to sign in, then use Music's Account menu to sign into your Apple Music subscription.
 2. Choose Connect to Music in Herdr and accept the macOS automation prompt if shown.
-3. Choose Open in Music beside a Lofi Girl preset and add the original curator playlist to your library.
+3. Choose Change playlist, then Open in Music beside a Lofi Girl preset and add the original curator playlist to your library.
 4. Choose Link in Herdr, find that library playlist and select it.
 5. Choose Play beside the linked preset when you want to listen.
 
@@ -39,7 +43,7 @@ If playback does not start, Open Music to check sign-in, subscription, library s
 
 The native GPUI popup runs a local Python helper, which uses the installed JXA Music dictionary through osascript. Python 3 is supplied by the existing developer-tools installation on this Mac. A kernel file lock serializes helper calls across popup instances. Each request has a deadline, and all arguments are passed as data. No network server, extra player or Apple developer account is needed.
 
-Status is read every five seconds while the popup is open and connected. Read errors stop polling until an explicit refresh or reconnection. An already-dispatched action can finish after the popup closes. The popup's native checker suppresses helper calls and setup writes.
+Status is read every five seconds while the popup is open and connected. The normal tab bar checks every eight seconds to keep the pill accurate when controls are closed, and only after Connect. Status checks never launch Music. Read errors stop the popup's polling until an explicit refresh or reconnection. An already-dispatched action can finish after the popup closes. Native checks suppress all Music helper calls and setup writes.
 
 Run these checks from the dotfiles worktree:
 

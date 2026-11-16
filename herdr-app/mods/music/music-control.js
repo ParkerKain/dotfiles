@@ -37,6 +37,8 @@ function run(argv) {
           return JSON.stringify(fail('no_queue', 'Choose a linked playlist to start listening.'));
         music.play(); break;
       case 'pause': music.pause(); break;
+      case 'stop': music.stop(); break;
+      case 'previous': music.previousTrack(); break;
       case 'next': music.nextTrack(); break;
       case 'set-volume': music.soundVolume = request.value; break;
       case 'set-shuffle': music.shuffleEnabled = request.value; break;

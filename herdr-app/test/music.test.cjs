@@ -7,6 +7,27 @@ const root = join(__dirname, '..');
 const presets = JSON.parse(readFileSync(join(root, 'mods/music/presets.json')));
 const connected = {version: 1, connected: true, presets};
 
+function element() {
+  const node = {children: [], attrs: {}, click: null};
+  let proxy;
+  proxy = new Proxy(node, {get(target, key) {
+    if (key === 'node') return node;
+    if (key === 'when') return (condition, fn) => condition ? fn(proxy) : proxy;
+    if (key === 'child') return value => { node.children.push(value); return proxy; };
+    if (key === 'children') return values => { node.children.push(...values); return proxy; };
+    if (key === 'on_click') return fn => { node.click = fn; return proxy; };
+    return (...args) => { node.attrs[key] = args; return proxy; };
+  }});
+  return proxy;
+}
+
+function find(root, id) {
+  if (root?.node?.attrs.id?.[0] === id) return root.node;
+  if (typeof root !== 'object' || !root) return null;
+  for (const child of root.node?.children || []) { const result = find(child, id); if (result) return result; }
+  return null;
+}
+
 function load(options = {}) {
   const state = new Map([['music.config', options.config ?? connected]]);
   const tasks = [];
@@ -17,6 +38,7 @@ function load(options = {}) {
     timer: {every(ms, fn) { timers.push(fn); }, after(ms, fn) { timers.push(fn); }}};
   const input = {on() {}, value: () => '', focus() {}, set_value() {}};
   const context = {View: class {}, checking: () => options.checking || false,
+    div: element, h_flex: element, v_flex: element, svg: element, theme: () => ({}), Input: {new: element},
     appHome: () => '/config', props: () => ({overlay: 'test'}),
     shared: key => state.get(key), setShared: (key, value) => state.set(key, value),
     InputState: {new: () => input}, ScrollHandle: {new: () => ({scroll_to_item() {}})},
@@ -142,4 +164,38 @@ test('preset playback resolves saved subscription playlists', () => {
     currentPlaylist: () => ({name: () => 'Lofi Girl', persistentID: () => '11DDB9A4CA21D3ED'})};
   assert.equal(bridge({action: 'play-playlist', value: '11DDB9A4CA21D3ED'}, app).state.playlist.id, '11DDB9A4CA21D3ED');
   assert.equal(played, saved);
+});
+
+test('default player shows transport and stop while playlists require Change playlist', async () => {
+  const a = load(); a.mod.init({}, a.cx); await a.done();
+  a.mod.updateState({running: true, playback: 'playing', volume: 40, track: {name: 'Song', artist: 'Artist'}});
+  let tree = a.mod.render();
+  assert.ok(find(tree, 'music-stop'));
+  assert.ok(find(tree, 'music-next'));
+  assert.equal(find(tree, 'music-presets'), null);
+  find(tree, 'music-change-playlist').click({}, a.cx);
+  tree = a.mod.render();
+  assert.ok(find(tree, 'music-presets'));
+  assert.equal(find(tree, 'music-stop'), null);
+  find(tree, 'music-back-player').click({}, a.cx);
+  assert.ok(find(a.mod.render(), 'music-stop'));
+});
+
+test('stop uses the stop command and publishes a stopped pill state', async () => {
+  const a = load(); a.mod.init({}, a.cx); await a.done();
+  a.mod.updateState({running: true, playback: 'playing', track: {name: 'Song'}});
+  let action;
+  a.mod.request = async value => { action = value; return {state: {running: true, playback: 'stopped'}}; };
+  find(a.mod.render(), 'music-stop').click({}, a.cx); await a.done();
+  assert.equal(action, 'stop');
+  assert.equal(a.state.get('music.playback').playback, 'stopped');
+});
+
+test('Music stop and previous call the native transport without clearing playlists', () => {
+  let stopped = false, previous = false;
+  const app = {running: () => true, version: () => '1', stop: () => { stopped = true; }, previousTrack: () => { previous = true; },
+    playerState: () => 'stopped', soundVolume: () => 25, shuffleEnabled: () => false};
+  assert.equal(bridge({action: 'stop'}, app).state.playback, 'stopped');
+  assert.equal(bridge({action: 'previous'}, app).ok, true);
+  assert.ok(stopped && previous);
 });

@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 
-ACTIONS = {'connect', 'status', 'list-playlists', 'play-playlist', 'play', 'pause', 'next', 'set-volume', 'set-shuffle'}
+ACTIONS = {'connect', 'status', 'list-playlists', 'play-playlist', 'play', 'pause', 'stop', 'previous', 'next', 'set-volume', 'set-shuffle'}
 
 
 def validate(request):
