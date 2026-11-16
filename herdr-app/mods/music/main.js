@@ -59,7 +59,10 @@ export default class Music extends View {
   save(update) { setShared(CONFIG, {...this.settings(), ...update}); }
 
   async request(action, value) {
-    const result = await exec("/usr/bin/python3", [`${appHome()}/mods/music/music-control.py`, JSON.stringify({action, value})], {timeout: 28000});
+    let result;
+    try {
+      result = await exec("/usr/bin/python3", [`${appHome()}/mods/music/music-control.py`, JSON.stringify({action, value})], {timeout: 28000});
+    } catch (_) { throw {code: "bridge_error", message: "Music control did not finish. Refresh before retrying."}; }
     let reply;
     try { reply = JSON.parse(result.stdout); } catch (_) { throw {code: "bridge_error", message: "Music control could not finish. Open Music, then retry connection."}; }
     if (!reply.ok) throw reply.error;

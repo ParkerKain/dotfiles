@@ -15,6 +15,7 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 - `frost.py` - frosted-glass look: `python3 frost.py <wallpaper>` saves a blurred copy of the image to `backgrounds/` (`--blur 0` keeps it sharp) and rebuilds the generated Frosted layout from Parker.json with translucent terminals and panels. `--list` shows wallpapers in `~/Pictures/wallpapers`, `--desktop` also sets it as the macOS wallpaper
 - `mods/wallpaper` - Cmd+Shift+B popup: thumbnails of `~/Pictures/wallpapers`, Enter applies one behind the Frosted layout (via `frost.py`) and switches to it, `b` toggles blur. After adding wallpapers, run `python3 frost.py --thumbs`
 - `mods/keybind-help` - Cmd+H pane showing Parker's launcher, sidebar, navigation and session shortcuts from `keys.json`; Escape closes it
+- `mods/music` - Music button or Cmd+Shift+U opens Apple Music controls and Lofi Girl playlist shortcuts. Start with [Music setup](mods/music/README.md) when signed out. Music handles playback while the popup is closed
 - `keys.json` - binds Cmd+Shift+N to the session launcher, Cmd+Shift+E to run-once and Cmd+Shift+M to demo mode
 - `layouts/Demo.json` - demo mode's screen: Parker without the sidebar, the tab bar showing Files and Changes in place of Tasks, Jobs and Artifacts, and notifications dropped
 - `mods/demo-mode` - Cmd+Shift+M toggles demo mode: the Demo layout in the current space (open the space you're demoing first), and back to the previous layout. While Demo shows, the keys that jump to other agents, spaces, layouts or the picker go to the terminal instead
@@ -35,7 +36,7 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
 for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
-for m in my-tabs wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in my-tabs wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet music; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
 Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.

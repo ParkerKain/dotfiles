@@ -7,6 +7,7 @@ const GROUPS = [
   ["Launchers", [
     ["mod.open:keybind-help", "My shortcuts"],
     ["mod.open:wallpaper", "Wallpaper picker"],
+    ["mod.open:music", "Music controls"],
     ["mod.open:session-launcher", "Session launcher"],
     ["mod.open:run-once", "Run a command"],
     ["mod.open:revive", "Revive a session"],

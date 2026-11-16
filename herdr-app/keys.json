@@ -72,7 +72,8 @@
     "ctrl-up": "pane.go:up",
     "ctrl-down": "pane.go:down",
     "cmd-shift-m": "mod.open:demo-mode",
-    "cmd-shift-b": "mod.open:wallpaper"
+    "cmd-shift-b": "mod.open:wallpaper",
+    "cmd-shift-u": "mod.open:music"
   },
   "layout:Demo": {
     "cmd-]": "terminal",
@@ -97,7 +98,8 @@
     "cmd-shift-a": "terminal",
     "cmd-shift-c": "terminal",
     "cmd-shift-k": "terminal",
-    "cmd-shift-b": "terminal"
+    "cmd-shift-b": "terminal",
+    "cmd-shift-u": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",

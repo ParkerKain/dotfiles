@@ -46,7 +46,7 @@ test('tab bar ignores panels absent from the current layout', () => {
 test('Demo blocks every work panel shortcut and the wallpaper switcher', () => {
   const keys = JSON.parse(readFileSync(join(root, 'keys.json')));
   for (const [key, action] of Object.entries(keys.global)) {
-    if (/^my-tabs.panel-/.test(action) || action === 'mod.open:wallpaper') {
+    if (/^my-tabs.panel-/.test(action) || ['mod.open:wallpaper', 'mod.open:music'].includes(action)) {
       assert.equal(keys['layout:Demo'][key], 'terminal', key);
     }
   }

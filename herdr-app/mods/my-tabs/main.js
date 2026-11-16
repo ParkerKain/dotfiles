@@ -170,7 +170,10 @@ export default class Tabs extends View {
         .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg"))
         .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg"))
         .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg"))
-        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg")))
+        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg"))
+        .child(div().id("music-controls").h(26).px(8).rounded(6).text_size(12).text_color(t.muted)
+          .cursor_pointer().hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
+          .on_click(() => run("mod.open", {name: "music"})).child("Music")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
