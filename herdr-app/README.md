@@ -36,7 +36,7 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
 for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
-for m in my-tabs wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet music; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in my-files my-changes my-tabs wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet music; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
 Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.
