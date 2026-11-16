@@ -9,11 +9,12 @@ const schema = JSON.stringify({
   properties: {
     folder: { type: "string" },
     space: { type: "string", enum: ["current", "existing", "new"] },
+    space_id: { type: "string" },
     space_name: { type: "string" },
     tab_name: { type: "string" },
     split: { type: "string", enum: ["none", "right", "down"] }
   },
-  required: ["folder", "space", "space_name", "tab_name", "split"]
+  required: ["folder", "space", "space_id", "space_name", "tab_name", "split"]
 });
 
 function output(result) {
@@ -125,19 +126,24 @@ export default class SessionLauncher extends View {
 
   async plan(request) {
     const current = focused();
+    const allSpaces = spaces().map(s => ({ id: s.id, name: s.name, folder: s.folder, machine: s.machine }));
     const available = await exec("ls", ["-1", REPOS]);
     if (available.code !== 0) throw new Error("Could not list local repositories.");
     const repoNames = available.stdout.split("\n").filter(Boolean);
-    const allSpaces = spaces().map(s => ({ id: s.id, name: s.name, folder: s.folder, machine: s.machine }));
+    // Include dotfiles outside REPOS. Ownership rules below explain ambiguous names.
+    const folders = [...new Set([...repoNames.map(name => `${REPOS}/${name}`), `${home()}/dotfiles`])];
     const task = this.task;
     const instruction = [
       "Choose a Herdr session layout for this request. Return JSON only.",
-      "Use a local folder that exists. Prefer the current folder for an unqualified request.",
-      "Use an existing space when its folder matches. Create a new space for a different repo or when asked for one.",
+      "First identify the project that owns the requested work using the ownership rules and available folders. Choose its local folder even when another project is currently focused.",
+      "Agent skills, hooks, agent CLIs and agent context belong in parker-agent-kit. Herdr UI, launcher, keys, layouts and shell configuration belong in dotfiles. Marketplace plugin work belongs in its marketplace repo.",
+      "Use the task's default folder when the request does not identify a project. Otherwise use the current folder only as a fallback for work with no identifiable project.",
+      "Choose an existing local space belonging to the chosen project. Set space_id to that exact space's id. Use current only if the current space belongs to the chosen project. For new use an empty space_id. Create a new space when no appropriate space exists or the request asks for one.",
       "A new tab is the default for new work. Use a split only when the request asks for a second pane or a shell/editor beside the agent.",
       "Keep names short and recognizable. Do not plan shell commands or file edits.",
       `Current folder: ${current?.cwd || VAULT}`,
-      `Repositories in ${REPOS}: ${repoNames.join(", ")}`,
+      `Current space: ${current?.space || "none"}`,
+      `Local folders: ${JSON.stringify(folders)}`,
       `Open spaces: ${JSON.stringify(allSpaces)}`,
       task ? `This is a Tasks Play request. Default folder: ${task.folder || VAULT}. Suggested tab name: ${task.title}.` : "",
       `Request:\n${request}`
@@ -149,12 +155,17 @@ export default class SessionLauncher extends View {
     if (!folder.startsWith(`${home()}/`)) throw new Error("Session folder must be under your home directory.");
     const exists = await exec("test", ["-d", folder]);
     if (exists.code !== 0) throw new Error(`Folder does not exist: ${folder}`);
+    if (plan.space !== "new") {
+      const target = allSpaces.find(s => s.id === plan.space_id && !s.machine);
+      if (!target || target.folder !== folder || (plan.space === "current" && target.id !== current?.space)) throw new Error("Session planner chose a space that does not match the project folder. Try again.");
+    }
     return { ...plan, folder };
   }
 
   async launch(plan, request, selectedAgent, cx) {
-    const matches = spaces().filter(s => !s.machine && s.folder === plan.folder);
-    const target = plan.space === "existing" ? matches[0] : plan.space === "current" ? spaces().find(s => s.id === focused()?.space && !s.machine && s.folder === plan.folder) : null;
+    // Keep the planned destination even if focus changes while the planner runs.
+    const target = plan.space === "new" ? null : spaces().find(s => s.id === plan.space_id && !s.machine && s.folder === plan.folder);
+    if (plan.space !== "new" && !target) throw new Error("The chosen space changed or closed. Try again.");
     const agents = await knownAgents();
     const agent = agents.find(a => a.installed && (a.key?.toLowerCase() === selectedAgent || a.name?.toLowerCase().includes(selectedAgent)));
     if (!agent) throw new Error(`${selectedAgent} is not installed in Herdr.`);
