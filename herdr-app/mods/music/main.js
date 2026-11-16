@@ -1,5 +1,5 @@
-import { View, div, svg } from "gpui-kit";
-import { h_flex, v_flex, Input, InputState, ScrollHandle } from "gpui-base";
+import { View, div, svg, image } from "gpui-kit";
+import { h_flex, v_flex, Input, InputState, ScrollHandle, Slider, SliderState, SliderTrack, SliderIndicator, SliderThumb } from "gpui-base";
 import { appHome, checking, closeOverlay, exec, props, readTextFile, setShared, shared, theme } from "herdr";
 
 const CURATOR = "https://music.apple.com/us/curator/lofi-girl/1568752863";
@@ -32,6 +32,11 @@ export default class Music extends View {
     this.requested = null;
     this.pendingChecks = 0;
     this.reconcile = false;
+    this.artwork = null;
+    this.artTrack = null;
+    this.pendingVolume = null;
+    this.volumeSlider = SliderState.new({min: 0, max: 100, step: 1, value: 100});
+    this.volumeSlider.on("release", (value, cx) => this.setVolume(value, cx));
     this.handle = cx.focus_handle();
     this.scroll = ScrollHandle.new();
     this.filter = InputState.new({placeholder: "Filter library playlists"});
@@ -58,9 +63,37 @@ export default class Music extends View {
   close() { this.closed = true; this.generation++; }
   settings() { return config(shared(CONFIG)) || {version: 1, connected: false, presets: []}; }
   save(update) { setShared(CONFIG, {...this.settings(), ...update}); }
-  updateState(state) {
+  updateState(state, cx) {
     this.state = state;
+    if (typeof state?.volume === "number" && this.pendingVolume === null) this.volumeSlider.set_value(state.volume);
     setShared("music.playback", {playback: state?.playback || "stopped", at: Date.now()});
+    if (cx && this.artTrack !== state?.track?.id) {
+      this.artTrack = state?.track?.id || null;
+      this.artwork = null;
+      if (this.artTrack) this.loadArtwork(this.artTrack, cx);
+    }
+  }
+
+  setVolume(value, cx) {
+    if (checking() || this.closed || this.reconcile || !this.settings().connected) return;
+    this.pendingVolume = Math.max(0, Math.min(100, Math.round(value)));
+    const send = cx => {
+      if (this.closed || this.reconcile) { this.pendingVolume = null; return; }
+      if (this.busy || this.reading) { cx.timer.after(150, send); return; }
+      const latest = this.pendingVolume;
+      this.pendingVolume = null;
+      if (latest !== null) this.act("set-volume", latest, cx);
+    };
+    send(cx);
+  }
+
+  loadArtwork(id, cx) {
+    cx.spawn(async cx => {
+      try {
+        const reply = await this.request("artwork", id);
+        if (!this.closed && this.artTrack === id) { this.artwork = reply.artwork; cx.notify(); }
+      } catch (_) { /* Missing artwork leaves the native music-note cover. */ }
+    });
   }
 
   async request(action, value) {
@@ -88,7 +121,7 @@ export default class Music extends View {
       try {
         const reply = await this.request("status");
         if (this.closed || generation !== this.generation) return;
-        this.updateState(reply.state);
+        this.updateState(reply.state, cx);
         this.error = "";
         this.reconcile = false;
         if (this.requested) {
@@ -117,7 +150,7 @@ export default class Music extends View {
         const reply = await this.request(action, value);
         if (this.closed) return;
         if (action === "connect") { this.save({connected: true}); this.reconcile = false; }
-        if (reply.state) this.updateState(reply.state);
+        if (reply.state) this.updateState(reply.state, cx);
         if (preset) {
           this.view = "player";
           this.requested = preset;
@@ -210,11 +243,17 @@ export default class Music extends View {
       .cursor_pointer().hover(s => s.bg(off ? t.raised : t.hover))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { if (!off) fn(cx); }).child(label);
+    const time = value => { const s = Math.max(0, Math.floor(Number(value) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+    const progress = Math.max(0, Math.min(100, (state?.position || 0) / (state?.track?.duration || 1) * 100));
+    const transport = (id, icon, fn, off, large = false) => div().id(id).accessibility_label(icon === "next" ? "Skip song" : icon === "previous" ? "Previous song" : icon === "pause" ? "Pause music" : "Play music").size(large ? 48 : 40).rounded(24)
+      .flex().items_center().justify_center().cursor_pointer().text_color(off ? t.dim : t.foreground)
+      .hover(s => s.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { if (!off) fn(cx); }).child(svg(`mods/music/${icon}.svg`).size(large ? 32 : 23));
     const text = (value, muted = false) => div().text_size(12).text_color(muted ? t.muted : t.foreground).child(value);
     const row = (...children) => h_flex().gap(7).items_center().children(children);
     const back = cx => { this.target = null; this.view = "player"; this.note = ""; this.handle.focus(); cx.notify(); };
     const list = this.visible();
-    return v_flex().id("music-root").track_focus(this.handle).size_full().p(16).gap(12).bg(t.popover).text_color(t.foreground)
+    return v_flex().id("music-root").track_focus(this.handle).size_full().p(18).gap(12).font_family("Helvetica Neue").bg(t.popover).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") {
           if (this.target) { this.target = null; this.handle.focus(); cx.notify(); }
@@ -236,29 +275,40 @@ export default class Music extends View {
         .child(row(button("music-open-setup", "Open Music", cx => this.openMusic(null, cx)),
           button("music-connect", "Connect to Music", cx => this.act("connect", null, cx), working, true))))
       .when(settings.connected && player, el => el
-        .child(v_flex().gap(8).p(16).rounded(10).bg(t.surface)
-          .child(row(svg(`mods/music/${playing ? "playing" : stopped ? "music" : "paused"}.svg`).size(18).text_color(playing ? t.accent : t.muted),
-            div().text_size(11).text_color(playing ? t.accent : t.muted).child(status)))
-          .child(div().text_size(21).child(state?.track?.name || "Choose something to listen to"))
-          .child(text(state?.track?.artist || "Your Apple Music library", true))
-          .when(Boolean(state?.playlist?.name), card => card.child(text(state.playlist.name, true))))
-        .child(h_flex().justify_center().gap(8)
-          .child(button("music-previous", "Previous", cx => this.act("previous", null, cx), disabled || !state?.track))
-          .child(button("music-play", playing ? "Pause" : "Play", cx => {
+        .child(h_flex().justify_center().child(
+          this.artwork ? image(this.artwork).size(160).rounded(12).shadow_lg() :
+          div().size(160).rounded(12).bg(t.surface).flex().items_center().justify_center()
+            .child(svg("mods/music/music.svg").size(65).text_color(t.muted))))
+        .child(v_flex().gap(4).items_center()
+          .child(div().text_size(19).text_color(t.foreground).child(state?.track?.name || "Choose something to listen to"))
+          .child(div().text_size(13).text_color(t.muted).child(state?.track?.artist || "Apple Music")))
+        .child(v_flex().gap(5)
+          .child(h_flex().h(3).w_full().rounded(2).bg(t.border)
+            .child(div().h(3).rounded(2).bg(t.muted).w(`${progress}%`)))
+          .child(h_flex().justify_between().text_size(10).text_color(t.dim)
+            .child(time(state?.position)).child(state?.track?.duration ? `-${time(Math.max(0, state.track.duration - (state.position || 0)))}` : "0:00")))
+        .child(h_flex().items_center().justify_center().gap(22)
+          .child(transport("music-previous", "previous", cx => this.act("previous", null, cx), disabled || !state?.track))
+          .child(transport("music-play", playing ? "pause" : "play", cx => {
             if (!playing && !state?.track) { this.view = "playlists"; this.note = "Choose a playlist to start listening."; cx.notify(); }
             else this.act(playing ? "pause" : "play", null, cx);
           }, disabled, true))
-          .child(button("music-next", "Skip", cx => this.act("next", null, cx), disabled || !state?.track)))
+          .child(transport("music-next", "next", cx => this.act("next", null, cx), disabled || !state?.track)))
+        .child(row(svg("mods/music/volume.svg").size(15).text_color(t.muted),
+          div().flex_1().child(Slider.new(this.volumeSlider).child(
+            SliderTrack.new(this.volumeSlider).flex().items_center().h(24).w_full().child(
+              SliderIndicator.new(this.volumeSlider).relative().w_full().h(3).rounded(2).bg(t.border)
+                .range_style(fill => fill.rounded(2).bg(t.muted))
+                .child(SliderThumb.new(this.volumeSlider).size(11).rounded(6).bg(t.foreground).ml(-5))))),
+          div().w(36).text_size(11).text_color(t.muted).child(`${state?.volume ?? "?"}%`)))
         .child(h_flex().items_center().justify_between()
-          .child(text(`Volume ${state?.volume ?? "?"}%`))
-          .child(row(button("music-volume-down", "-", cx => this.act("set-volume", Math.max(0, (state?.volume ?? 0) - 5), cx), disabled || !state?.running),
-            button("music-volume-up", "+", cx => this.act("set-volume", Math.min(100, (state?.volume ?? 0) + 5), cx), disabled || !state?.running))))
-        .child(h_flex().items_center().justify_between()
-          .child(button("music-stop", "Stop music", cx => this.act("stop", null, cx), disabled || stopped))
-          .child(button("music-shuffle", state?.shuffle ? "Shuffle on" : "Shuffle off", cx => this.act("set-shuffle", !state?.shuffle, cx), disabled || !state?.running)))
+          .child(row(svg("mods/music/shuffle.svg").size(15).text_color("#fa586a"),
+            div().text_size(11).text_color(t.muted).child("Always shuffle")))
+          .child(button("music-stop", "Stop music", cx => this.act("stop", null, cx), disabled || stopped)))
         .child(div().flex_1().min_h(0))
-        .child(row(button("music-change-playlist", "Change playlist", cx => { this.view = "playlists"; this.note = ""; cx.notify(); }, working),
-          button("music-refresh", "Refresh", cx => this.refresh(cx), working))))
+        .child(h_flex().items_center().justify_between()
+          .child(button("music-change-playlist", "Change playlist", cx => { this.view = "playlists"; this.note = ""; cx.notify(); }, working))
+          .child(div().text_size(11).text_color(t.muted).child(status))))
       .when(Boolean(this.error), el => el.child(text(this.error)).child(row(
         button("music-retry", "Retry connection", cx => this.act("connect", null, cx), working),
         button("music-open-error", "Open Music", cx => this.openMusic(null, cx)))))

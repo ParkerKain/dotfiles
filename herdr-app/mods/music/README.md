@@ -4,7 +4,9 @@ Open Music in Herdr's tab bar or press Cmd+Shift+U. Escape closes the controls w
 
 The pill uses the same shape, spacing and theme colors as the other tab-bar controls. While playing, it shows an equalizer icon and the selected background with an accent color. Paused playback uses a pause icon, and stopped playback uses a music-note icon with the regular inactive style.
 
-The default screen shows the song, artist, playlist, volume and transport controls. Previous, Skip and Play/Pause control the queue. Stop music sends Music's stop command without quitting the app or deleting the queue. Change playlist opens the separate playlist screen. Starting a preset returns to the player, and Back to player or Escape returns without changing playback.
+The default screen uses a compact Apple Music layout with the local album cover, song and artist, elapsed and remaining time, icon transport controls and a volume slider. Previous, Skip and Play/Pause control the queue. Stop music sends Music's stop command without quitting the app or deleting the queue. Change playlist opens the separate playlist screen. Starting a preset returns to the player, and Back to player or Escape returns without changing playback.
+
+Playback always uses song shuffle when started, resumed or skipped through the mod. The shuffle label is an indicator rather than a toggle. Album covers are read locally from Music and cached under Herdr's `data/music/artwork` folder. Missing covers use a music-note placeholder. Volume changes are sent when the slider is released.
 
 ## First setup
 
@@ -20,7 +22,7 @@ Connecting grants playback control. It does not sign you in or verify a subscrip
 
 - Play/pause controls Music's current playback, including music started outside Herdr.
 - Playing a preset replaces Music's current queue, and its identity is confirmed when Music exposes the matching library playlist.
-- Volume changes Music's own volume in steps of five without changing system volume.
+- The volume slider changes Music's own volume without changing system volume.
 - Add library playlist creates a shortcut to any library playlist, with its name as the label.
 - Link or Relink chooses an explicit library playlist, with an ID suffix to distinguish duplicate names.
 - Arrow keys and Enter select a playlist in the linking list, and Escape returns to the controls.

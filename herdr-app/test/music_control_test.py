@@ -58,6 +58,24 @@ class ControlTests(unittest.TestCase):
             reply = music.call({'action': 'status'}, lambda *a, **k: subprocess.CompletedProcess([], 0, 'null', ''), root)
             self.assertEqual(reply['error']['code'], 'bridge_error')
 
+    def test_artwork_is_local_cached_and_tied_to_requested_track(self):
+        track_id = '1234567890ABCDEF'
+        def runner(argv, **kwargs):
+            self.assertEqual(argv[-1], track_id)
+            self.assertIn('persistent ID of current track', kwargs['input'])
+            return subprocess.CompletedProcess(argv, 0, '«data tdtaFFD8FFE00000»', '')
+        with tempfile.TemporaryDirectory() as root:
+            first = music.call({'action': 'artwork', 'value': track_id}, runner, root, root)
+            self.assertTrue((Path(root) / first['artwork']).is_file())
+            cached = music.call({'action': 'artwork', 'value': track_id}, lambda *a, **k: self.fail('cached art fetched again'), root, root)
+            self.assertEqual(first, cached)
+
+    def test_missing_artwork_is_not_a_playback_error(self):
+        with tempfile.TemporaryDirectory() as root:
+            reply = music.call({'action': 'artwork', 'value': '1234567890ABCDEF'},
+                               lambda *a, **k: subprocess.CompletedProcess([], 0, '', ''), root, root)
+            self.assertEqual(reply, {'ok': True, 'artwork': None})
+
 
 if __name__ == '__main__':
     unittest.main()

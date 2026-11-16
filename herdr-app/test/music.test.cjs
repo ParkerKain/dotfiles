@@ -38,7 +38,8 @@ function load(options = {}) {
     timer: {every(ms, fn) { timers.push(fn); }, after(ms, fn) { timers.push(fn); }}};
   const input = {on() {}, value: () => '', focus() {}, set_value() {}};
   const context = {View: class {}, checking: () => options.checking || false,
-    div: element, h_flex: element, v_flex: element, svg: element, theme: () => ({}), Input: {new: element},
+    div: element, h_flex: element, v_flex: element, svg: element, image: element, theme: () => ({}), Input: {new: element},
+    SliderState: {new: () => ({on() {}, set_value() {}})}, Slider: {new: element}, SliderTrack: {new: element}, SliderIndicator: {new: element}, SliderThumb: {new: element},
     appHome: () => '/config', props: () => ({overlay: 'test'}),
     shared: key => state.get(key), setShared: (key, value) => state.set(key, value),
     InputState: {new: () => input}, ScrollHandle: {new: () => ({scroll_to_item() {}})},
@@ -121,7 +122,11 @@ test('linking and removal update shared presets without library mutations', asyn
 
 function bridge(request, app) {
   const code = readFileSync(join(root, 'mods/music/music-control.js'), 'utf8');
-  const context = {Application: () => app}; vm.createContext(context);
+  const context = {Application: () => new Proxy(app, {set(target, key, value) {
+    // JXA property setters retain their callable getters.
+    target[key] = ['shuffleEnabled', 'soundVolume'].includes(key) ? () => value : value;
+    return true;
+  }})}; vm.createContext(context);
   vm.runInContext(code, context);
   return JSON.parse(context.run([JSON.stringify(request)]));
 }
@@ -198,4 +203,24 @@ test('Music stop and previous call the native transport without clearing playlis
   assert.equal(bridge({action: 'stop'}, app).state.playback, 'stopped');
   assert.equal(bridge({action: 'previous'}, app).ok, true);
   assert.ok(stopped && previous);
+});
+
+test('resuming playback enables song shuffle before play', () => {
+  let played = false;
+  const app = {running: () => true, version: () => '1', currentTrack: () => ({name: () => 'Song'}),
+    shuffleEnabled: () => false, playerState: () => 'playing', soundVolume: () => 25,
+    play() { assert.equal(app.shuffleEnabled(), true); assert.equal(app.shuffleMode, 'songs'); played = true; }};
+  assert.equal(bridge({action: 'play'}, app).ok, true);
+  assert.ok(played);
+});
+
+test('the player keeps artwork response tied to the current song', async () => {
+  const a = load(); a.mod.init({}, a.cx); await a.done();
+  let release;
+  a.mod.request = () => new Promise(resolve => { release = resolve; });
+  a.mod.artTrack = 'OLD';
+  a.mod.loadArtwork('OLD', a.cx);
+  a.mod.artTrack = 'NEW'; a.mod.artwork = null;
+  release({artwork: 'data/music/artwork/OLD.jpg'}); await a.done();
+  assert.equal(a.mod.artwork, null);
 });

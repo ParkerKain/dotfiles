@@ -14,7 +14,8 @@ function run(argv) {
     function status() {
       return {running: true, version: version, playback: music.playerState(),
         volume: music.soundVolume(), shuffle: music.shuffleEnabled(),
-        track: optional(function () { var t = music.currentTrack(); return {name: t.name(), artist: t.artist()}; }, null),
+        position: optional(function () { return music.playerPosition(); }, 0),
+        track: optional(function () { var t = music.currentTrack(); return {id: t.persistentID(), name: t.name(), artist: t.artist(), album: t.album(), duration: t.duration()}; }, null),
         playlist: optional(function () { var p = music.currentPlaylist(); return {id: p.persistentID(), name: p.name()}; }, null)};
     }
     switch (request.action) {
@@ -30,18 +31,21 @@ function run(argv) {
         var matches = music.playlists.whose({persistentID: request.value})();
         if (matches.length !== 1) return JSON.stringify(fail('playlist_missing', 'This playlist is no longer in Music. Link it again.'));
         if (!matches[0].tracks().length) return JSON.stringify(fail('playlist_empty', 'This playlist has no available tracks. Open Music to check sign-in and library sync.'));
+        music.shuffleMode = 'songs';
+        music.shuffleEnabled = true;
         music.play(matches[0]);
+        music.shuffleEnabled = true;
         break;
       case 'play':
         if (!optional(function () { return music.currentTrack().name(); }, null))
           return JSON.stringify(fail('no_queue', 'Choose a linked playlist to start listening.'));
-        music.play(); break;
+        music.shuffleMode = 'songs'; music.shuffleEnabled = true; music.play(); break;
       case 'pause': music.pause(); break;
       case 'stop': music.stop(); break;
-      case 'previous': music.previousTrack(); break;
-      case 'next': music.nextTrack(); break;
+      case 'previous': music.shuffleMode = 'songs'; music.shuffleEnabled = true; music.previousTrack(); break;
+      case 'next': music.shuffleMode = 'songs'; music.shuffleEnabled = true; music.nextTrack(); break;
       case 'set-volume': music.soundVolume = request.value; break;
-      case 'set-shuffle': music.shuffleEnabled = request.value; break;
+      case 'set-shuffle': music.shuffleMode = 'songs'; music.shuffleEnabled = true; break;
       default: return JSON.stringify(fail('invalid_request', 'Unknown Music action.'));
     }
     return JSON.stringify({ok: true, state: status()});
