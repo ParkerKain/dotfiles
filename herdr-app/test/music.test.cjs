@@ -110,7 +110,7 @@ test('status of closed Music sends no Apple events and never launches', () => {
 });
 
 test('bridge does not substitute an old queue for a missing playlist', () => {
-  const app = {running: () => true, version: () => '1', userPlaylists: {whose: () => () => []}, play() { throw Error('must not play'); }};
+  const app = {running: () => true, version: () => '1', playlists: {whose: () => () => []}, play() { throw Error('must not play'); }};
   assert.equal(bridge({action: 'play-playlist', value: '1234567890ABCDEF'}, app).error.code, 'playlist_missing');
 });
 
@@ -119,4 +119,27 @@ test('bridge rejects empty queue and recognizes automation denial', () => {
   assert.equal(bridge({action: 'play'}, app).error.code, 'no_queue');
   app.version = () => {throw {number: -1743};};
   assert.equal(bridge({action: 'connect'}, app).error.code, 'permission_denied');
+});
+
+test('saved curator playlists appear alongside user playlists', () => {
+  const playlist = (kind, name, id) => ({class: () => kind, name: () => name, persistentID: () => id});
+  const app = {running: () => true, version: () => '1', playlists: () => [
+    playlist('libraryPlaylist', 'Library', '0000000000000005'),
+    playlist('userPlaylist', 'My playlist', '1234567890ABCDEF'),
+    playlist('subscriptionPlaylist', 'Lofi Girl', '11DDB9A4CA21D3ED')
+  ]};
+  assert.deepEqual(bridge({action: 'list-playlists'}, app).playlists.map(p => p.name), ['Lofi Girl', 'My playlist']);
+});
+
+test('preset playback resolves saved subscription playlists', () => {
+  let played = null;
+  const saved = {tracks: () => [{}]};
+  const collection = () => [saved];
+  collection.whose = query => { assert.equal(query.persistentID, '11DDB9A4CA21D3ED'); return () => [saved]; };
+  const app = {running: () => true, version: () => '1', playlists: collection,
+    play: p => { played = p; }, playerState: () => 'playing', soundVolume: () => 25, shuffleEnabled: () => false,
+    currentTrack: () => ({name: () => 'Song', artist: () => 'Artist'}),
+    currentPlaylist: () => ({name: () => 'Lofi Girl', persistentID: () => '11DDB9A4CA21D3ED'})};
+  assert.equal(bridge({action: 'play-playlist', value: '11DDB9A4CA21D3ED'}, app).state.playlist.id, '11DDB9A4CA21D3ED');
+  assert.equal(played, saved);
 });

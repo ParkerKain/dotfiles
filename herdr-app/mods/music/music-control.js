@@ -20,11 +20,14 @@ function run(argv) {
     switch (request.action) {
       case 'connect': case 'status': break;
       case 'list-playlists':
-        return JSON.stringify({ok: true, playlists: music.userPlaylists().map(function (p) {
+        // Saved curator playlists are subscriptionPlaylist, not userPlaylist.
+        return JSON.stringify({ok: true, playlists: music.playlists().filter(function (p) {
+          return ['userPlaylist', 'subscriptionPlaylist'].indexOf(p.class()) !== -1;
+        }).map(function (p) {
           return {id: p.persistentID(), name: p.name()};
         }).sort(function (a, b) { return a.name.localeCompare(b.name); })});
       case 'play-playlist':
-        var matches = music.userPlaylists.whose({persistentID: request.value})();
+        var matches = music.playlists.whose({persistentID: request.value})();
         if (matches.length !== 1) return JSON.stringify(fail('playlist_missing', 'This playlist is no longer in Music. Link it again.'));
         if (!matches[0].tracks().length) return JSON.stringify(fail('playlist_empty', 'This playlist has no available tracks. Open Music to check sign-in and library sync.'));
         music.play(matches[0]);
