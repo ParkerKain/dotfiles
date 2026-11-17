@@ -10,12 +10,11 @@ function routeSchema(projects) {
     properties: {
       project: { type: "string", enum: projects.map(p => p.id) },
       reason: { type: "string" },
-      needs_choice: { type: "boolean" },
       new_space: { type: "boolean" },
       tab_name: { type: "string" },
       split: { type: "string", enum: ["none", "right", "down"] }
     },
-    required: ["project", "reason", "needs_choice", "new_space", "tab_name", "split"]
+    required: ["project", "reason", "new_space", "tab_name", "split"]
   });
 }
 
@@ -156,7 +155,7 @@ export default class SessionLauncher extends View {
 
   start(cx) {
     if (this.error && !this.route && !this.busy && !this.routing) { this.scheduleRoute(cx); return; }
-    if (this.busy || this.routing || !this.route || this.route.needs_choice) return;
+    if (this.busy || this.routing || !this.route) return;
     this.busy = true;
     this.error = "";
     const request = this.request();
@@ -198,19 +197,20 @@ export default class SessionLauncher extends View {
       "Herdr music mod, Spotify controls, UI, launcher, keys, layouts and machine configuration belong in dotfiles. Agent skills, hooks, agent CLIs and context belong in parker-agent-kit. Use the catalog descriptions for other work.",
       "Ignore the selected tab unless the request explicitly refers to the current project (for example, 'fix the tests in this repo'). Merely leaving a tab selected is never evidence of ownership.",
       "For general work or no identifiable software project, choose devclarity-vault. For Tasks Play with no identifiable project, use its default folder instead.",
-      "If several projects could own concrete software work and the request cannot distinguish them, set needs_choice true and explain the ambiguity. General work does not need a choice.",
+      "Always choose exactly one project, even when the request is ambiguous or mentions something you cannot verify. Pick the most likely owner. The user can change the folder before starting.",
+      "Write reason as one short sentence naming why that project owns the work. Do not mention links you cannot read, alternatives or uncertainty.",
       "Use a new tab by default. Set new_space true only when asked for a new Space. Split only when explicitly asked for another pane.",
       `Project catalog: ${JSON.stringify(projects)}`,
       `Current local project: ${refersToCurrent ? current?.cwd || "none" : "not referenced by request"}`,
       this.task ? `Tasks Play default: ${this.task.folder || VAULT}` : "",
-      this.override ? `The user explicitly chose ${this.override}. You MUST choose this project and set needs_choice false.` : "",
+      this.override ? `The user explicitly chose ${this.override}. You MUST choose this project.` : "",
       `Request:\n${request}`
     ].filter(Boolean).join("\n\n");
     // A fixed cwd avoids inheriting an unrelated selected project's instructions.
     const result = await exec("claude", ["-p", "--safe-mode", "--strict-mcp-config", "--tools", "", "--model", "haiku", "--effort", "low", "--no-session-persistence", "--max-budget-usd", "0.05", "--system-prompt", "Route a Herdr session using the supplied project catalog. Return only the requested JSON.", "--output-format", "json", "--json-schema", routeSchema(projects), instruction], { cwd: home(), timeout: 120000 });
     const plan = output(result);
     const project = projects.find(p => p.id === plan.project);
-    if (!project || !["none", "right", "down"].includes(plan.split) || typeof plan.needs_choice !== "boolean" || typeof plan.new_space !== "boolean" || !plan.reason?.trim()) throw new Error("Session planner returned an invalid project choice.");
+    if (!project || !["none", "right", "down"].includes(plan.split) || typeof plan.new_space !== "boolean" || !plan.reason?.trim()) throw new Error("Session planner returned an invalid project choice.");
     const folder = this.override || project.folder;
     if (!folder.startsWith(`${home()}/`)) throw new Error("Session folder must be under your home directory.");
     const exists = await exec("test", ["-d", folder]);
@@ -218,7 +218,7 @@ export default class SessionLauncher extends View {
     // Space placement follows project ownership and never determines it.
     const matches = allSpaces.filter(s => s.folder === folder);
     const target = plan.new_space ? null : matches.find(s => s.id === current?.space) || matches[0];
-    return { ...plan, needs_choice: this.override ? false : plan.needs_choice, folder, project_name: folder.split("/").pop(), space: target ? "existing" : "new", space_id: target?.id || "", space_name: folder.split("/").pop() };
+    return { ...plan, folder, project_name: folder.split("/").pop(), space: target ? "existing" : "new", space_id: target?.id || "", space_name: folder.split("/").pop() };
   }
 
   async launch(plan, request, selectedAgent, cx) {
@@ -273,10 +273,10 @@ export default class SessionLauncher extends View {
           .child(div().flex_1().text_size(12).text_color(t.foreground).child(this.routing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : "Destination · DevClarity vault by default"))
           .child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Change folder").on_click((_e, cx) => this.changeFolder(cx)))
           .when(Boolean(this.override), el => el.child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Auto").on_click((_e, cx) => { if (!this.busy) { this.override = null; this.scheduleRoute(cx); } }))))
-        .when(Boolean(this.route), el => el.child(div().text_size(11).text_color(this.route?.needs_choice ? t.blocked : t.muted).child(this.route?.needs_choice ? `Choose a folder. ${this.route.reason}` : this.route.reason))))
+        .when(Boolean(this.route), el => el.child(div().text_size(11).text_color(t.muted).child(this.route.reason))))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
-        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(!this.route || this.routing || this.route.needs_choice ? t.raised : t.solid).text_color(!this.route || this.routing || this.route.needs_choice ? t.muted : t.solid_foreground).child(this.busy ? "Starting…" : this.routing ? "Choosing…" : this.error && !this.route ? "Retry" : "Start").on_click((_e, cx) => { if (this.error && !this.route && !this.busy && !this.routing) this.scheduleRoute(cx); else this.start(cx); })));
+        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(!this.route || this.routing ? t.raised : t.solid).text_color(!this.route || this.routing ? t.muted : t.solid_foreground).child(this.busy ? "Starting…" : this.routing ? "Choosing…" : this.error && !this.route ? "Retry" : "Start").on_click((_e, cx) => { if (this.error && !this.route && !this.busy && !this.routing) this.scheduleRoute(cx); else this.start(cx); })));
   }
 }

@@ -13,7 +13,7 @@ const dotfiles = `${home}/dotfiles`;
 const source = readFileSync(join(__dirname, '../mods/session-launcher/main.js'), 'utf8')
   .replace(/^import .*;\n/gm, '').replace('export default class ', 'globalThis.Mod = class ');
 const catalog = [kit, vault, dotfiles].map(folder => ({id: folder, folder, name: folder.split('/').pop(), description: folder}));
-const defaultPlan = {project: kit, reason: 'Agent hooks belong in parker-agent-kit.', needs_choice: false, new_space: false, tab_name: 'focus-fix', split: 'none'};
+const defaultPlan = {project: kit, reason: 'Agent hooks belong in parker-agent-kit.', new_space: false, tab_name: 'focus-fix', split: 'none'};
 function setup(plan = defaultPlan, overrides = {}) {
   const calls = [];
   const context = {View: class {}, home: () => home, appHome: () => '/config',
@@ -49,7 +49,7 @@ test('launch uses project Space even after focus switches', async () => {
   assert.equal(calls.find(c => c.command === 'tab.new').args.space, 'kit');
 });
 test('rejects arbitrary folders, malformed routes and invalid layouts', async () => {
-  for (const patch of [{project: '/home/parker/random'}, {split: 'left'}, {needs_choice: undefined}, {reason: ''}]) {
+  for (const patch of [{project: '/home/parker/random'}, {split: 'left'}, {reason: ''}]) {
     const {mod} = setup({...defaultPlan, ...patch});
     await assert.rejects(mod.plan('Fix hooks'), /invalid project choice/);
   }
@@ -75,17 +75,24 @@ test('remote spaces cannot be reused or supply a current folder', async () => {
   assert.equal(result.space, 'new');
   assert.doesNotMatch(calls.find(c => c.command === 'claude').args.at(-1), /raya-demo/);
 });
+test('planner is told to always pick one project', async () => {
+  const {mod, calls} = setup();
+  await mod.plan('Fix hooks');
+  const prompt = calls.find(c => c.command === 'claude').args.at(-1);
+  assert.match(prompt, /Always choose exactly one project/);
+  assert.doesNotMatch(prompt, /needs_choice/);
+  assert.equal(JSON.parse(calls.find(c => c.command === 'claude').args[calls.find(c => c.command === 'claude').args.indexOf('--json-schema') + 1]).properties.needs_choice, undefined);
+});
 test('user override wins and Tasks Play supplies its default', async () => {
-  const {mod, calls} = setup({...defaultPlan, needs_choice: true});
+  const {mod, calls} = setup(defaultPlan);
   mod.override = dotfiles;
   mod.task = {folder: vault};
   const result = await mod.plan('Change this');
   assert.equal(result.folder, dotfiles);
-  assert.equal(result.needs_choice, false);
   assert.match(calls.find(c => c.command === 'claude').args.at(-1), /Tasks Play default/);
 });
-test('ambiguous, pending and missing routes cannot launch', () => {
-  for (const values of [{route: {...defaultPlan, needs_choice: true}}, {routing: true, route: defaultPlan}, {route: null}]) {
+test('pending and missing routes cannot launch', () => {
+  for (const values of [{routing: true, route: defaultPlan}, {route: null}]) {
     const {mod, calls} = setup();
     Object.assign(mod, values);
     mod.start({spawn() { throw Error('must not launch'); }});
