@@ -224,18 +224,21 @@ export default class Tabs extends View {
     const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"])];
     this.syncPanel(space, panel, body, enabled);
     // Icon-only buttons with a tooltip. The open panel widens to show its name,
-    // and a panel can publish "<id>.badge" ({count} or {dot: true}) for a corner mark.
-    const badge = id => {
+    // and a panel can publish "<id>.badge" ({count} or {dot: true, tone}) for a mark.
+    // An open button shows the count inline after its name; an icon-only one in its
+    // corner. Both stay inside the button so the next one can't draw over them.
+    const badge = (id, inline) => {
       const b = shared(`${id}.badge`);
       if (!b || (!b.dot && !(b.count > 0))) return null;
       const color = t[b.tone] ?? t.accent;
-      return b.count > 0
-        ? div().absolute().top(-3).right(-4).min_w(14).h(14).px(3).rounded(7).bg(color).text_color(t.chrome)
-          .text_size(9.5).flex().items_center().justify_center().child(b.count > 99 ? "99+" : String(b.count))
-        : div().absolute().top(2).right(2).size(6).rounded(3).bg(color);
+      if (!(b.count > 0)) return div().absolute().top(3).right(3).size(6).rounded(3).bg(color);
+      const text = b.count > 99 ? "99+" : String(b.count), size = inline ? 16 : 13;
+      return div().when(!inline, el => el.absolute().top(1).right(1))
+        .h(size).min_w(size).when(text.length > 1, el => el.px(inline ? 5 : 3)).rounded(size / 2).bg(color).text_color(t.chrome)
+        .text_size(inline ? 10.5 : 9).line_height(size).text_center().font_weight(600).flex_none().child(text);
     };
     const iconButton = (id, label, icon, key, { on = false, tint = null, action }) => {
-      const mark = badge(id);
+      const mark = badge(id, on);
       return h_flex().id(`panel-${id}`).relative().h(26).min_w(26).flex_none().items_center().justify_center().gap(5).rounded(6)
         .when(on, el => el.px(8)).text_size(12)
         .bg(on ? t.selected : t.chrome).text_color(tint ?? (on ? t.foreground : t.muted))
