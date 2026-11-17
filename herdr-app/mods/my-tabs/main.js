@@ -223,13 +223,33 @@ export default class Tabs extends View {
     const demo = Boolean(props()?.demo);
     const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"])];
     this.syncPanel(space, panel, body, enabled);
-    const panelButton = (id, label, icon) => {
-      const on = panel && !panel.hidden && body?.active === id;
-      return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
-        .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
-        .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
-        .on_click((_e, cx) => this.togglePanel(id, cx)).child(svg(icon).size(14)).child(label);
+    // Icon-only buttons with a tooltip. The open panel widens to show its name,
+    // and a panel can publish "<id>.badge" ({count} or {dot: true}) for a corner mark.
+    const badge = id => {
+      const b = shared(`${id}.badge`);
+      if (!b || (!b.dot && !(b.count > 0))) return null;
+      const color = t[b.tone] ?? t.accent;
+      return b.count > 0
+        ? div().absolute().top(-3).right(-4).min_w(14).h(14).px(3).rounded(7).bg(color).text_color(t.chrome)
+          .text_size(9.5).flex().items_center().justify_center().child(b.count > 99 ? "99+" : String(b.count))
+        : div().absolute().top(2).right(2).size(6).rounded(3).bg(color);
     };
+    const iconButton = (id, label, icon, key, { on = false, tint = null, action }) => {
+      const mark = badge(id);
+      return h_flex().id(`panel-${id}`).relative().h(26).min_w(26).flex_none().items_center().justify_center().gap(5).rounded(6)
+        .when(on, el => el.px(8)).text_size(12)
+        .bg(on ? t.selected : t.chrome).text_color(tint ?? (on ? t.foreground : t.muted))
+        .hover(s => s.bg(t.hover).text_color(tint ?? t.foreground)).on_mouse_down("left", stop)
+        .tooltip(key ? `${label}  ${key}` : label).accessibility_label(label)
+        .on_click(action).child(svg(icon).size(14))
+        .when(on, el => el.child(label))
+        .when(Boolean(mark), el => el.child(mark));
+    };
+    const panelButton = (id, label, icon, key) => iconButton(id, label, icon, key, {
+      on: panel && !panel.hidden && body?.active === id,
+      action: (_e, cx) => this.togglePanel(id, cx),
+    });
+    const divider = id => div().id(id).w(1).h(14).mx(4).flex_none().bg(t.border);
     const music = shared("music.playback");
     const playback = shared("music.config")?.connected && Date.now() - (music?.at || 0) < 30000 ? music?.playback : "unknown";
     const musicPlaying = playback === "playing";
@@ -241,19 +261,21 @@ export default class Tabs extends View {
         .on_size_change((_size, cx) => { if (active >= 0) { this.scroll.scroll_to_item(active); cx.notify(); } })
         .children(shown.map(item)))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
+      .when(enabled.includes("files") || enabled.includes("changes"), el => el.child(divider("divider-workspace")))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(!demo, el => el
-        .child(h_flex().id("music-controls").h(26).px(8).gap(5).flex_none().items_center().rounded(6)
-          .text_size(12).bg(musicPlaying ? t.selected : t.chrome).text_color(musicPlaying ? t.accent : t.muted)
-          .cursor_pointer().hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
-          .on_click(() => run("mod.open", {name: "music"}))
-          .child(svg(`mods/music/${musicIcon}.svg`).size(14)).child("Music"))
-        .child(panelButton("ops-tasks", "Tasks", "mods/workspace-chrome/check.svg"))
-        .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg"))
-        .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg"))
-        .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg"))
-        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg")))
+        .child(divider("divider-work"))
+        .child(panelButton("ops-tasks", "Tasks", "mods/workspace-chrome/check.svg", "⇧⌘T"))
+        .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg", "⇧⌘J"))
+        .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg", "⇧⌘C"))
+        .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg", "⇧⌘A"))
+        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg", "⇧⌘K"))
+        .child(divider("divider-ambient"))
+        .child(iconButton("music", musicPlaying ? "Music (playing)" : "Music", `mods/music/${musicIcon}.svg`, "⇧⌘U", {
+          tint: musicPlaying ? t.accent : null,
+          action: () => run("mod.open", { name: "music" }),
+        })))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
