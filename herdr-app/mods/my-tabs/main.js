@@ -232,10 +232,12 @@ export default class Tabs extends View {
       if (!b || (!b.dot && !(b.count > 0))) return null;
       const color = t[b.tone] ?? t.accent;
       if (!(b.count > 0)) return div().absolute().top(3).right(3).size(6).rounded(3).bg(color);
-      const text = b.count > 99 ? "99+" : String(b.count), size = inline ? 16 : 13;
-      return div().when(!inline, el => el.absolute().top(1).right(1))
+      // The corner badge rises above the button's top edge, clear of the icon, and stays
+      // within the 3px gap so the next button can't cover it.
+      const text = b.count > 99 ? "99+" : String(b.count), size = inline ? 16 : 12;
+      return div().when(!inline, el => el.absolute().top(-5).right(-2))
         .h(size).min_w(size).when(text.length > 1, el => el.px(inline ? 5 : 3)).rounded(size / 2).bg(color).text_color(t.canvas)
-        .text_size(inline ? 10.5 : 9).flex().flex_none().items_center().justify_center().child(text);
+        .text_size(inline ? 10.5 : 8).flex().flex_none().items_center().justify_center().child(text);
     };
     const iconButton = (id, label, icon, key, { on = false, tint = null, action }) => {
       const mark = badge(id, on);
