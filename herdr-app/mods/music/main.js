@@ -253,12 +253,20 @@ export default class Music extends View {
     const row = (...children) => h_flex().gap(7).items_center().children(children);
     const back = cx => { this.target = null; this.view = "player"; this.note = ""; this.handle.focus(); cx.notify(); };
     const list = this.visible();
+    const togglePlay = cx => {
+      if (!playing && !state?.track) { this.view = "playlists"; this.note = "Choose a playlist to start listening."; cx.notify(); }
+      else this.act(playing ? "pause" : "play", null, cx);
+    };
     return v_flex().id("music-root").track_focus(this.handle).size_full().p(18).gap(12).font_family("Helvetica Neue").bg(t.popover).text_color(t.foreground)
       .on_key_down((event, cx) => {
         if (event.key === "escape") {
           if (this.target) { this.target = null; this.handle.focus(); cx.notify(); }
           else if (this.view !== "player") back(cx);
           else closeOverlay(props().overlay);
+          cx.stop_propagation();
+        }
+        if (event.keystroke === "space" && settings.connected && player) {
+          if (!disabled) togglePlay(cx);
           cx.stop_propagation();
         }
         if (this.target && ["up", "down"].includes(event.key)) {
@@ -289,10 +297,7 @@ export default class Music extends View {
             .child(time(state?.position)).child(state?.track?.duration ? `-${time(Math.max(0, state.track.duration - (state.position || 0)))}` : "0:00")))
         .child(h_flex().items_center().justify_center().gap(22)
           .child(transport("music-previous", "previous", cx => this.act("previous", null, cx), disabled || !state?.track))
-          .child(transport("music-play", playing ? "pause" : "play", cx => {
-            if (!playing && !state?.track) { this.view = "playlists"; this.note = "Choose a playlist to start listening."; cx.notify(); }
-            else this.act(playing ? "pause" : "play", null, cx);
-          }, disabled, true))
+          .child(transport("music-play", playing ? "pause" : "play", togglePlay, disabled, true))
           .child(transport("music-next", "next", cx => this.act("next", null, cx), disabled || !state?.track)))
         .child(row(svg("mods/music/volume.svg").size(15).text_color(t.muted),
           div().flex_1().child(Slider.new(this.volumeSlider).child(

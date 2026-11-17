@@ -25,6 +25,7 @@ Connecting grants playback control. It does not sign you in or verify a subscrip
 - The volume slider changes Music's own volume without changing system volume.
 - Add library playlist creates a shortcut to any library playlist, with its name as the label.
 - Link or Relink chooses an explicit library playlist, with an ID suffix to distinguish duplicate names.
+- Space plays or pauses from the player.
 - Arrow keys and Enter select a playlist in the linking list, and Escape returns to the controls.
 - Up and down buttons reorder shortcuts, while Remove only deletes the shortcut in Herdr.
 - Shortcuts persist across popups, layouts and Herdr restarts in the versioned `music.config` shared value.
