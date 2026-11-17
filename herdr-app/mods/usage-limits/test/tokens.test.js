@@ -58,6 +58,11 @@ test("summarize: the 7-day window includes 6 days back and not 7", () => {
   near(sonnet.cost, 10);
 });
 
+test("summarize: all time counts every day in the scan", () => {
+  const s = summarize(DATA, "claude", Infinity, TODAY);
+  assert.equal(s.models.find((m) => m.key === "claude-sonnet-5-5").tokens, 2_000_000);
+});
+
 test("summarize: no data gives zeros", () => {
   const s = summarize(null, "codex", 30, TODAY);
   assert.equal(s.total, 0);

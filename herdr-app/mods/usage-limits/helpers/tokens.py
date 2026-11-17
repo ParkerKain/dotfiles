@@ -9,7 +9,7 @@ Codex buckets:  input (uncached), cached, output (reasoning included), reasoning
 
 A model key gets "|long" when the request crossed the model's long-prompt price
 tier and "|fast" for fast mode, so pricing (lib/tokens.js) stays out of here.
-Only numbers leave this script. Usage: tokens.py [days]
+Only numbers leave this script. Usage: tokens.py [days|all] (default 31)
 """
 import glob
 import json
@@ -18,12 +18,13 @@ import sys
 import time
 from datetime import datetime, timedelta
 
-DAYS = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 31
+ARG = sys.argv[1] if len(sys.argv) > 1 else "31"
+DAYS = None if ARG == "all" else int(ARG) if ARG.isdigit() else 31
 # Prompts above these sizes bill at a higher rate (tokens in one request).
 LONG_PROMPT = {"claude-haiku-5-5": 100_000, "gpt-6.1-sol": 272_000}
 
-since = (datetime.now() - timedelta(days=DAYS - 1)).date()
-cutoff = time.time() - (DAYS + 1) * 86400
+since = (datetime.now() - timedelta(days=DAYS - 1)).date() if DAYS else None
+cutoff = time.time() - (DAYS + 1) * 86400 if DAYS else 0
 days = {}
 
 
@@ -33,7 +34,7 @@ def day_of(ts):
         d = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone().date()
     except (AttributeError, ValueError):
         return None
-    return d.isoformat() if d >= since else None
+    return d.isoformat() if since is None or d >= since else None
 
 
 def bucket(day, tool, key, fields):
@@ -155,5 +156,5 @@ def codex():
 
 claude()
 codex()
-json.dump({"since": since.isoformat(), "days": days}, sys.stdout, separators=(",", ":"))
+json.dump({"since": since.isoformat() if since else min(days, default=None), "days": days}, sys.stdout, separators=(",", ":"))
 sys.stdout.write("\n")

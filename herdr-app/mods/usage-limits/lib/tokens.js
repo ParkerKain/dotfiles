@@ -46,6 +46,7 @@ export const PERIODS = [
   { id: "today", label: "Today", days: 1 },
   { id: "week", label: "7 days", days: 7 },
   { id: "month", label: "30 days", days: 30 },
+  { id: "all", label: "All time", days: Infinity },
 ];
 
 export function parseTokens(text) {
@@ -85,9 +86,11 @@ export function summarize(data, tool, periodDays, today) {
   const tokens = Object.fromEntries(cats.map((c) => [c.id, 0]));
   const costs = Object.fromEntries(cats.map((c) => [c.id, 0]));
   const models = {};
-  for (let back = 0; back < periodDays; back++) {
-    const day = data?.days?.[dayKey(today, back)]?.[tool];
-    if (!day) continue;
+  const from = Number.isFinite(periodDays) ? dayKey(today, periodDays - 1) : "";
+  const to = dayKey(today);
+  for (const [date, tools] of Object.entries(data?.days ?? {})) {
+    const day = tools?.[tool];
+    if (!day || date < from || date > to) continue;
     for (const [key, b] of Object.entries(day)) {
       const price = priceOf(tool, key);
       const m = (models[key] ??= { key, label: modelLabel(key), tokens: 0, cost: 0, calls: 0, priced: price != null });
