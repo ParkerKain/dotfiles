@@ -12,7 +12,7 @@ import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js"
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
 import { parseSession, sessionOnBar, sessionView } from "./lib/session.js";
 import { nextState } from "./lib/state.js";
-import { PERIODS, parseTokens, summarize, exact, money } from "./lib/tokens.js";
+import { PERIODS, parseTokens, summarize, exact, money, shortDate } from "./lib/tokens.js";
 import { tokens as compact } from "./lib/format.js";
 
 const MOD = "usage-limits";
@@ -36,6 +36,8 @@ const PANEL_OPEN_DELAY = 350;       // ms, so passing over the bar doesn't flash
 const PANEL_CLOSE_DELAY = 300;      // ms, lets the pointer cross from the bar to the card
 
 const now = () => Math.floor(Date.now() / 1000);
+// The earliest day any tool has logs for: where "All time" starts.
+const since = (usage) => usage.map((u) => u.s.firstDay).filter(Boolean).sort()[0] ?? null;
 const states = () => shared(KEY_STATE) ?? {};
 
 function levelColor(level, t) {
@@ -351,7 +353,8 @@ export default class UsageLimits extends View {
         .child(div().w(80).flex_none().flex().justify_end().whitespace_nowrap().text_color(t.dim).child(this.costText(s))));
     }
     return block.child(h_flex().gap(8).items_center()
-      .child(div().flex_1().text_size(11).text_color(t.dim).child("Estimated at API list prices"))
+      .child(div().flex_1().text_size(11).text_color(t.dim).child(this.period === "all" && since(usage)
+        ? `Since ${shortDate(since(usage))}, at API list prices` : "Estimated at API list prices"))
       .child(div().flex_none().whitespace_nowrap().font_semibold().child(`≈ ${money(sum)}`)));
   }
 
@@ -377,7 +380,7 @@ export default class UsageLimits extends View {
         .child(h_flex().gap(6).items_center().pb(2)
           .child(image(p.icon).size(13))
           .child(div().flex_1().font_semibold().child(p.name))
-          .child(div().flex_none().whitespace_nowrap().text_color(t.dim).text_size(11).child(`${exact(s.calls)} calls`)));
+          .child(div().flex_none().whitespace_nowrap().text_color(t.dim).text_size(11).child(this.period === "all" && s.firstDay ? `since ${shortDate(s.firstDay)} · ${exact(s.calls)} calls` : `${exact(s.calls)} calls`)));
       for (const c of s.categories) {
         group.child(this.numberRow(`ul-tc-${p.id}-${c.id}`, c.label, c.tokens, s.unpriced.length && c.cost === 0 && c.tokens ? "" : money(c.cost), t));
       }

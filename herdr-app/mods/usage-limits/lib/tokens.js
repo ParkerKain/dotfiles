@@ -86,11 +86,13 @@ export function summarize(data, tool, periodDays, today) {
   const tokens = Object.fromEntries(cats.map((c) => [c.id, 0]));
   const costs = Object.fromEntries(cats.map((c) => [c.id, 0]));
   const models = {};
+  let firstDay = null;
   const from = Number.isFinite(periodDays) ? dayKey(today, periodDays - 1) : "";
   const to = dayKey(today);
   for (const [date, tools] of Object.entries(data?.days ?? {})) {
     const day = tools?.[tool];
     if (!day || date < from || date > to) continue;
+    if (firstDay == null || date < firstDay) firstDay = date;
     for (const [key, b] of Object.entries(day)) {
       const price = priceOf(tool, key);
       const m = (models[key] ??= { key, label: modelLabel(key), tokens: 0, cost: 0, calls: 0, priced: price != null });
@@ -111,10 +113,19 @@ export function summarize(data, tool, periodDays, today) {
     total: cats.reduce((s, c) => s + tokens[c.id], 0),
     cost: cats.reduce((s, c) => s + costs[c.id], 0),
     calls: list.reduce((s, m) => s + m.calls, 0),
+    firstDay,
     categories: cats.map((c) => ({ id: c.id, label: c.label, tokens: tokens[c.id], cost: costs[c.id] })),
     models: list,
     unpriced: list.filter((m) => !m.priced && m.tokens > 0).map((m) => m.label),
   };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "2026-10-08" → "Oct 8"
+export function shortDate(iso) {
+  const [, m, d] = String(iso ?? "").split("-").map(Number);
+  return m >= 1 && m <= 12 && d ? `${MONTHS[m - 1]} ${d}` : "";
 }
 
 export function exact(n) {

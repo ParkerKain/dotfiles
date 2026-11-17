@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MOD } from "./_util.js";
-import { parseTokens, summarize, dayKey, priceOf, modelLabel, money, exact } from "../lib/tokens.js";
+import { parseTokens, summarize, dayKey, priceOf, modelLabel, money, exact, shortDate } from "../lib/tokens.js";
 
 const TODAY = new Date(2026, 10, 17, 15, 0);
 
@@ -61,6 +61,8 @@ test("summarize: the 7-day window includes 6 days back and not 7", () => {
 test("summarize: all time counts every day in the scan", () => {
   const s = summarize(DATA, "claude", Infinity, TODAY);
   assert.equal(s.models.find((m) => m.key === "claude-sonnet-5-5").tokens, 2_000_000);
+  assert.equal(s.firstDay, "2026-11-10");
+  assert.equal(summarize(DATA, "codex", Infinity, TODAY).firstDay, "2026-11-17");
 });
 
 test("summarize: no data gives zeros", () => {
@@ -73,6 +75,11 @@ test("priceOf / modelLabel", () => {
   assert.equal(priceOf("claude", "nope"), null);
   assert.equal(priceOf("claude", "claude-opus-5-5|fast").output, 40);
   assert.equal(modelLabel("claude-haiku-5-5|long"), "haiku-5-5 (long)");
+});
+
+test("shortDate", () => {
+  assert.equal(shortDate("2026-10-08"), "Oct 8");
+  assert.equal(shortDate(null), "");
 });
 
 test("money / exact", () => {
