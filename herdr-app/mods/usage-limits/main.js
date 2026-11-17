@@ -1,8 +1,9 @@
 // Usage limits: every Claude Code / Codex limit window in the status bar, and one
 // panel on hover: the details, and behind ⚙ the checkboxes to choose what shows.
 //
-// Data comes from small helpers that run the CLIs themselves (helpers/*.sh);
-// this mod never reads a token. Everything below main.js is pure and tested.
+// Data comes from small helpers that run the CLIs themselves (helpers/*.sh)
+// and a log scan for token totals (helpers/tokens.py);
+// this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
 import { exec, focused, theme, props, shared, setShared, appHome } from "herdr";
@@ -11,11 +12,16 @@ import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js"
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
 import { parseSession, sessionOnBar, sessionView } from "./lib/session.js";
 import { nextState } from "./lib/state.js";
+import { PERIODS, parseTokens, summarize, exact, money } from "./lib/tokens.js";
+import { tokens as compact } from "./lib/format.js";
 
 const MOD = "usage-limits";
 const KEY_STATE = "usage-limits.state";
 const KEY_PREFS = "usage-limits.prefs";
 const KEY_REFRESH = "usage-limits.refresh";
+const KEY_TOKENS = "usage-limits.tokens";
+const TOKENS_EVERY = 10 * 60;     // s, the log scan takes a few seconds
+const TOKEN_DAYS = 31;
 const FETCH_EVERY = 5 * 60;       // s, installed providers
 const MISSING_EVERY = 60 * 60;    // s, not-installed providers
 const REFRESH_COOLDOWN = 30;      // s
@@ -61,6 +67,9 @@ export default class UsageLimits extends View {
     this.lastFetch = {};   // providerId → epoch s of last attempt
     this.busy = {};        // providerId → fetch in flight
     this.seenRefresh = shared(KEY_REFRESH) ?? 0;
+    this.tokensBusy = false;
+    this.tokensAt = 0;     // epoch s of the last scan started
+    this.period = "today";
     this.tick(cx, true);
     cx.timer.every(60 * 1000, (cx) => this.tick(cx, false));
   }
@@ -75,8 +84,28 @@ export default class UsageLimits extends View {
         : (p.every ?? FETCH_EVERY);
       if (force || now() - (this.lastFetch[p.id] ?? 0) >= every) this.fetch(p, cx);
     }
+    if (force || now() - this.tokensAt >= TOKENS_EVERY) this.fetchTokens(cx);
     this.readSession(cx);
     cx.notify();
+  }
+
+  // Tokens per day and model from both tools' session logs (helpers/tokens.py).
+  fetchTokens(cx) {
+    if (this.tokensBusy) return;
+    this.tokensBusy = true;
+    this.tokensAt = now();
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("python3", ["-I", `${appHome()}/mods/${MOD}/helpers/tokens.py`, String(TOKEN_DAYS)]);
+        const data = r.code === 0 ? parseTokens(r.stdout) : null;
+        if (data) setShared(KEY_TOKENS, { ...data, observedAt: now() });
+      } catch {
+        // keep the last scan
+      } finally {
+        this.tokensBusy = false;
+      }
+      cx.notify();
+    });
   }
 
   fetch(p, cx) {
@@ -204,7 +233,9 @@ export default class UsageLimits extends View {
     });
     const panel = cardModel(st, now());
     // With no CLI installed there are no limits to show, so settings are all there is.
-    const body = this.panel === "settings" || panel.empty ? this.settings(!panel.empty, t) : this.limits(panel, t);
+    const body = this.panel === "settings" || panel.empty ? this.settings(!panel.empty, t)
+      : this.panel === "tokens" ? this.tokensPanel(t)
+      : this.limits(panel, t);
     return root.child(HoverCard.new("ul-panel").anchor("bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
       .trigger(content)
       .content(body));
@@ -267,11 +298,102 @@ export default class UsageLimits extends View {
       if (i > 0) body.child(rule());
       body.child(this.cardGroup(g, t));
     });
+    const usage = this.tokenSummaries();
+    if (usage) body.child(rule()).child(this.tokensBlock(usage, t));
     const cooling = this.cooling();
     return body.child(rule())
       .child(h_flex().gap(2).justify_end().items_center()
         .child(this.iconButton("ul-refresh", "refresh", cooling ? "Refreshing…" : "Refresh now", !cooling, (cx) => this.refresh(cx), t))
         .child(this.iconButton("ul-settings", "gear", "Settings", true, (cx) => this.show("settings", cx), t)));
+  }
+
+  // ---------- tokens ----------
+
+  tokenSummaries() {
+    const data = shared(KEY_TOKENS);
+    if (!data) return null;
+    const days = PERIODS.find((p) => p.id === this.period)?.days ?? 1;
+    return PROVIDERS.map((p) => ({ provider: p, s: summarize(data, p.id, days, new Date()) }));
+  }
+
+  periodTabs(t) {
+    return h_flex().gap(2).items_center().children(PERIODS.map((p) => {
+      const on = p.id === this.period;
+      return div().id(`ul-period-${p.id}`).px(6).py(1).rounded(4).text_size(11).cursor_pointer()
+        .when(on, (e) => e.bg(t.raised).text_color(t.foreground))
+        .when(!on, (e) => e.text_color(t.dim).hover((s) => s.bg(t.hover)))
+        .on_click((_e, cx) => { this.period = p.id; cx.notify(); })
+        .child(p.label);
+    }));
+  }
+
+  costText(s) {
+    if (s.total === 0) return "$0.00";
+    return s.unpriced.length && s.cost === 0 ? "unpriced" : `≈ ${money(s.cost)}`;
+  }
+
+  // The summary in the limits panel: one row per tool, and the combined cost.
+  tokensBlock(usage, t) {
+    const sum = usage.reduce((c, u) => c + u.s.cost, 0);
+    const block = v_flex().gap(6)
+      .child(h_flex().gap(6).items_center()
+        .child(div().flex_none().font_semibold().child("Tokens"))
+        .child(div().flex_1())
+        .child(this.periodTabs(t)));
+    for (const { provider: p, s } of usage) {
+      block.child(h_flex().id(`ul-tok-${p.id}`).gap(8).items_center().cursor_pointer().rounded(4)
+        .hover((e) => e.bg(t.hover))
+        .tooltip(`${exact(s.total)} tokens in ${exact(s.calls)} calls. Click for the breakdown.`)
+        .on_click((_e, cx) => this.show("tokens", cx))
+        .child(image(p.icon).size(13))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(p.name))
+        .child(div().flex_none().whitespace_nowrap().child(compact(s.total)))
+        .child(div().w(80).flex_none().flex().justify_end().whitespace_nowrap().text_color(t.dim).child(this.costText(s))));
+    }
+    return block.child(h_flex().gap(8).items_center()
+      .child(div().flex_1().text_size(11).text_color(t.dim).child("Estimated at API list prices"))
+      .child(div().flex_none().whitespace_nowrap().font_semibold().child(`≈ ${money(sum)}`)));
+  }
+
+  numberRow(id, label, n, cost, t, strong = false) {
+    return h_flex().id(id).gap(8).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_color(strong ? t.foreground : t.muted).child(label))
+      .child(div().flex_none().whitespace_nowrap().when(strong, (e) => e.font_semibold()).child(exact(n)))
+      .child(div().w(76).flex_none().flex().justify_end().whitespace_nowrap().text_color(t.dim).child(cost));
+  }
+
+  tokensPanel(t) {
+    const usage = this.tokenSummaries() ?? [];
+    const rule = () => div().h(1).bg(t.border).flex_none();
+    const body = this.shell(t)
+      .child(h_flex().gap(6).items_center().h(24)
+        .child(this.iconButton("ul-back-tokens", "back", "Back to limits", true, (cx) => this.show("limits", cx), t))
+        .child(div().font_semibold().child("Tokens"))
+        .child(div().flex_1())
+        .child(this.periodTabs(t)));
+    for (const { provider: p, s } of usage) {
+      body.child(rule());
+      const group = v_flex().gap(3)
+        .child(h_flex().gap(6).items_center().pb(2)
+          .child(image(p.icon).size(13))
+          .child(div().flex_1().font_semibold().child(p.name))
+          .child(div().flex_none().whitespace_nowrap().text_color(t.dim).text_size(11).child(`${exact(s.calls)} calls`)));
+      for (const c of s.categories) {
+        group.child(this.numberRow(`ul-tc-${p.id}-${c.id}`, c.label, c.tokens, s.unpriced.length && c.cost === 0 && c.tokens ? "" : money(c.cost), t));
+      }
+      group.child(this.numberRow(`ul-tt-${p.id}`, "Total", s.total, this.costText(s), t, true));
+      if (s.models.length > 1 || s.unpriced.length) {
+        group.child(v_flex().gap(1).pt(4).children(s.models.filter((m) => m.tokens > 0).map((m) =>
+          h_flex().gap(8).text_size(11).text_color(t.dim)
+            .child(div().flex_1().min_w(0).truncate().child(m.label))
+            .child(div().flex_none().whitespace_nowrap().child(compact(m.tokens)))
+            .child(div().w(76).flex_none().flex().justify_end().whitespace_nowrap().child(m.priced ? money(m.cost) : "unpriced")))));
+      }
+      body.child(group);
+    }
+    const data = shared(KEY_TOKENS);
+    const note = data ? `From session logs, scanned ${new Date(data.observedAt * 1000).toTimeString().slice(0, 5)}. Cost is an estimate at API list prices.` : "Reading session logs…";
+    return body.child(rule()).child(div().text_size(10.5).text_color(t.dim).child(note));
   }
 
   // ---------- panel: settings ----------
@@ -336,6 +458,7 @@ export default class UsageLimits extends View {
     if (asked !== this.seenRefresh) {
       this.seenRefresh = asked;
       for (const p of PROVIDERS) this.fetch(p, cx);
+      this.fetchTokens(cx);
     }
     return this.renderBar(cx);
   }
