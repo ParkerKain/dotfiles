@@ -62,6 +62,7 @@ export default class SessionLauncher extends View {
     this.override = null;
     this.routing = false;
     this.revision = 0;
+    this.pendingRoute = null;
     // Pasted images: "[Image #N]" chip text -> saved PNG path.
     this.images = new Map();
     this.handle = cx.focus_handle();
@@ -125,14 +126,17 @@ export default class SessionLauncher extends View {
         for (;;) {
           const revision = this.revision;
           await cx.sleep(900);
+          if (this.busy) break;
           if (revision !== this.revision) continue;
           if (!this.text.trim()) break;
           try {
-            const plan = await this.plan(this.request());
+            const plan = await this.resolveRoute(this.request(), revision);
+            if (this.busy) break;
             if (revision !== this.revision) continue;
             this.route = plan;
             this.error = "";
           } catch (error) {
+            if (this.busy) break;
             if (revision !== this.revision) continue;
             this.error = String(error?.message ?? error);
           }
@@ -143,32 +147,46 @@ export default class SessionLauncher extends View {
     cx.notify();
   }
 
+  resolveRoute(request, revision) {
+    if (this.pendingRoute?.revision === revision) return this.pendingRoute.promise;
+    const pending = { revision, promise: this.plan(request).finally(() => {
+      if (this.pendingRoute === pending) this.pendingRoute = null;
+    }) };
+    this.pendingRoute = pending;
+    return pending.promise;
+  }
+
   changeFolder(cx) {
     if (this.busy) return;
     cx.spawn(async cx => {
       try {
         const folder = await pickFolder({ prompt: "Use for this session" });
-        if (folder) { this.override = folder; this.scheduleRoute(cx); }
+        if (folder && !this.busy) { this.override = folder; this.scheduleRoute(cx); }
       } catch (error) { this.error = String(error?.message ?? error); cx.notify(); }
     });
   }
 
   start(cx) {
-    if (this.error && !this.route && !this.busy && !this.routing) { this.scheduleRoute(cx); return; }
-    if (this.busy || this.routing || !this.route) return;
+    if (this.busy || !this.text?.trim()) return;
     this.busy = true;
     this.error = "";
     const request = this.request();
     const selectedAgent = this.agent;
-    const plan = this.route;
+    const override = this.override;
+    const revision = this.revision;
+    const preview = this.route;
     cx.notify();
     cx.spawn(async cx => {
       try {
+        const plan = preview ?? await this.resolveRoute(request, revision);
+        if (revision === this.revision) this.route = plan;
+        cx.notify();
         // A failed history write must not prevent a valid session from launching.
-        await exec("python3", [HELPER, "log", JSON.stringify({ request, folder: plan.folder, reason: plan.reason, agent: selectedAgent, override: Boolean(this.override) })]).catch(() => null);
+        await exec("python3", [HELPER, "log", JSON.stringify({ request, folder: plan.folder, reason: plan.reason, agent: selectedAgent, override: Boolean(override) })]).catch(() => null);
         await this.launch(plan, request, selectedAgent, cx);
         closeOverlay(props().overlay);
       } catch (error) {
+        this.route = null;
         this.error = String(error?.message ?? error);
         this.busy = false;
         cx.notify();
@@ -177,6 +195,7 @@ export default class SessionLauncher extends View {
   }
 
   async plan(request) {
+    const override = this.override;
     const allSpaces = spaces().filter(s => !s.machine);
     const origin = this.origin ?? focused();
     const current = allSpaces.some(s => s.id === origin?.space) ? origin : null;
@@ -189,7 +208,7 @@ export default class SessionLauncher extends View {
     add(this.task?.folder, "Default folder supplied by this Tasks Play request.");
     const refersToCurrent = /\b(?:this|current|selected)\s+(?:repo(?:sitory)?|project|folder|directory|codebase|app)\b/i.test(request);
     add(refersToCurrent ? current?.cwd : null, "Current local project. Choose ONLY if the request explicitly refers to this project, this repo, or this folder.");
-    add(this.override, "Folder explicitly selected by the user for this session.");
+    add(override, "Folder explicitly selected by the user for this session.");
     if (!projects.some(p => p.folder === VAULT)) throw new Error("DevClarity vault is missing from the project catalog.");
     const instruction = [
       "Choose the project that owns this work, then a short tab name and layout. Return JSON only.",
@@ -203,7 +222,7 @@ export default class SessionLauncher extends View {
       `Project catalog: ${JSON.stringify(projects)}`,
       `Current local project: ${refersToCurrent ? current?.cwd || "none" : "not referenced by request"}`,
       this.task ? `Tasks Play default: ${this.task.folder || VAULT}` : "",
-      this.override ? `The user explicitly chose ${this.override}. You MUST choose this project.` : "",
+      override ? `The user explicitly chose ${override}. You MUST choose this project.` : "",
       `Request:\n${request}`
     ].filter(Boolean).join("\n\n");
     // A fixed cwd avoids inheriting an unrelated selected project's instructions.
@@ -211,7 +230,7 @@ export default class SessionLauncher extends View {
     const plan = output(result);
     const project = projects.find(p => p.id === plan.project);
     if (!project || !["none", "right", "down"].includes(plan.split) || typeof plan.new_space !== "boolean" || !plan.reason?.trim()) throw new Error("Session planner returned an invalid project choice.");
-    const folder = this.override || project.folder;
+    const folder = override || project.folder;
     if (!folder.startsWith(`${home()}/`)) throw new Error("Session folder must be under your home directory.");
     const exists = await exec("test", ["-d", folder]);
     if (exists.code !== 0) throw new Error(`Folder does not exist: ${folder}`);
@@ -251,6 +270,8 @@ export default class SessionLauncher extends View {
   render() {
     const t = theme();
     const p = props() ?? {};
+    const canStart = !this.busy && Boolean(this.text.trim());
+    const choosing = !this.route && (this.routing || this.busy) && Boolean(this.text.trim() || this.busy);
     return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().overflow_hidden().p(18).gap(12).bg(t.popover)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
@@ -270,13 +291,13 @@ export default class SessionLauncher extends View {
         .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image")))
       .child(v_flex().flex_shrink_0().gap(4)
         .child(h_flex().items_center().gap(8)
-          .child(div().flex_1().text_size(12).text_color(t.foreground).child(this.routing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : "Destination · DevClarity vault by default"))
+          .child(div().flex_1().text_size(12).text_color(t.foreground).child(choosing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : "Destination · DevClarity vault by default"))
           .child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Change folder").on_click((_e, cx) => this.changeFolder(cx)))
           .when(Boolean(this.override), el => el.child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Auto").on_click((_e, cx) => { if (!this.busy) { this.override = null; this.scheduleRoute(cx); } }))))
         .when(Boolean(this.route), el => el.child(div().text_size(11).text_color(t.muted).child(this.route.reason))))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
-        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(!this.route || this.routing ? t.raised : t.solid).text_color(!this.route || this.routing ? t.muted : t.solid_foreground).child(this.busy ? "Starting…" : this.routing ? "Choosing…" : this.error && !this.route ? "Retry" : "Start").on_click((_e, cx) => { if (this.error && !this.route && !this.busy && !this.routing) this.scheduleRoute(cx); else this.start(cx); })));
+        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx))));
   }
 }

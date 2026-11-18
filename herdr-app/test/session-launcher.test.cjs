@@ -91,13 +91,75 @@ test('user override wins and Tasks Play supplies its default', async () => {
   assert.equal(result.folder, dotfiles);
   assert.match(calls.find(c => c.command === 'claude').args.at(-1), /Tasks Play default/);
 });
-test('pending and missing routes cannot launch', () => {
-  for (const values of [{routing: true, route: defaultPlan}, {route: null}]) {
+test('blank prompts cannot launch', () => {
+  const {mod, calls} = setup();
+  mod.text = '   ';
+  mod.start({spawn() { throw Error('must not launch'); }});
+  assert.equal(calls.length, 0);
+});
+
+test('Start reuses a current preview or in-flight route, and skips the debounce for a new request', async () => {
+  for (const timing of ['debouncing', 'planning', 'preview ready', 'stale plan']) {
     const {mod, calls} = setup();
-    Object.assign(mod, values);
-    mod.start({spawn() { throw Error('must not launch'); }});
-    assert.equal(calls.length, 0);
+    Object.assign(mod, {text: 'Fix hooks', agent: 'codex', images: new Map(), revision: 0});
+    const tasks = [];
+    const debounce = Promise.withResolvers();
+    const startedPlanning = Promise.withResolvers();
+    const planning = Promise.withResolvers();
+    const plan = mod.plan.bind(mod);
+    const requests = [];
+    mod.plan = async request => {
+      requests.push(request);
+      startedPlanning.resolve();
+      await planning.promise;
+      return plan(request);
+    };
+    const cx = {notify() {}, sleep: () => debounce.promise, spawn(fn) { tasks.push(fn(cx)); }};
+    mod.scheduleRoute(cx);
+    if (timing !== 'debouncing') {
+      debounce.resolve();
+      await startedPlanning.promise;
+      assert.deepEqual(requests, ['Fix hooks']);
+    }
+    if (timing === 'preview ready') {
+      planning.resolve();
+      await tasks[0];
+      assert.equal(mod.route.folder, kit);
+      assert.equal(calls.some(c => c.command === 'tab.new'), false);
+    }
+    if (timing === 'stale plan') {
+      mod.text = 'Fix updated hooks';
+      mod.scheduleRoute(cx);
+    }
+    mod.start(cx);
+    mod.start(cx);
+    assert.deepEqual(requests, timing === 'stale plan' ? ['Fix hooks', 'Fix updated hooks'] : ['Fix hooks']);
+    planning.resolve();
+    await tasks[1];
+    const launches = calls.filter(c => c.command === 'tab.new');
+    assert.equal(launches.length, 1);
+    assert.equal(launches[0].args.task, mod.text);
+    assert.equal(launches[0].args.folder, kit);
+    debounce.resolve();
+    await tasks[0];
   }
+});
+
+test('a failed submitted route can be retried with one Start', async () => {
+  const {mod, calls} = setup();
+  Object.assign(mod, {text: 'Fix hooks', agent: 'codex', images: new Map(), revision: 0});
+  const plan = mod.plan.bind(mod);
+  mod.plan = async () => { throw new Error('Planner unavailable'); };
+  let task;
+  const cx = {notify() {}, spawn(fn) { task = fn(cx); }};
+  mod.start(cx);
+  await task;
+  assert.equal(mod.error, 'Planner unavailable');
+  assert.equal(mod.busy, false);
+  mod.plan = plan;
+  mod.start(cx);
+  await task;
+  assert.equal(calls.filter(c => c.command === 'tab.new').length, 1);
 });
 test('typing during a routing call discards stale results and reroutes', async () => {
   const {mod} = setup();
