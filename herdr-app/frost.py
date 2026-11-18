@@ -33,7 +33,7 @@ LOOK = {
     "terminal_opacity": 0.5,
     "sidebar": "#19172480",
     "pane": "#2321362e",
-    "colors": {"border": "#e0def426", "chrome": "#1917248c", "surface": "#2321368c", "background": "#2321368c"},
+    "colors": {"border": "#e0def426", "chrome": "#1917248c", "surface": "#2321368c", "background": "#2321368c", "muted": "#b5afc9", "dim": "#a29bb7"},
 }
 
 
