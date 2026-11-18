@@ -30,6 +30,6 @@ require("lazy").setup({
 	-- Configure any other settings here. See the documentation for more details.
 	-- colorscheme that will be used when installing plugins.
 	install = { colorscheme = { "rose-pine-moon" } },
-	-- automatically check for plugin updates
-	checker = { enabled = true },
+	-- Skip background update checks in review panes.
+	checker = { enabled = vim.env.PARKER_REVIEW_NVIM ~= "1" },
 })
