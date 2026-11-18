@@ -23,6 +23,7 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 - `mods/run-once` - Cmd+Shift+E popup: type one command (demo-on, demo-off), it runs in zsh and closes
 - Jobs panel (`jobs` mod) - source in parker-agent-kit `jobs/herdr-mod/jobs`, linked by the kit's `link.sh`
 - `mods/revive` - Cmd+Shift+R popup: recently killed terminals with their last screen; Enter resumes the Claude/Codex session (or reopens the shell) in a new tab
+- `mods/space-sessions` - collapsible space groups with inset dividers between session rows, expanded by default
 - `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons (with `props.demo`, Files and Changes only)
 - `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
 
@@ -36,7 +37,7 @@ ln -sf $D/keys.json $H/keys.json
 ln -sf $D/layouts/Parker.json $H/layouts/Parker.json
 ln -sf $D/layouts/Demo.json $H/layouts/Demo.json
 for t in $D/themes/*.json; do ln -sf $t $H/themes/; done
-for m in my-files my-changes my-tabs wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet music; do ln -sfn $D/mods/$m $H/mods/$m; done
+for m in my-files my-changes my-tabs space-sessions wallpaper keybind-help usage-limits session-launcher run-once revive demo-mode demo-quiet music; do ln -sfn $D/mods/$m $H/mods/$m; done
 ```
 
 Herdr does not hot-reload edits behind a symlinked mod folder. After editing a mod here, run `touch -h ~/.config/herdr-app/mods/<name>` to reload it.

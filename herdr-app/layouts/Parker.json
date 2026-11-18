@@ -26,26 +26,11 @@
           "type": "column",
           "children": [
             {
-              "id": "spaces",
+              "id": "space-sessions",
               "type": "block",
               "content": {
-                "mod": "spaces"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "content": {
-                "mod": "agents"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
+                "mod": "space-sessions"
+              }
             }
           ]
         },
