@@ -74,6 +74,9 @@ test("summarize: no data gives zeros", () => {
 test("priceOf / modelLabel", () => {
   assert.equal(priceOf("claude", "nope"), null);
   assert.equal(priceOf("claude", "claude-opus-5-5|fast").output, 40);
+  assert.deepEqual(priceOf("claude", "claude-haiku-4-5-20251001"), priceOf("claude", "claude-haiku-4-5"));
+  assert.deepEqual(priceOf("codex", "gpt-6.2-sol"), { input: 2, cached: 0.1, output: 10 });
+  assert.deepEqual(priceOf("codex", "gpt-6.2-astra|long"), { input: 16, cached: 0.8, output: 60 });
   assert.equal(modelLabel("claude-haiku-5-5|long"), "haiku-5-5 (long)");
 });
 
@@ -116,6 +119,9 @@ test("tokens.py: dedupes Claude responses and diffs Codex running totals", () =>
     tc(u(100, 60, 10, 4), u(100, 60, 10, 4)),
     tc(u(100, 60, 10, 4), u(100, 60, 10, 4)), // repeated, no new call
     tc(u(250, 200, 15, 5), u(150, 140, 5, 1)),
+    JSON.stringify({ timestamp: now, type: "turn_context", payload: { model: "gpt-6.2-sol" } }),
+    tc(u(272_250, 200, 25, 5), u(272_000, 0, 10, 0)),
+    tc(u(544_251, 272_200, 35, 5), u(272_001, 272_000, 10, 0)),
   ].join("\n") + "\n");
 
   const r = spawnSync("python3", ["-I", join(MOD, "helpers", "tokens.py")], { env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: "", CODEX_HOME: "" }, encoding: "utf8" });
@@ -124,4 +130,9 @@ test("tokens.py: dedupes Claude responses and diffs Codex running totals", () =>
   const day = Object.values(data.days)[0];
   assert.deepEqual(day.claude["claude-opus-5-5"], { input: 30, output: 60, cacheRead: 900, cacheWrite5m: 30, cacheWrite1h: 90, calls: 3 });
   assert.deepEqual(day.codex["gpt-6.1-sol"], { input: 50, cached: 200, output: 15, reasoning: 5, calls: 2 });
+  assert.deepEqual(day.codex["gpt-6.2-sol"], { input: 272_000, cached: 0, output: 10, reasoning: 0, calls: 1 });
+  assert.deepEqual(day.codex["gpt-6.2-sol|long"], { input: 1, cached: 272_000, output: 10, reasoning: 0, calls: 1 });
+  const codex = summarize(data, "codex", 1, new Date(now));
+  near(codex.models.find((m) => m.key === "gpt-6.2-sol|long").cost, (4 + 272_000 * 0.2 + 10 * 15) / 1e6);
+  assert.deepEqual(codex.unpriced, []);
 });

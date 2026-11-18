@@ -20,8 +20,14 @@ from datetime import datetime, timedelta
 
 ARG = sys.argv[1] if len(sys.argv) > 1 else "31"
 DAYS = None if ARG == "all" else int(ARG) if ARG.isdigit() else 31
-# Prompts above these sizes bill at a higher rate (tokens in one request).
-LONG_PROMPT = {"claude-haiku-5-5": 100_000, "gpt-6.1-sol": 272_000}
+# Standard API pricing thresholds (input tokens in one request).
+CLAUDE_LONG_PROMPT = {"claude-haiku-5-5": 100_000}
+CODEX_LONG_PROMPT = 272_000
+CODEX_LONG_MODELS = {
+    "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra", "gpt-6.1-sol",
+    "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+    "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+}
 
 since = (datetime.now() - timedelta(days=DAYS - 1)).date() if DAYS else None
 cutoff = time.time() - (DAYS + 1) * 86400 if DAYS else 0
@@ -88,7 +94,7 @@ def claude():
                 prompts = [(i.get("input_tokens") or 0) + (i.get("cache_read_input_tokens") or 0) + (i.get("cache_creation_input_tokens") or 0)
                            for i in (u.get("iterations") or []) if isinstance(i, dict)] or [inp + read + write]
                 name = model
-                if model in LONG_PROMPT and max(prompts) > LONG_PROMPT[model]:
+                if model in CLAUDE_LONG_PROMPT and max(prompts) > CLAUDE_LONG_PROMPT[model]:
                     name += "|long"
                 if u.get("speed") == "fast":
                     name += "|fast"
@@ -144,7 +150,7 @@ def codex():
                     continue
                 inp, cached, out, reasoning = delta
                 name = model or "unknown"
-                if name in LONG_PROMPT and (last.get("input_tokens") or inp) > LONG_PROMPT[name]:
+                if name in CODEX_LONG_MODELS and (last.get("input_tokens") or inp) > CODEX_LONG_PROMPT:
                     name += "|long"
                 b = bucket(day, "codex", name, CODEX_FIELDS)
                 b["input"] += max(0, inp - cached)

@@ -1,28 +1,44 @@
 // Tokens used and what they'd cost at API list prices. Pure: no Herdr imports.
 // Input is helpers/tokens.py's JSON: per local day, per tool, per model key.
 
-// USD per million tokens. Checked 2026-11-17 against Anthropic's model docs
-// and OpenAI's published GPT-6 / GPT-6.1 Sol rates. A model missing here
-// shows its tokens and "unpriced" instead of counting as $0.
+// Standard API rates in USD per million tokens, checked 2026-11-18.
+// https://platform.claude.com/docs/en/about-claude/pricing
+// https://developers.openai.com/api/docs/pricing and the individual model pages.
+// A model missing here shows its tokens and "unpriced" instead of counting as $0.
 export const PRICES = {
   claude: {
     // input, output, cache read, 5-minute cache write, 1-hour cache write
     "claude-fable-5-2": { input: 8, output: 40, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16 },
     "claude-fable-5-1": { input: 10, output: 50, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20 },
+    "claude-fable-5": { input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 20 },
     "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8 },
     "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10 },
+    "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10 },
+    "claude-opus-4-7": { input: 5, output: 25, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10 },
+    "claude-opus-4-6": { input: 5, output: 25, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10 },
+    "claude-opus-4-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10 },
     "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4 },
     "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4 },
+    "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 },
+    "claude-sonnet-4-5": { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 },
     "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2 },
     // Prompts over 100K tokens.
     "claude-haiku-5-5|long": { input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite5m: 0.625, cacheWrite1h: 1 },
+    "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2 },
   },
   codex: {
     // uncached input, cached input, output (reasoning included)
+    "gpt-6.2-sol": { input: 2, cached: 0.1, output: 10 },
+    "gpt-6.2-astra": { input: 8, cached: 0.4, output: 40 },
+    "gpt-6.1-terra": { input: 1, cached: 0.05, output: 5 },
     "gpt-6.1-sol": { input: 2, cached: 0.1, output: 10 },
-    // Prompts over 272K tokens.
-    "gpt-6.1-sol|long": { input: 4, cached: 0.2, output: 15 },
+    "gpt-6-astra": { input: 10, cached: 1, output: 50 },
     "gpt-6-sol": { input: 2, cached: 0.2, output: 10 },
+    "gpt-6-luna": { input: 0.1, cached: 0.01, output: 0.5 },
+    // GPT-5.6 Sol's published promotion runs through November 30, 2026.
+    "gpt-5.6-sol": { input: 4, cached: 0.4, output: 20 },
+    "gpt-5.6-terra": { input: 2, cached: 0.2, output: 12 },
+    "gpt-5.6-luna": { input: 0.2, cached: 0.02, output: 1.2 },
   },
 };
 const FAST = 2; // fast mode bills twice the standard rate
@@ -67,9 +83,18 @@ export function dayKey(today, back = 0) {
 
 export function priceOf(tool, key) {
   const fast = key.endsWith("|fast");
-  const base = fast ? key.slice(0, -5) : key;
-  const p = PRICES[tool]?.[base];
+  let base = fast ? key.slice(0, -5) : key;
+  if (tool === "claude") {
+    // Older Claude models can log the dated snapshot ID instead of its alias.
+    base = base.replace(/-\d{8}$/, "");
+  }
+  const codexLong = tool === "codex" && base.endsWith("|long");
+  if (codexLong) base = base.slice(0, -5);
+  let p = Object.hasOwn(PRICES[tool] ?? {}, base) ? PRICES[tool][base] : null;
   if (!p) return null;
+  if (codexLong) {
+    p = { input: p.input * 2, cached: p.cached * 2, output: p.output * 1.5 };
+  }
   return fast ? Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v * FAST])) : p;
 }
 
