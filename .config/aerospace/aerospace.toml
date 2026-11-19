@@ -192,3 +192,9 @@ alt-shift-n = ['join-with left', 'mode main']
 alt-shift-e = ['join-with down', 'mode main']
 alt-shift-i = ['join-with up', 'mode main']
 alt-shift-o = ['join-with right', 'mode main']
+
+# Agents browse in Google Chrome Beta (see the browser skill in parker-agent-kit).
+# Keep its windows on workspace 10 (alt-0) so they never tile into the workspace I'm using.
+[[on-window-detected]]
+if.app-id = 'com.google.Chrome.beta'
+run = 'move-node-to-workspace 10'
