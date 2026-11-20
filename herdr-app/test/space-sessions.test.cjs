@@ -36,3 +36,9 @@ test('each space collapses independently and its choice persists',()=>{
 test('malformed persisted collapse state falls back to expanded',()=>{
  for(const state of ['bad json','{}','null'])assert.equal(setup(state).mod.collapsed.size,0);
 });
+test('a tab with several agents lists each agent under it',()=>{
+ const {mod,ids}=setup();mod.renderSpaces({},'space-summaries');
+ assert.ok(ids.includes('panes-builder'));
+ assert.ok(ids.includes('agent-sample-builder'));assert.ok(ids.includes('agent-sample-builder-review'));
+ assert.ok(!ids.includes('panes-design'));
+});

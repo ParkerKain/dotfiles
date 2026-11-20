@@ -8,7 +8,8 @@ export const SAMPLE_SPACES = [
 ];
 export const SAMPLE_AGENTS = [
   {address:"sample-design", title:"Slide design", tab_name:"Slide design", space:"training", space_name:"Training materials", status:"working", app:"claude-code"},
-  {address:"sample-builder", title:"Builder experiments", tab_name:"Builder experiments", space:"training", space_name:"Training materials", status:"blocked", app:"codex"},
+  {address:"sample-builder", pane:"builder-1", title:"Builder experiments", tab:"builder", tab_name:"Builder experiments", space:"training", space_name:"Training materials", status:"blocked", app:"codex"},
+  {address:"sample-builder-review", pane:"builder-2", title:"Builder review", tab:"builder", tab_name:"Builder experiments", space:"training", space_name:"Training materials", status:"working", app:"claude-code"},
   {address:"sample-mods", title:"Mod review", tab_name:"Mod review", space:"herdr", space_name:"Herdr setup", status:"done", app:"codex"}
 ];
 export function summary(space, allAgents) {

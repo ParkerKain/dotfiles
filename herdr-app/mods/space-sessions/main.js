@@ -24,6 +24,20 @@ export default class SpaceSessions extends View {
     cx.notify();
   }
 
+  renderAgentRow(t, agent, space, tab) {
+    const program = agent.program;
+    const selected = space.active && tab.active && agent.focused;
+    const label = agent.title || program?.name || agent.address;
+    return h_flex().id(`agent-${agent.address}`).gap(6).items_center().px(8).py(3)
+      .cursor_pointer().hover(s => s.bg(t.hover))
+      .on_click(() => { this.act("tab.select", {id:tab.id}); this.act("pane.focus", {pane:agent.pane}); })
+      .bg(selected ? t.selected : "#00000000")
+      .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(11).text_color(t.dim) : image(program.icon).size(11)))
+      .when(!program?.icon, el => el.child(div().w(11).flex_none().text_size(10).text_color(t.dim).child("›_")))
+      .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(selected ? t.foreground : t.dim).child(label))
+      .when(["working","blocked","done"].includes(agent.status), el => el.child(div().size(5).rounded(3).flex_none().bg(t[agent.status])));
+  }
+
   renderSpaces(t) {
     const all = this.allSpaces(), allAgents = this.allAgents();
     const grouped = true;
@@ -50,8 +64,8 @@ export default class SpaceSessions extends View {
         .child(div().px(5).py(1).rounded(4).text_size(10).text_color(t.dim).child(String(count)));
       const sessions = (space.tabs ?? []).map((tab,index) => {
         const selected = space.active && tab.active;
-        const agent = allAgents.find(a => a.tab === tab.id);
-        const program = agent?.program;
+        const tabAgents = allAgents.filter(a => a.tab === tab.id);
+        const program = tabAgents[0]?.program;
         const row = h_flex().id(`session-${tab.id}`).gap(7).items_center().px(8).py(4).rounded(0)
           .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
           .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
@@ -60,7 +74,9 @@ export default class SpaceSessions extends View {
           .when(!program?.icon, el => el.child(div().w(13).flex_none().text_size(11).text_color(t.dim).child("›_")))
           .child(div().flex_1().min_w(0).truncate().text_color(selected ? t.foreground : t.muted).child(tab.name))
           .when(["working","blocked","done"].includes(tab.status), el => el.child(div().size(5).rounded(3).flex_none().bg(t[tab.status])));
+        const paneRows = tabAgents.length > 1 ? tabAgents.map(agent => this.renderAgentRow(t, agent, space, tab)) : [];
         return v_flex().id(`row-${tab.id}`).child(row)
+          .when(paneRows.length > 0, el => el.child(v_flex().id(`panes-${tab.id}`).pl(20).pb(2).children(paneRows)))
           .when(index < count - 1 && !selected, el => el.child(div().h(1).ml(28).mr(8).bg(tint(t.foreground,"1b"))));
       });
       return v_flex().id(`space-${space.id}`).gap(0).mx(7).my(3).px(4).py(3).rounded(8)
