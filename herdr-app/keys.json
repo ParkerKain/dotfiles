@@ -40,6 +40,7 @@
     "cmd-b": "layout.toggle:sidebar",
     "cmd-shift-t": "my-tabs.panel-ops-tasks",
     "cmd-j": "my-tabs.hints",
+    "cmd-g": "space-sessions.hints",
     "cmd-shift-j": "my-tabs.panel-jobs",
     "cmd-shift-c": "my-tabs.panel-day-view",
     "cmd-shift-a": "my-tabs.panel-artifacts",

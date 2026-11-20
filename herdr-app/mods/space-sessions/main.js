@@ -1,13 +1,39 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, theme, run, checking, setAgentOrder, openOverlay } from "herdr";
+import { agents, spaces, panes, focused, layout, theme, run, checking, setAgentOrder, openOverlay, nextCommand } from "herdr";
 import { SAMPLE_SPACES, SAMPLE_AGENTS, summary } from "./model.js";
+
+// Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
+const KEYS = "asdfghjklqwertyuiopzxcvbnm";
+function labels(n) {
+  let p = 0;
+  while (KEYS.length - p + p * KEYS.length < n && p < KEYS.length) p++;
+  const out = KEYS.slice(0, KEYS.length - p).split("").slice(0, n);
+  for (const prefix of KEYS.slice(KEYS.length - p)) for (const k of KEYS) if (out.length < n) out.push(prefix + k);
+  return out;
+}
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) { const found = find(child, id); if (found) return found; }
+  return null;
+}
 
 const tint = (color, alpha) => /^#[0-9a-f]{6,8}$/i.test(color ?? "") ? color.slice(0,7) + alpha : "#00000000";
 
 export default class SpaceSessions extends View {
-  init() {
+  init(_props, cx) {
     this.sample = checking();
+    // keys.json: space-sessions.hints labels every tab (or collapsed space) with a letter; typing it jumps there.
+    this.handle = cx.focus_handle();
+    this.hinting = false; this.typed = ""; this.hintMap = [];
+    cx.spawn(async cx => {
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "hints") this.startHints();
+        if (command === "focus") this.handle.focus();
+        cx.notify();
+      }
+    });
     try {
       const saved = JSON.parse(localStorage.getItem("collapsed-spaces") ?? "[]");
       this.collapsed = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === "string") : []);
@@ -16,6 +42,46 @@ export default class SpaceSessions extends View {
   allSpaces() { return this.sample ? SAMPLE_SPACES : spaces(); }
   allAgents() { return this.sample ? SAMPLE_AGENTS : agents(); }
   act(name,args) { if(!this.sample)run(name,args); }
+
+  startHints() {
+    if (this.hinting) { this.endHints(); return; }
+    const sidebar = find(layout(), "sidebar");
+    if (sidebar?.hidden) run("layout.show", { id: "sidebar" });
+    this.returnPane = focused()?.pane ?? null;
+    this.hinting = true; this.typed = "";
+    this.handle.focus();
+  }
+
+  endHints(restore = true) {
+    this.hinting = false; this.typed = "";
+    if (restore && this.returnPane) run("pane.focus", { pane: this.returnPane });
+  }
+
+  // Jump to a tab and put the keyboard in its focused pane.
+  jump(target) {
+    this.endHints(false);
+    if (target.kind === "space") { this.act("space.select", { id: target.id }); return; }
+    this.act("tab.select", { id: target.id });
+    const own = panes().filter(p => p.tab === target.id);
+    const pane = own.find(p => p.focused) ?? own[0];
+    if (pane) this.act("pane.focus", { pane: pane.pane });
+  }
+
+  hintKey(key) {
+    if (key === "escape") { this.endHints(); return; }
+    if (key === "backspace") { this.typed = this.typed.slice(0, -1); return; }
+    if (!/^[a-z]$/.test(key)) return;
+    const typed = this.typed + key, matches = this.hintMap.filter(([label]) => label.startsWith(typed));
+    if (!matches.length) return;
+    const exact = matches.find(([label]) => label === typed);
+    if (exact) this.jump(exact[1]); else this.typed = typed;
+  }
+
+  badge(t, label) {
+    const live = label.startsWith(this.typed);
+    return div().flex_none().px(4).rounded(3).text_size(11).font_semibold()
+      .bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(label);
+  }
 
   toggleSpace(id, cx) {
     if (this.collapsed.has(id)) this.collapsed.delete(id);
@@ -41,7 +107,20 @@ export default class SpaceSessions extends View {
   renderSpaces(t) {
     const all = this.allSpaces(), allAgents = this.allAgents();
     const grouped = true;
-    if (!this.sample) setAgentOrder(allAgents.map(a => a.address));
+    // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them.
+    const tabOrder = all.flatMap(space => (space.tabs ?? []).map(tab => tab.id));
+    const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
+    const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
+    if (!this.sample) setAgentOrder(ordered.map(a => a.address));
+    if (this.hinting) {
+      if (this.handle.is_focused()) this.hadFocus = true;
+      else if (this.hadFocus) this.endHints(false);
+    } else this.hadFocus = false;
+    const targets = all.flatMap(space => this.collapsed.has(space.id) ? [{kind:"space", id:space.id}]
+      : (space.tabs ?? []).map(tab => ({kind:"tab", id:tab.id})));
+    const names = labels(targets.length);
+    this.hintMap = targets.map((target, i) => [names[i], target]);
+    const labelFor = (kind, id) => this.hinting ? this.hintMap.find(([, x]) => x.kind === kind && x.id === id)?.[0] : null;
     const cards = all.map(space => {
       const expanded = !this.collapsed.has(space.id);
       const details = summary(space, allAgents);
@@ -58,6 +137,7 @@ export default class SpaceSessions extends View {
           .on_mouse_down("left", (_e,cx) => cx.stop_propagation())
           .on_click((_e,cx) => {cx.stop_propagation();this.toggleSpace(space.id,cx);})
           .child(expanded ? "▾" : "▸"))
+        .when(Boolean(labelFor("space", space.id)), el => el.child(this.badge(t, labelFor("space", space.id))))
         .child(div().flex_1().min_w(0).truncate().text_size(11.8).font_semibold()
           .text_color(space.active ? t.foreground : t.muted).child(space.name))
         .when(Boolean(busy), el => el.child(div().text_size(10).text_color(details.counts.blocked ? t.blocked : t.dim).child(busy)))
@@ -70,6 +150,7 @@ export default class SpaceSessions extends View {
           .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
           .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
           .bg(selected ? t.selected : "#00000000")
+          .when(Boolean(labelFor("tab", tab.id)), el => el.child(this.badge(t, labelFor("tab", tab.id))))
           .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(13).text_color(t.muted) : image(program.icon).size(13)))
           .when(!program?.icon, el => el.child(div().w(13).flex_none().text_size(11).text_color(t.dim).child("›_")))
           .child(div().flex_1().min_w(0).truncate().text_color(selected ? t.foreground : t.muted).child(tab.name))
@@ -84,9 +165,10 @@ export default class SpaceSessions extends View {
         .child(heading)
         .when(grouped && expanded, el => el.child(v_flex().id(`sessions-${space.id}`).pl(14).pr(2).gap(2).children(sessions)));
     });
-    return v_flex().size_full().min_h(0).text_size(12.5).bg(t.chrome)
+    return v_flex().id("space-sessions").track_focus(this.handle).size_full().min_h(0).text_size(12.5).bg(t.chrome)
+      .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key); cx.stop_propagation(); cx.notify(); })
       .child(h_flex().items_center().justify_between().px(12).py(7).text_color(t.muted)
-        .child("Spaces")
+        .child(this.hinting ? `Jump to a tab${this.typed ? ` · ${this.typed}` : ""} · Esc` : "Spaces")
         .child(div().text_size(10).child(String(all.length))))
       .child(v_flex().id("context-list").min_h(0).overflow_y_scrollbar()
         .when(grouped, el => el.flex_1()).children(cards))

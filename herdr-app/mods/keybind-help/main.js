@@ -22,6 +22,7 @@ const GROUPS = [
     ["my-tabs.panel-artifacts", "Artifacts"],
     ["my-tabs.panel-call-sheet", "Call Sheet"],
     ["my-tabs.hints", "Pick a sidebar row"],
+    ["space-sessions.hints", "Jump to a tab in Spaces"],
     ["my-tabs.refresh", "Refresh open sidebar"],
     ["layout.toggle:sidebar", "Toggle left sidebar"],
   ]],
