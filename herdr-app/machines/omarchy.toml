@@ -18,6 +18,8 @@ external_mods = []
 # Layouts from herdr-app/layouts/ that this machine links. Panels whose mod this
 # machine doesn't have are dropped from its copy.
 layouts = ["Parker"]
+# Display size the frosted wallpaper is rendered at (frost.py).
+screen = [3440, 1440]  # ultrawide monitor, px
 
 [jobs]
 # Personal jobs only. Work jobs live on the work Mac.

@@ -7,7 +7,8 @@ Omarchy, and neither machine sees the other's.
 
 A source folder holds TOML files of two kinds:
 
-  job   repo, agent, prompt or prompt_file, optional [schedule] and space/tab.
+  job   repo, agent, prompt or prompt_file, optional [schedule], space (default
+        "Jobs", created when missing) and tab.
         `job run <name>` starts one interactive agent under herdr-core (hc), so
         it shows in the Herdr app and phone inbox and can take another turn.
   hook  check = "<script>" and interval = <seconds>. The script answers
@@ -205,11 +206,29 @@ def herdr_spaces():
         return None
 
 
-def space_id(name):
-    """The Herdr app space to show the session in, if the window is open."""
-    if not name:
-        return None
-    return next((s["id"] for s in herdr_spaces() or [] if s.get("name") == name), None)
+def herdr_do(command, args):
+    out = subprocess.run(["herdr-app", "do", command, json.dumps(args)], capture_output=True, text=True, env=clean_env())
+    try:
+        return json.loads(out.stdout) if out.returncode == 0 else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def ensure_space(name, folder):
+    """(space id, placeholder tab id) for the Herdr space a job's session goes in.
+
+    A session that isn't placed in a space runs where no one can see it, including
+    any first-run question it asks. A missing space is created; Herdr opens it with
+    a shell tab, which the caller closes once the session has joined. (None, None)
+    when the Herdr window isn't open."""
+    spaces = herdr_spaces()
+    if spaces is None:
+        return None, None
+    found = next((s["id"] for s in spaces if s.get("name") == name and not s.get("machine")), None)
+    if found:
+        return found, None
+    made = herdr_do("space.new", {"name": name, "folder": folder, "focus": False})
+    return made.get("space"), made.get("tab")
 
 
 def name_tab(addr, name):
@@ -253,7 +272,8 @@ def run(args):
     parent = os.environ.get("HC_TERMINAL_ID")
     family = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
     cmd = ["run", "--bg", *family, "--name", session, "--cwd", job["repo"], "--label", f"job={job['name']}"]
-    space = space_id(job.get("space"))
+    # Every job shows in a space: its own `space`, else "Jobs".
+    space, placeholder = ensure_space(job.get("space") or "Jobs", job["repo"])
     if space:
         cmd += ["--label", f"herdr.space={space}"]
     prompt = job["prompt"]
@@ -268,6 +288,8 @@ def run(args):
                    "After `ok`, the job runner exits this session; after `blocked`, or no file, it stays open for me.\n")
     started = hc(*cmd, *AGENTS[job["agent"]], prompt)
     addr = started.get("address", session)
+    if placeholder:
+        herdr_do("tab.close", {"id": placeholder, "confirmed": True})
     name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
     # A folder the agent has not trusted yet stops at a dialog with no status,
     # and the first message waits behind it. Say so instead of looking like it ran.

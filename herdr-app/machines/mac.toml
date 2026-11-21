@@ -19,6 +19,8 @@ mods = [
 external_mods = ["artifacts", "call-sheet", "day-view", "draft-review", "factory", "ops-tasks", "report-review"]
 # Layouts from herdr-app/layouts/ that this machine links.
 layouts = ["Parker", "Demo"]
+# Display size the frosted wallpaper is rendered at (frost.py).
+screen = [3024, 1964]  # built-in display, px
 
 [jobs]
 # Work jobs and hooks only. Personal jobs live on Omarchy.

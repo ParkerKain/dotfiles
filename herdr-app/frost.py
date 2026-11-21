@@ -23,11 +23,14 @@ from pathlib import Path
 from PIL import Image, ImageEnhance, ImageFilter
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import machine  # noqa: E402
 HOME = Path.home() / ".config/herdr-app"
 # The work Mac keeps them in ~/Pictures/wallpapers; Omarchy in ~/Wallpapers.
 WALLPAPERS = next((p for p in (Path.home() / "Pictures/wallpapers", Path.home() / "Wallpapers") if p.is_dir()),
                   Path.home() / "Pictures/wallpapers")
-SCREEN = (3024, 1964)  # built-in display, px
+# The blurred image is rendered at this machine's display size ([herdr] screen in its manifest).
+SCREEN = tuple(machine.manifest().get("herdr", {}).get("screen", (3024, 1964)))
 # The picker's thumbnails. A real folder under mods/: Herdr doesn't load images through a symlink.
 THUMBS = HOME / "mods/wallpaper-thumbs"
 IMAGE_TYPES = {".jpg", ".jpeg", ".png"}

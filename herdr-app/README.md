@@ -42,7 +42,7 @@ Herdr picks up a relinked mod right away, because `link.py` replaces links by re
 
 `jobs/job` runs scheduled agent jobs and hooks as Herdr sessions, and the Jobs panel (`mods/jobs`) shows them. Each machine reads only the sources in its manifest's `[jobs]`, so work jobs and hooks (parker-agent-kit `jobs/defs/`) stay on the Mac and personal jobs (`machines/omarchy/jobs/`) stay on Omarchy.
 
-- A job file has `repo`, `agent` (`claude` or `codex`), `prompt` or `prompt_file`, and an optional `[schedule]` (`times = ["07:00"]`, optional `weekdays` with 1 = Monday).
+- A job file has `repo`, `agent` (`claude` or `codex`), `prompt` or `prompt_file`, and an optional `[schedule]` (`times = ["07:00"]`, optional `weekdays` with 1 = Monday). Its session opens in the Herdr space named by `space` (default `Jobs`, created when missing), so any first-run question it asks is visible.
 - A hook file has `check = "<script>"` and `interval = <seconds>`. The script answers `check` and `status` (JSON `{ok, hooks: [{last_check, last_trigger}]}`), and the engine schedules the check.
 - `job install <name>` writes a launchd plist on macOS (`com.parker.job.<name>`, `com.parker.hook.<name>`) or a systemd user timer on Linux (`parker-job-<name>`, `parker-hook-<name>`). The panel's Turn on and Turn off do the same.
 - `job pause` and `job resume` (the panel's Pause button, and demo mode) make scheduled runs and checks skip.
@@ -54,7 +54,7 @@ Run `job --help` for every command.
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the side panels).
 - `layouts/Demo.json` - demo mode's screen (Mac only). It's Parker without the sidebar, with the tab bar showing only Files and Changes and notifications dropped.
 - `themes/` - 67 color themes for Herdr's theme picker (Settings > Look, or `Use a theme` in the command palette). `rose-pine-moon.json` is hand-tuned, the rest are converted from Ghostty's bundled themes by `themes/import-ghostty.py` (edit its list and rerun).
-- `frost` and `frost.py` - frosted-glass look. `./frost <wallpaper>` saves a blurred copy of the image to `backgrounds/` (`--blur 0` keeps it sharp) and rebuilds the generated Frosted layout from this machine's Parker layout. `--list` shows wallpapers in `~/Pictures/wallpapers` (Mac) or `~/Wallpapers` (Omarchy), and `--desktop` also sets the macOS wallpaper. `frost` finds a Python with Pillow (Homebrew's, or uv's on Omarchy).
+- `frost` and `frost.py` - frosted-glass look. `./frost <wallpaper>` saves a blurred copy of the image, sized for the machine's display (`screen` in its manifest), to `backgrounds/` (`--blur 0` keeps it sharp) and rebuilds the generated Frosted layout from this machine's Parker layout. `--list` shows wallpapers in `~/Pictures/wallpapers` (Mac) or `~/Wallpapers` (Omarchy), and `--desktop` also sets the macOS wallpaper. `frost` finds a Python with Pillow (Homebrew's, or uv's on Omarchy).
 - `mods/wallpaper` - wallpaper picker with thumbnails. Enter applies one behind the Frosted layout and switches to it, and `b` toggles blur. After adding wallpapers, run `./frost --thumbs`.
 - `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play. It routes to the repos in the manifest's `[launcher]` (work repos on the Mac, `~/Projects` on Omarchy). Start closes the window at once while `projects.py` routes and launches in a detached process, because closing the overlay ends the mod's script.
 - `mods/keybind-help` - shows Parker's shortcuts from `keys.json`, in Mac or Linux notation. Escape closes it.

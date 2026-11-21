@@ -344,6 +344,46 @@ class JobTest(unittest.TestCase):
         self.job("uninstall", "mail-inbox", env=env)
         self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
 
+    def fake_herdr(self, spaces):
+        """Fake hc and herdr-app that log their arguments; run reports a working agent."""
+        log = self.tmp / "calls.log"
+        bin_ = self.tmp / "bin"
+        (bin_ / "hc").write_text(f"""#!/bin/sh
+echo "hc $*" >> {log}
+case "$1" in
+  run) echo '{{"address": "t1"}}' ;;
+  get) echo '{{"state": "live", "status": {{"state": "working"}}, "turn": 1}}' ;;
+  *) echo '{{}}' ;;
+esac
+""")
+        (bin_ / "herdr-app").write_text(f"""#!/bin/sh
+echo "herdr-app $*" >> {log}
+case "$1 $2" in
+  "ls "*) echo '{json.dumps({"spaces": spaces})}' ;;
+  "do space.new") echo '{{"space": "spNEW", "tab": "tbSHELL", "terminal": "t9"}}' ;;
+  *) echo '{{"ok": true}}' ;;
+esac
+""")
+        (bin_ / "herdr-app").chmod(0o755)
+        return log
+
+    def test_a_job_without_a_space_goes_in_a_new_jobs_space_and_its_shell_tab_closes(self):
+        log = self.fake_herdr(spaces=[])
+        self.write("manual", f'repo = "{self.repo}"\nagent = "codex"\nprompt = "x"\n')
+        self.assertTrue(json.loads(self.job("run", "manual").stdout)["started"])
+        calls = log.read_text()
+        self.assertIn('space.new {"name": "Jobs"', calls)
+        self.assertIn("--label herdr.space=spNEW", calls)
+        self.assertIn('tab.close {"id": "tbSHELL", "confirmed": true}', calls)
+
+    def test_a_job_goes_in_its_named_space_when_it_exists(self):
+        log = self.fake_herdr(spaces=[{"id": "spVAULT", "name": "devclarity-vault", "tabs": []}])
+        self.write("vault", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\nspace = "devclarity-vault"\n')
+        self.job("run", "vault")
+        calls = log.read_text()
+        self.assertIn("--label herdr.space=spVAULT", calls)
+        self.assertNotIn("space.new", calls)
+
     def test_systemd_words_escape_percent_and_dollar(self):
         sys.path.insert(0, str(ROOT))
         import importlib.machinery, importlib.util
