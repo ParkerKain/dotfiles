@@ -160,6 +160,13 @@
                       "content": {
                         "mod": "call-sheet"
                       }
+                    },
+                    {
+                      "id": "factory",
+                      "type": "block",
+                      "content": {
+                        "mod": "factory"
+                      }
                     }
                   ],
                   "active": "files"

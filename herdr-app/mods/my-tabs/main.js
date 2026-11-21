@@ -221,7 +221,7 @@ export default class Tabs extends View {
     const panel = find(root, "panel"), body = find(root, "panel-body");
     // The Demo layout passes {demo: true}: Files and Changes only, none of the work panels.
     const demo = Boolean(props()?.demo);
-    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet"])];
+    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet", "factory"])];
     this.syncPanel(space, panel, body, enabled);
     // Icon-only buttons with a tooltip. The open panel widens to show its name,
     // and a panel can publish "<id>.badge" ({count} or {dot: true, tone}) for a mark.
@@ -276,6 +276,7 @@ export default class Tabs extends View {
         .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg", "⇧⌘C"))
         .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg", "⇧⌘A"))
         .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg", "⇧⌘K"))
+        .child(panelButton("factory", "Factory", "mods/factory/factory.svg", "⇧⌘F"))
         .child(divider("divider-ambient"))
         .child(iconButton("music", musicPlaying ? "Music (playing)" : "Music", `mods/music/${musicIcon}.svg`, "⇧⌘U", {
           tint: musicPlaying ? t.accent : null,

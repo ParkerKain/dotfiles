@@ -45,6 +45,7 @@
     "cmd-shift-c": "my-tabs.panel-day-view",
     "cmd-shift-a": "my-tabs.panel-artifacts",
     "cmd-shift-k": "my-tabs.panel-call-sheet",
+    "cmd-shift-f": "my-tabs.panel-factory",
     "cmd-r": "my-tabs.refresh",
     "cmd-=": "app.zoom_in",
     "cmd-+": "app.zoom_in",
@@ -98,6 +99,7 @@
     "cmd-shift-j": "terminal",
     "cmd-shift-a": "terminal",
     "cmd-shift-c": "terminal",
+    "cmd-shift-f": "terminal",
     "cmd-shift-k": "terminal",
     "cmd-shift-b": "terminal",
     "cmd-shift-u": "terminal"
@@ -131,6 +133,9 @@
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:call-sheet": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:factory": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:my-files": {
