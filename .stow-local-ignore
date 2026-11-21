@@ -8,3 +8,4 @@
 # stowed to ~ (where it would become a home-level instruction file). The real
 # global lives at .claude/CLAUDE.md, which IS stowed. See CLAUDE.md for details.
 ^/CLAUDE\.md
+^/install-omarchy\.sh

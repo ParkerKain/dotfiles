@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Agent-facing pieces (context, skills, the CLIs skills call, and Herdr mods those skills drive) live in parker-agent-kit. This repo holds machine config, including the Herdr app's keys, layouts, settings and UI-only mods. The kit README's "What goes here versus dotfiles" section has the full rule.
 
 
-Personal dotfiles for macOS. Configs are symlinked (or copied) from here into their expected locations. There is no build system or install script — changes take effect by editing files directly (since they're already symlinked) or by re-sourcing the relevant shell file.
+The work Mac uses the existing dotfile links. Omarchy can use the shared Git ignore rules and a separate Neovim profile via [the Omarchy setup guide](docs/omarchy.md).
 
 ## Structure
 
