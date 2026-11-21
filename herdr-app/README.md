@@ -27,6 +27,10 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 - `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons (with `props.demo`, Files and Changes only)
 - `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
 
+To enable **Codex Personal**, put Omarchy's machine name from `hc machine ls`
+in `~/.config/herdr-app/data/usage-limits/personal-machine`. The mod uses Herdr's
+existing connection and Omarchy's signed-in Codex via mise.
+
 To link on a new machine:
 
 ```sh

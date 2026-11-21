@@ -40,12 +40,15 @@ test("fill is clamped to 0–1", () => {
 // ---- barModel / chooseDensity (Task 4) ----
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "../lib/view.js";
 import codex from "../providers/codex.js";
+import { PROVIDERS, TOKEN_PROVIDERS } from "../providers/index.js";
+import { nextState } from "../lib/state.js";
 
 const PREFS = { hidden: [], hiddenWindows: [] };
 const ok = (p, file, at = NOW) => ({ ...p.parse(read(file), at), observedAt: at });
 const STATES = () => ({
   claude: { report: ok(claude, "claude-get-usage.max.json"), lastGood: ok(claude, "claude-get-usage.max.json"), installed: true },
   codex: { report: ok(codex, "codex-app-server.plus.json"), lastGood: ok(codex, "codex-app-server.plus.json"), installed: true },
+  "codex-personal": { installed: false },
 });
 
 test("barModel: both providers, all windows, in registry order", () => {
@@ -53,9 +56,24 @@ test("barModel: both providers, all windows, in registry order", () => {
   assert.equal(m.empty, false);
   assert.deepEqual(m.groups.map((g) => [g.providerId, g.name, g.icon, g.mark, g.dim]), [
     ["claude", "Claude", "icons/claude.svg", null, false],
-    ["codex", "Codex", "icons/codex.svg", null, false],
+    ["codex", "Codex Work", "icons/codex.svg", null, false],
   ]);
   assert.deepEqual(m.groups[0].segments.map((s) => s.short), ["5h", "wk", "Fable"]);
+});
+
+test("Codex Personal has its own controls and keeps its reading when Omarchy goes offline", () => {
+  const personal = PROVIDERS.find((p) => p.id === "codex-personal");
+  const states = STATES();
+  const report = personal.parse(read("codex-app-server.plus.json"), NOW);
+  states[personal.id] = nextState(null, report, true);
+  assert.deepEqual(barModel(states, PREFS, NOW).groups.slice(1).map((g) => g.accountLabel), ["W", "P"]);
+  assert.deepEqual(TOKEN_PROVIDERS.map((p) => p.id), ["claude", "codex"]);
+  const prefs = { ...PREFS, hiddenWindows: ["codex:codex:secondary"] };
+  assert.deepEqual(barModel(states, prefs, NOW).groups.slice(1).map((g) => g.segments.length), [1, 2]);
+  states[personal.id] = nextState(states[personal.id], personal.parse("", NOW + 1200), true);
+  const group = cardModel(states, NOW + 1200).groups[2];
+  assert.deepEqual([group.name, group.failed, group.age, group.rows[1].percent],
+    ["Codex Personal", true, "Last reading 20 min ago", "11%"]);
 });
 
 test("barModel: hidden provider and hidden window are dropped", () => {
@@ -200,7 +218,7 @@ test("cardModel: not installed providers are left out", () => {
 
 test("cardModel: nothing installed means no limits to show", () => {
   const gone = { report: null, lastGood: null, installed: false };
-  assert.equal(cardModel({ claude: gone, codex: gone }, NOW).empty, true);
+  assert.equal(cardModel({ claude: gone, codex: gone, "codex-personal": gone }, NOW).empty, true);
 });
 
 test("cardModel: a failing provider says why and keeps its last reading, dimmed, with its age", () => {

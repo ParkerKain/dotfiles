@@ -104,7 +104,7 @@ export function barModel(states, prefs, now, providers = PROVIDERS) {
       .filter((w) => isShown(prefs, p.id, w.id))
       .map((w) => segmentView(w, now, prefs.showResetTime));
     const dim = mark === "!" || (source != null && now - source.observedAt > STALE_AFTER);
-    groups.push({ providerId: p.id, name: p.name, icon: p.icon, mark, dim, segments });
+    groups.push({ providerId: p.id, name: p.name, icon: p.icon, accountLabel: p.accountLabel, mark, dim, segments });
   }
   return { groups, empty: groups.length === 0 };
 }
@@ -121,7 +121,8 @@ function segmentWidth(s, density) {
 // 0 = label + bar + percent, 1 = no bars, 2 = no labels, 3 = no time on calm windows.
 export function chooseDensity(model, widthPx, showBars = true) {
   for (const d of showBars ? [0, 1, 2, 3] : [1, 2, 3]) {
-    const need = model.groups.reduce((sum, g) => sum + GROUP + g.segments.reduce((a, s) => a + segmentWidth(s, d), 0), 0);
+    const need = model.groups.reduce((sum, g) => sum + GROUP + (g.accountLabel ? 16 : 0)
+      + g.segments.reduce((a, s) => a + segmentWidth(s, d), 0), 0);
     if (need <= widthPx) return d;
   }
   return 3;

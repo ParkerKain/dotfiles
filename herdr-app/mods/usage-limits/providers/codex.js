@@ -59,7 +59,8 @@ export function parse(text, now) {
 
 export default {
   id: "codex",
-  name: "Codex",
+  name: "Codex Work",
+  accountLabel: "W",
   icon: "icons/codex.svg",
   helper: "helpers/codex-limits.sh",
   parse,

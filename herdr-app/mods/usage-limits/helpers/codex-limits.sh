@@ -9,6 +9,7 @@
 # Exit: 0 = printed something, 127 = codex CLI not found,
 # 1 = codex found but no reply and no snapshot.
 # Override the binary with HERDR_USAGE_CODEX_BIN; sessions follow CODEX_HOME.
+# Pass --live-only to skip session logs.
 
 # Not installed: say so, even if old session logs exist (they'd look like a reading).
 CODEX=$(command -v "${HERDR_USAGE_CODEX_BIN:-codex}" 2>/dev/null) || exit 127
@@ -45,6 +46,7 @@ CODEX=$(command -v "${HERDR_USAGE_CODEX_BIN:-codex}" 2>/dev/null) || exit 127
 
 # app-server didn't answer: offer the newest logged snapshot (the mod shows it
 # as the last reading, dated, with the provider marked as failing).
+[ "${1:-}" = "--live-only" ] && exit 1
 sessions="${CODEX_HOME:-$HOME/.codex}/sessions"
 if [ -d "$sessions" ]; then
   for f in $(find "$sessions" -name '*.jsonl' -mtime -14 2>/dev/null | xargs ls -t 2>/dev/null | head -30); do

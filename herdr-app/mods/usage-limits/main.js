@@ -6,8 +6,8 @@
 // this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
-import { exec, focused, theme, props, shared, setShared, appHome } from "herdr";
-import { PROVIDERS } from "./providers/index.js";
+import { checking, exec, focused, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
+import { PROVIDERS, TOKEN_PROVIDERS } from "./providers/index.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
 import { parseSession, sessionOnBar, sessionView } from "./lib/session.js";
@@ -78,6 +78,7 @@ export default class UsageLimits extends View {
 
   // Fetch whatever is due, then redraw (countdowns and pace move every minute).
   tick(cx, force) {
+    if (checking()) return;
     const st = states();
     for (const p of PROVIDERS) {
       const s = st[p.id];
@@ -110,6 +111,19 @@ export default class UsageLimits extends View {
     });
   }
 
+  async readLimits(p) {
+    const modPath = `${appHome()}/mods/${MOD}`;
+    if (!p.remote) return exec("sh", [`${modPath}/${p.helper}`]);
+    const machine = (await readTextFile(`${appHome()}/data/${MOD}/personal-machine`))?.trim();
+    if (!machine) return { code: 127 };
+    const [remote, limits] = await Promise.all([
+      readTextFile(`${modPath}/${p.helper}`),
+      readTextFile(`${modPath}/helpers/codex-limits.sh`),
+    ]);
+    if (!remote || !limits) throw new Error("Missing Codex quota helper");
+    return exec("sh", ["-c", remote, "codex-personal", limits], { on: machine, timeout: 27000 });
+  }
+
   fetch(p, cx) {
     if (this.busy[p.id]) return;
     this.busy[p.id] = true;
@@ -118,10 +132,12 @@ export default class UsageLimits extends View {
       let next;
       const prev = states()[p.id] ?? { report: null, lastGood: null, installed: null };
       try {
-        const r = await exec("sh", [`${appHome()}/mods/${MOD}/${p.helper}`]);
+        const r = await this.readLimits(p);
         next = r.code === 127 ? nextState(prev, null, false) : nextState(prev, p.parse(r.stdout, now()), true);
       } catch (e) {
-        next = { ...prev, report: { status: "error", message: String(e?.message ?? e), plan: null, observedAt: now(), source: p.helper, windows: [] } };
+        const report = p.remote ? p.parse("", now())
+          : { status: "error", message: String(e?.message ?? e), plan: null, observedAt: now(), source: p.helper, windows: [] };
+        next = nextState(prev, report, true);
       }
       this.busy[p.id] = false;
       setShared(KEY_STATE, { ...states(), [p.id]: next });
@@ -230,6 +246,7 @@ export default class UsageLimits extends View {
         h_flex().id(`ul-${g.providerId}`).gap(density === 0 ? 10 : 8).items_center().flex_none()
           .opacity(g.dim ? 0.55 : 1)
           .child(image(g.icon).size(13))
+          .when(g.accountLabel != null, (e) => e.child(div().text_size(10.5).text_color(t.dim).child(g.accountLabel)))
           .when(g.mark != null, (e) => e.child(div().text_color(t.dim).child(g.mark)))
           .children(g.segments.map((s) => this.segment(s, density, t))));
     });
@@ -315,7 +332,7 @@ export default class UsageLimits extends View {
     const data = shared(KEY_TOKENS);
     if (!data) return null;
     const days = PERIODS.find((p) => p.id === this.period)?.days ?? 1;
-    return PROVIDERS.map((p) => ({ provider: p, s: summarize(data, p.id, days, new Date()) }));
+    return TOKEN_PROVIDERS.map((p) => ({ provider: p, s: summarize(data, p.id, days, new Date()) }));
   }
 
   periodTabs(t) {
@@ -419,7 +436,8 @@ export default class UsageLimits extends View {
     for (const p of PROVIDERS) {
       const s = st[p.id] ?? {};
       const on = isShown(prefs, p.id);
-      const reason = s.installed === false ? "not installed" : s.report && s.report.status !== "ok" ? s.report.message : null;
+      const reason = s.installed === false ? (p.remote ? "not configured" : "not installed")
+        : s.report && s.report.status !== "ok" ? s.report.message : null;
       rows.push(this.check(`p-${p.id}`, on, [image(p.icon).size(13), div().text_color(s.installed === false ? t.dim : t.foreground).child(p.name)],
         () => save(toggleProvider(this.prefs(), p.id)), t, 0, reason));
       const windows = (s.report?.status === "ok" ? s.report : s.lastGood)?.windows ?? [];
