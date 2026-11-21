@@ -69,18 +69,13 @@ class Linker:
         tmp.symlink_to(target)
         os.replace(tmp, dest)
 
-    def write(self, dest, text):
+    def write(self, dest, text, backup=True):
         if not dest.is_symlink() and dest.is_file() and dest.read_text() == text:
             return
         self.note(f"write {dest}")
         if self.check:
             return
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.is_symlink():
-            dest.unlink()
-        tmp = dest.with_name(f".{dest.name}.link-tmp")
-        tmp.write_text(text)
-        os.replace(tmp, dest)
+        replace_file(dest, text, self.backup if backup else None)
 
     def unlink(self, dest, why):
         self.note(f"remove {dest} ({why})")
@@ -90,7 +85,7 @@ class Linker:
     # ---- pieces
 
     def machine_name(self):
-        self.write(machine.NAME_FILE, self.m["name"] + "\n")
+        self.write(machine.NAME_FILE, self.m["name"] + "\n", backup=False)
 
     def keys(self):
         self.link(self.m["dir"] / "keys.json", self.home / "keys.json")
@@ -106,15 +101,16 @@ class Linker:
         real = dest.resolve() if dest.is_symlink() else dest
         try:
             current = json.loads(real.read_text())
-        except (OSError, ValueError):
+        except FileNotFoundError:
             current = {}
-        merged = {**current, **wanted}
+        except ValueError as exc:
+            sys.exit(f"link: {real} isn't valid JSON ({exc}); fix it by hand, then run link.py again")
+        merged = deep_merge(current, wanted)
         if merged != current:
-            changed = sorted(k for k in wanted if current.get(k) != wanted[k])
+            changed = sorted(k for k in wanted if current.get(k) != merged[k])
             self.note(f"set {', '.join(changed)} in {real}")
             if not self.check:
-                real.parent.mkdir(parents=True, exist_ok=True)
-                real.write_text(json.dumps(merged, indent=2) + "\n")
+                replace_file(real, json.dumps(merged, indent=2) + "\n", self.backup if real.exists() else None)
 
     def layouts(self):
         drop = dropped_mods(self.m)
@@ -156,13 +152,37 @@ class Linker:
             print(line)
             if line.startswith(("would ", "rewrote ", "stale ")):
                 self.changes.append(line)
-        if out.returncode not in (0, 1):
-            sys.exit(f"link: job refresh failed: {out.stderr.strip()}")
+        # 0: all current, 3: --check found drift (listed above). Anything else failed.
+        if out.returncode not in (0, 3):
+            sys.stderr.write(out.stderr)
+            sys.exit(f"link: job refresh failed (exit {out.returncode}); the schedules above may still run an old engine")
 
     def run(self):
         for step in (self.machine_name, self.keys, self.settings, self.layouts, self.themes, self.mods, self.engine):
             step()
         return self.changes
+
+
+def replace_file(dest, text, backup=None):
+    """Write by rename, so a half-written file never shows. backup moves the old one aside first."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.is_symlink():
+        dest.unlink()
+    elif dest.exists() and backup:
+        backup_copy = dest.with_name(f".{dest.name}.link-old")
+        backup_copy.write_bytes(dest.read_bytes())
+        backup(backup_copy)
+    tmp = dest.with_name(f".{dest.name}.link-tmp")
+    tmp.write_text(text)
+    os.replace(tmp, dest)
+
+
+def deep_merge(current, wanted):
+    """wanted on top of current, merging nested objects (Herdr may add keys inside sounds)."""
+    out = dict(current)
+    for key, value in wanted.items():
+        out[key] = deep_merge(current[key], value) if isinstance(value, dict) and isinstance(current.get(key), dict) else value
+    return out
 
 
 def expand_home(value) -> "dict | str | object":
@@ -215,9 +235,14 @@ def main():
     p.add_argument("--bin-dir", type=Path, help="where to link the job CLI (default ~/.local/bin)")
     args = p.parse_args()
 
-    if not args.herdr_home and (Path.home() / "dotfiles").resolve() != HERE.parent:
+    # Tests link into a temp folder and pass both; anything touching the real setup runs from ~/dotfiles.
+    sandboxed = bool(args.herdr_home and args.bin_dir)
+    if not sandboxed and (Path.home() / "dotfiles").resolve() != HERE.parent:
         sys.exit(f"link: run this from ~/dotfiles, not {HERE.parent}; links point at the checkout that runs it")
     manifest = machine.manifest(args.machine)
+    platform = manifest.get("platform")
+    if platform and platform != sys.platform and not os.environ.get("LINK_ANY_PLATFORM"):
+        sys.exit(f"link: {manifest['name']} is a {platform} machine and this is {sys.platform}; check --machine")
     if args.machine:
         os.environ["PARKER_MACHINE"] = args.machine
     herdr_home = args.herdr_home or Path.home() / ".config/herdr-app"

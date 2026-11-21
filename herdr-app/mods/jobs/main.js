@@ -213,6 +213,7 @@ export default class Jobs extends View {
         .child(h_flex().gap(8).text_color(t.muted)
           .child(div().flex_1().min_w(0).truncate().child(`${schedule(job)} · ${job.agent}`))
           .when(job.times.length && !job.loaded, (el) => el.child(div().text_color(t.blocked).child("not loaded"))))
+        .when(job.error, (el) => el.child(div().text_color(t.blocked).child(job.error)))
         .child(h_flex().gap(8).text_color(t.dim)
           .child(div().flex_1().min_w(0).truncate().child(last ? `Last ${day(last.ts, now)} ${clock(last.ts)}` : "Last: never"))
           .when(job.next && job.loaded, (el) => el.child(div().child(`Next ${day(job.next, now)} ${clock(job.next)}`))));

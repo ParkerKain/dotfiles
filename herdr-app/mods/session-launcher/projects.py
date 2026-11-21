@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 # The machine manifest (herdr-app/machines/<machine>.toml) says which repos this machine offers.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -28,7 +29,10 @@ def launcher(home, config=None):
     return {"repo_roots": [at(p) for p in config.get("repo_roots", [])],
             "extra_folders": [at(p) for p in config.get("extra_folders", [])],
             "default_folder": str(at(config.get("default_folder", "~/Documents"))),
-            "rules": list(config.get("rules", []))}
+            "rules": list(config.get("rules", [])),
+            # Which CLI routes requests, and which agent the launcher starts with.
+            "planner": config.get("planner", "claude"),
+            "agent": config.get("agent", "claude")}
 
 
 def catalog(home, config=None):
@@ -79,10 +83,13 @@ def local_spaces():
     return [s for s in json.loads(herdr("ls"))["spaces"] if not s.get("machine")]
 
 
+SYSTEM = "Route a Herdr session using the supplied project catalog. Return only the requested JSON."
+
+
 def ask_claude(instruction, schema, home):
     argv = ["claude", "-p", "--safe-mode", "--strict-mcp-config", "--tools", "", "--model", "haiku", "--effort", "low",
             "--no-session-persistence", "--max-budget-usd", "0.05",
-            "--system-prompt", "Route a Herdr session using the supplied project catalog. Return only the requested JSON.",
+            "--system-prompt", SYSTEM,
             "--output-format", "json", "--json-schema", schema, instruction]
     # A fixed cwd avoids inheriting an unrelated selected project's instructions.
     result = subprocess.run(argv, cwd=home, capture_output=True, text=True, timeout=120)
@@ -94,7 +101,24 @@ def ask_claude(instruction, schema, home):
     return body.get("structured_output") or json.loads(body["result"])
 
 
-def plan(payload, home=HOME, spaces=None, ask=ask_claude, config=None):
+def ask_codex(instruction, schema, home):
+    """Codex's exec mode with a JSON schema: Omarchy's planner, where Codex is signed in."""
+    with tempfile.TemporaryDirectory() as tmp:
+        schema_file, answer = Path(tmp) / "schema.json", Path(tmp) / "answer.json"
+        schema_file.write_text(schema)
+        argv = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+                "-c", "model_reasoning_effort=low", "--output-schema", str(schema_file), "-o", str(answer),
+                f"{SYSTEM}\n\n{instruction}"]
+        result = subprocess.run(argv, cwd=home, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
+        if result.returncode != 0 or not answer.exists():
+            raise RuntimeError(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "Session planning failed.")
+        return json.loads(answer.read_text())
+
+
+PLANNERS = {"claude": ask_claude, "codex": ask_codex}
+
+
+def plan(payload, home=HOME, spaces=None, ask=None, config=None):
     """Choose the project, tab name, layout and Space for a request."""
     settings = launcher(home, config)
     request = payload["request"]
@@ -131,7 +155,16 @@ def plan(payload, home=HOME, spaces=None, ask=ask_claude, config=None):
         f"The user explicitly chose {override}. You MUST choose this project." if override else "",
         f"Request:\n{request}",
     ] if line)
-    chosen = ask(instruction, route_schema(projects), home)
+    if ask is None:
+        try:
+            chosen = PLANNERS[settings["planner"]](instruction, route_schema(projects), home)
+        except (OSError, RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
+            # No planner (not installed, signed out): start in the default folder, and say why.
+            words = " ".join(request.split()[:4]) or "New session"
+            chosen = {"project": default, "reason": f"Routing is unavailable ({str(error)[:80] or type(error).__name__}), so this uses the default folder.",
+                      "new_space": False, "tab_name": words, "split": "none"}
+    else:
+        chosen = ask(instruction, route_schema(projects), home)
     project = next((p for p in projects if p["id"] == chosen.get("project")), None)
     if (not project or chosen.get("split") not in ("none", "right", "down") or not isinstance(chosen.get("new_space"), bool)
             or not str(chosen.get("reason") or "").strip()):
@@ -207,7 +240,7 @@ def start(payload):
         except OSError:
             pass  # A failed history write must not prevent a valid session from launching.
         launch(route, payload)
-    except Exception as error:  # noqa: BLE001 - every failure must reach the person.
+    except (Exception, SystemExit) as error:  # noqa: BLE001 - every failure must reach the person.
         message = str(error) or type(error).__name__
         CACHE.mkdir(parents=True, exist_ok=True)
         FAILED.write_text(json.dumps({"request": payload.get("request"), "task": bool(payload.get("task")), "error": message}))
@@ -233,7 +266,9 @@ if __name__ == "__main__":
     if action == "catalog":
         print(json.dumps(catalog(HOME)))
     elif action == "default":
-        print(Path(launcher(HOME)["default_folder"]).name)
+        settings = launcher(HOME)
+        label = machine.manifest().get("launcher", {}).get("default_label") or Path(settings["default_folder"]).name
+        print(json.dumps({"name": label, "agent": settings["agent"]}))
     elif action == "plan":
         try:
             print(json.dumps(plan(json.loads(sys.argv[2]))))

@@ -4,6 +4,9 @@
 # [jobs] for this machine's jobs and hooks, and the session launcher reads [launcher].
 # Per-machine files (keys.json, settings.json) sit in machines/mac/.
 
+# link.py refuses to link this machine on another platform (a wrong --machine would stick).
+platform = "darwin"
+
 [herdr]
 # Mods from herdr-app/mods/ that this machine links.
 mods = [
@@ -27,6 +30,7 @@ repo_roots = ["~/Documents/internal/repos"]
 extra_folders = ["~/dotfiles"]
 # Where general work goes when no project owns the request. Must be in the catalog.
 default_folder = "~/Documents/internal/repos/devclarity-vault"
+default_label = "DevClarity vault"  # shown as "Destination · DevClarity vault by default"
 rules = [
   "Herdr music mod, Spotify controls, UI, launcher, keys, layouts and machine configuration belong in dotfiles. Agent skills, hooks, agent CLIs and context belong in parker-agent-kit. Use the catalog descriptions for other work.",
   "For general work or no identifiable software project, choose devclarity-vault. For Tasks Play with no identifiable project, use its default folder instead.",

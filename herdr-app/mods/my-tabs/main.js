@@ -27,7 +27,7 @@ const WORK_PANELS = [
 function keyFor(action, platform) {
   const binding = (keys?.() ?? []).find(k => k.section === "global" && k.action === action)?.keys;
   if (!binding) return null;
-  const parts = binding.split("-");
+  const parts = binding.split(/-(?=.)/); // "ctrl--" is Ctrl and the minus key
   if (platform === "macos") {
     const order = ["ctrl", "alt", "shift", "cmd"], sym = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
     const mods = order.filter(m => parts.includes(m)).map(m => sym[m]).join("");

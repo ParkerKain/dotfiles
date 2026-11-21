@@ -68,6 +68,23 @@ class OmarchyCatalogTest(unittest.TestCase):
         self.assertNotIn("devclarity-vault", asked[0])
 
 
+class PlannerFallbackTest(unittest.TestCase):
+    def test_a_missing_planner_starts_in_the_default_folder_and_says_why(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / "Documents").mkdir()
+            config = {**OMARCHY, "planner": "codex"}
+            original = projects.PLANNERS["codex"]
+            projects.PLANNERS["codex"] = lambda *a: (_ for _ in ()).throw(OSError("codex not found"))
+            try:
+                route = projects.plan({"request": "Fix the build please now"}, home=home, spaces=[], config=config)
+            finally:
+                projects.PLANNERS["codex"] = original
+            self.assertEqual(route["folder"], str(home / "Documents"))
+            self.assertIn("Routing is unavailable (codex not found)", route["reason"])
+            self.assertEqual(route["tab_name"], "Fix the build please")
+
+
 class PlanTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

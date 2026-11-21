@@ -38,7 +38,7 @@ class LinkTest(unittest.TestCase):
         self.bin = self.tmp / ".local/bin"
 
     def run_link(self, machine, *args):
-        env = {**os.environ, "HOME": str(self.tmp), "JOB_SCHEDULER": "none",
+        env = {**os.environ, "HOME": str(self.tmp), "JOB_SCHEDULER": "none", "LINK_ANY_PLATFORM": "1",
                "JOB_LAUNCHD_DIR": str(self.tmp / "launchd"), "JOB_SYSTEMD_DIR": str(self.tmp / "systemd")}
         env.pop("PARKER_MACHINE", None)
         return subprocess.run([sys.executable, str(LINK), "--machine", machine, "--herdr-home", str(self.herdr),
@@ -120,9 +120,52 @@ class LinkTest(unittest.TestCase):
 
     def test_refuses_to_run_from_a_checkout_other_than_home_dotfiles(self):
         env = {**os.environ, "HOME": str(self.tmp)}
-        out = subprocess.run([sys.executable, str(LINK), "--check"], capture_output=True, text=True, env=env)
+        # --herdr-home alone isn't a sandbox: without --bin-dir it would still touch the real setup.
+        out = subprocess.run([sys.executable, str(LINK), "--check", "--herdr-home", str(self.herdr)],
+                             capture_output=True, text=True, env=env)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("run this from ~/dotfiles", out.stderr)
+
+    def test_invalid_settings_stop_the_link_and_stay_untouched(self):
+        (self.herdr / "settings.json").write_text('{"zoom": 1.2,}')
+        out = self.run_link("omarchy")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("isn't valid JSON", out.stderr)
+        self.assertEqual((self.herdr / "settings.json").read_text(), '{"zoom": 1.2,}')
+
+    def test_settings_merge_keeps_keys_herdr_adds_inside_objects(self):
+        (self.herdr / "settings.json").write_text('{"sounds": {"volume": 0.4}}')
+        self.ok("omarchy")
+        sounds = json.loads((self.herdr / "settings.json").read_text())["sounds"]
+        self.assertEqual((sounds["volume"], sounds["enabled"]), (0.4, True))
+        self.assertTrue(list((self.tmp / ".local/state/herdr-link/backups").rglob(".settings.json.link-old")))
+
+    def test_a_hand_edited_layout_copy_is_backed_up_before_it_is_rewritten(self):
+        self.ok("omarchy")
+        (self.herdr / "layouts/Parker.json").write_text('{"edited": true}')
+        self.ok("omarchy")
+        saved = list((self.tmp / ".local/state/herdr-link/backups").rglob(".Parker.json.link-old"))
+        self.assertEqual(saved[0].read_text(), '{"edited": true}')
+
+    def test_a_failed_schedule_refresh_fails_the_link(self):
+        (self.tmp / "systemd").mkdir()
+        (self.tmp / "launchd").mkdir()
+        # A schedule for a job whose definition can't load: refresh exits 4 and link must say so.
+        defs = self.tmp / "dotfiles/herdr-app/machines/omarchy/jobs"
+        defs.mkdir(parents=True)
+        (defs / "broken.toml").write_text('repo = "/nonexistent"\nagent = "codex"\nprompt = "x"\n')
+        (self.tmp / "systemd/parker-job-broken.timer").write_text("")
+        (self.tmp / "launchd/com.parker.job.broken.plist").write_text("")
+        out = self.run_link("omarchy")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("job refresh failed", out.stderr)
+
+    def test_refuses_a_machine_from_another_platform(self):
+        other = "omarchy" if sys.platform == "darwin" else "mac"
+        env = {**os.environ, "HOME": str(self.tmp)}
+        out = subprocess.run([sys.executable, str(LINK), "--machine", other, "--herdr-home", str(self.herdr),
+                              "--bin-dir", str(self.bin)], capture_output=True, text=True, env=env)
+        self.assertIn("check --machine", out.stderr)
 
 
 if __name__ == "__main__":

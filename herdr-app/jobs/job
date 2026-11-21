@@ -62,6 +62,10 @@ SYSTEMD = Path(os.environ.get("JOB_SYSTEMD_DIR", HOME / ".config/systemd/user"))
 SCHEDULER = os.environ.get("JOB_SCHEDULER") or ("systemd" if LINUX else "launchd")
 
 
+class DefError(Exception):
+    """A job or hook file that can't be used. The CLI prints it; status shows it on the item's row."""
+
+
 def die(msg):
     sys.exit(f"job: {msg}")
 
@@ -84,41 +88,62 @@ def definitions():
             continue
         for path in sorted(folder.glob("*.toml")):
             if path.stem in found:
-                die(f"'{path.stem}' is defined twice: {found[path.stem]} and {path}")
+                raise DefError(f"'{path.stem}' is defined twice: {found[path.stem]} and {path}")
             found[path.stem] = path
     return found
 
 
-def load(name):
+def raw(name):
+    """The parsed file, with name, path and kind, before any checks."""
     path = definitions().get(name)
     if not path:
-        die(f"no job or hook '{name}' on this machine ({', '.join(map(str, sources())) or 'no sources'})")
-    item = tomllib.loads(path.read_text())
+        raise DefError(f"no job or hook '{name}' on this machine ({', '.join(map(str, sources())) or 'no sources'})")
+    try:
+        item = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise DefError(f"{name}: can't read {path}: {exc}") from None
     item["name"], item["path"] = name, path
-    if "check" in item:
-        item["kind"] = "hook"
+    item["kind"] = "hook" if "check" in item else "job"
+    return item
+
+
+def load(name):
+    item = raw(name)
+    path = item["path"]
+    if item["kind"] == "hook":
         item["script"] = (path.parent / item["check"]).resolve()
         if not item["script"].exists():
-            die(f"{name}: check script {item['script']} is missing")
+            raise DefError(f"{name}: check script {item['script']} is missing")
         if int(item.get("interval", 0)) < 60:
-            die(f"{name}: a hook needs interval = <seconds>, at least 60")
+            raise DefError(f"{name}: a hook needs interval = <seconds>, at least 60")
         item["interval"] = int(item["interval"])
         return item
-    item["kind"] = "job"
     item["repo"] = str(machine.expand(item.get("repo", "")).resolve())
     if not Path(item["repo"]).is_dir():
-        die(f"{name}: repo {item['repo']} is not a folder")
+        raise DefError(f"{name}: repo {item['repo']} is not a folder")
     if item.get("agent") not in AGENTS:
-        die(f"{name}: agent must be one of {', '.join(AGENTS)}")
+        raise DefError(f"{name}: agent must be one of {', '.join(AGENTS)}")
     if "prompt_file" in item:
         item["prompt"] = (path.parent / item["prompt_file"]).read_text()
     if not item.get("prompt", "").strip():
-        die(f"{name}: needs prompt or prompt_file")
+        raise DefError(f"{name}: needs prompt or prompt_file")
     return item
 
 
 def all_items():
-    return [load(name) for name in definitions()]
+    """Every definition, loaded; one that can't be used comes back as {name, kind, error}."""
+    items = []
+    for name in definitions():
+        try:
+            items.append(load(name))
+        except DefError as exc:
+            kind = "job"
+            try:
+                kind = raw(name)["kind"]
+            except DefError:
+                pass
+            items.append({"name": name, "kind": kind, "error": str(exc)})
+    return items
 
 
 # ---- Herdr ----------------------------------------------------------------
@@ -287,7 +312,12 @@ def last_runs():
 # ---- hooks ----------------------------------------------------------------
 
 def python():
-    return shutil.which("python3", path=PATH) or sys.executable
+    """The interpreter schedules use: the system one on Linux (not a mise shim that can
+    change under it), Homebrew's on the Mac (macOS's own is too old for tomllib)."""
+    for fixed in (["/usr/bin/python3"] if LINUX else ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"]):
+        if os.path.exists(fixed):
+            return fixed
+    return sys.executable
 
 
 def hook_script(hook, *args, timeout):
@@ -346,10 +376,21 @@ def next_run(sched, now=None):
     return None
 
 
+# Schedules always name the engine in ~/dotfiles, never the checkout that wrote them,
+# so a schedule written from a worktree still works after the worktree is removed.
+ENGINE = HOME / "dotfiles/herdr-app/jobs/job"
+
+
 def command_for(item):
     """What the scheduler runs: `job run <name>` or `job check <name>`."""
     verb = "check" if item["kind"] == "hook" else "run"
-    return [python(), str(HERE / "job"), verb, item["name"]]
+    return [python(), str(ENGINE), verb, item["name"]]
+
+
+def require_home_checkout():
+    """Writing real schedules from a worktree would point them at code that's about to vanish."""
+    if SCHEDULER != "none" and HERE.resolve() != ENGINE.parent.resolve():
+        die(f"run this from ~/dotfiles, not {HERE.parent.parent}: schedules must use the engine in ~/dotfiles")
 
 
 def require_schedule(item):
@@ -400,7 +441,10 @@ class Launchd:
         written = write_units(self.units(item))
         if self.live:
             subprocess.run(["launchctl", "unload", str(written[0])], capture_output=True)
-            subprocess.run(["launchctl", "load", str(written[0])], check=True)
+            loaded = subprocess.run(["launchctl", "load", str(written[0])], capture_output=True, text=True)
+            if loaded.returncode != 0:
+                written[0].unlink(missing_ok=True)
+                die(f"launchctl couldn't load {written[0].name}: {loaded.stderr.strip()}")
         return written
 
     def uninstall(self, name, kind):
@@ -442,12 +486,12 @@ class Systemd:
         require_schedule(item)
         service, timer = self.paths(item["name"], item["kind"])
         what = "hook check" if item["kind"] == "hook" else "job"
-        exec_start = " ".join(f'"{a}"' if " " in a else a for a in command_for(item))
+        exec_start = " ".join(systemd_arg(a) for a in command_for(item))
         # KillMode=process: the agent session belongs to herdr-core, so ending this
         # unit must not take down anything it started.
         service_body = (f"[Unit]\nDescription=Parker {what}: {item['name']}\n\n"
                         f"[Service]\nType=oneshot\nExecStart={exec_start}\n"
-                        f"Environment=PATH={PATH}\nTimeoutStartSec=infinity\nKillMode=process\n")
+                        f"Environment={systemd_arg('PATH=' + PATH)}\nTimeoutStartSec=infinity\nKillMode=process\n")
         if item["kind"] == "hook":
             when = f"OnActiveSec=10\nOnUnitActiveSec={item['interval']}\n"
         else:
@@ -463,8 +507,14 @@ class Systemd:
         written = write_units(self.units(item))
         if self.live:
             unit = self.unit(item["name"], item["kind"])
-            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-            subprocess.run(["systemctl", "--user", "enable", "--now", f"{unit}.timer"], check=True, capture_output=True)
+            try:
+                subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True)
+                subprocess.run(["systemctl", "--user", "enable", "--now", f"{unit}.timer"], check=True, capture_output=True)
+            except subprocess.CalledProcessError as exc:
+                # Don't leave files that make it look turned on when it isn't.
+                for path in written:
+                    path.unlink(missing_ok=True)
+                die(f"systemctl couldn't turn on {unit}.timer: {(exc.stderr or b'').decode().strip() or exc}")
         return written
 
     def uninstall(self, name, kind):
@@ -476,6 +526,12 @@ class Systemd:
         if self.live:
             subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
         return paths
+
+
+def systemd_arg(text):
+    """One ExecStart or Environment word: % and $ doubled, quoted when it has a space."""
+    text = text.replace("%", "%%").replace("$", "$$")
+    return f'"{text}"' if " " in text or '"' in text else text
 
 
 def write_units(units):
@@ -499,7 +555,7 @@ def scheduler():
 def job_status(job, last):
     sched = job.get("schedule")
     loaded = scheduler().loaded(job["name"], "job")
-    row = {"name": job["name"], "agent": job["agent"], "repo": job["repo"],
+    row = {"name": job["name"], "error": None, "agent": job["agent"], "repo": job["repo"],
            "times": times_of(sched) if sched else [], "weekdays": (sched or {}).get("weekdays") or [],
            "next": next_run(sched) if sched else None, "loaded": loaded, "last": None}
     run_ = last.get(job["name"])
@@ -512,23 +568,44 @@ def job_status(job, last):
     return row
 
 
+def broken_row(item):
+    """A definition that can't load still gets a row, so the panel shows why."""
+    row = {"name": item["name"], "error": item["error"], "loaded": scheduler().loaded(item["name"], item["kind"])}
+    if item["kind"] == "hook":
+        return row | {"title": item["name"].replace("-", " ").capitalize(), "interval": 0, "last_check": None, "last_trigger": None}
+    return row | {"agent": "", "repo": "", "times": [], "weekdays": [], "next": None, "last": None}
+
+
 def status():
     last = last_runs()
     items = all_items()
-    jobs = [job_status(i, last) for i in items if i["kind"] == "job"]
-    hooks = [hook_status(i) for i in items if i["kind"] == "hook"]
+    jobs = [broken_row(i) if "error" in i else job_status(i, last) for i in items if i["kind"] == "job"]
+    hooks = [broken_row(i) if "error" in i else hook_status(i) for i in items if i["kind"] == "hook"]
     print(json.dumps({"ok": True, "machine": machine.name(), "paused": paused(), "jobs": jobs, "hooks": hooks}))
 
 
+REFRESH_DRIFT, REFRESH_FAILED = 3, 4
+
+
 def refresh(check_only):
-    """Rewrite turned-on schedules that differ from what this engine would write."""
-    sched, defs, drift = scheduler(), definitions(), False
+    """Rewrite turned-on schedules that differ from what this engine would write.
+
+    Exit 0 when everything matches (or was rewritten), 3 when --check found drift,
+    4 when a schedule couldn't be rewritten. One broken item doesn't stop the rest."""
+    if not check_only:
+        require_home_checkout()
+    sched, defs, drift, failed = scheduler(), definitions(), False, False
     for name, kind in sched.installed():
         if name not in defs:
             print(f"stale {kind} schedule '{name}': no definition on this machine (job uninstall {name})")
             drift = True
             continue
-        item = load(name)
+        try:
+            item = load(name)
+        except DefError as exc:
+            print(f"failed {kind} schedule '{name}': {exc}", file=sys.stderr)
+            failed = True
+            continue
         if item["kind"] != kind:
             continue
         units = sched.units(item)
@@ -537,10 +614,14 @@ def refresh(check_only):
         drift = True
         if check_only:
             print(f"would rewrite the {kind} schedule for {name}")
-        else:
+            continue
+        try:
             sched.install(item)
             print(f"rewrote the {kind} schedule for {name}")
-    sys.exit(1 if check_only and drift else 0)
+        except SystemExit as exc:
+            print(f"failed {kind} schedule '{name}': {exc}", file=sys.stderr)
+            failed = True
+    sys.exit(REFRESH_FAILED if failed else REFRESH_DRIFT if check_only and drift else 0)
 
 
 def describe(item):
@@ -572,6 +653,9 @@ def main():
 
     if args.cmd == "list":
         for item in all_items():
+            if "error" in item:
+                print(f"{item['name']:<24} {item['kind']:<5} broken: {item['error']}")
+                continue
             where = item.get("repo") or str(item["script"])
             print(f"{item['name']:<24} {item['kind']:<5} {item.get('agent', ''):<7} {describe(item):<22} {where}")
     elif args.cmd == "status":
@@ -598,16 +682,20 @@ def main():
             sys.stdout.write(body.decode())
             print()
     elif args.cmd == "install":
+        require_home_checkout()
         item = load(args.name)
         written = scheduler().install(item)
         print(json.dumps({"ok": True, "installed": [str(p) for p in written]}))
     elif args.cmd == "uninstall":
         # A definition that has been deleted can still be uninstalled by name.
         path = definitions().get(args.name)
-        kind = load(args.name)["kind"] if path else ("hook" if scheduler().loaded(args.name, "hook") else "job")
+        kind = raw(args.name)["kind"] if path else ("hook" if scheduler().loaded(args.name, "hook") else "job")
         removed = scheduler().uninstall(args.name, kind)
         print(json.dumps({"ok": True, "removed": [str(p) for p in removed]}))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except DefError as exc:
+        die(str(exc))

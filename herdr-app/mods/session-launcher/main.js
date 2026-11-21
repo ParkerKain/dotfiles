@@ -61,10 +61,15 @@ export default class SessionLauncher extends View {
       // Usually cached by Herdr. Fetching now keeps Start from waiting on the agent check.
       this.agents = knownAgents().catch(() => null);
       if (!task) cx.spawn(async cx => this.restoreFailed(cx));
-      // The machine's default folder (vault on the work Mac, Documents on Omarchy), for the destination line.
+      // The machine's default folder (vault on the work Mac, Documents on Omarchy) and starting agent.
       cx.spawn(async cx => {
         const r = await exec("python3", [HELPER, "default"], { timeout: 10000 }).catch(() => null);
-        if (r?.code === 0 && r.stdout.trim()) { this.defaultName = r.stdout.trim(); cx.notify(); }
+        let machine = null;
+        try { machine = JSON.parse(r?.stdout ?? ""); } catch { /* keep the built-in defaults */ }
+        if (machine?.name) this.defaultName = machine.name;
+        // Omarchy starts on Codex, where it's signed in. Only before anything is chosen by hand.
+        if (machine?.agent && machine.agent !== this.agent && !this.agentTouched && ["claude", "codex"].includes(machine.agent)) this.agent = machine.agent;
+        cx.notify();
       });
     }
     cx.spawn(async cx => {
@@ -100,6 +105,7 @@ export default class SessionLauncher extends View {
 
   toggleAgent(cx) {
     if (this.busy) return;
+    this.agentTouched = true;
     this.agent = this.agent === "claude" ? "codex" : "claude";
     this.input.focus();
     cx.notify();

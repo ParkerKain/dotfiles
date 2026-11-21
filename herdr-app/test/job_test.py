@@ -104,8 +104,11 @@ class JobTest(unittest.TestCase):
     def test_a_hook_needs_a_real_interval(self):
         self.hook_script()
         self.write("fast", 'check = "hook.py"\ninterval = 5\n')
-        out = self.job("list", check=False)
-        self.assertIn("at least 60", out.stderr)
+        # A broken file is listed with its reason, not hidden, and doesn't stop the others.
+        self.weekly()
+        out = self.job("list").stdout
+        self.assertRegex(out, r"fast\s+hook\s+broken: .*at least 60")
+        self.assertIn("weekly", out)
 
     # ---- launchd
 
@@ -222,19 +225,85 @@ class JobTest(unittest.TestCase):
 
     def test_each_machine_sees_only_its_own_jobs(self):
         env = {k: v for k, v in self.env.items() if k != "JOB_DEFS"}
-        omarchy = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
-                                 env={**env, "PARKER_MACHINE": "omarchy", "HOME": str(self.tmp)})
-        # HOME is the temp dir, so ~/dotfiles doesn't exist: Omarchy's source is skipped, not the Mac's used.
-        self.assertEqual(omarchy.returncode, 0, omarchy.stderr)
-        self.assertNotIn("client-brief", omarchy.stdout)
-        (self.tmp / "dotfiles").symlink_to(ROOT.parent)
-        omarchy = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
-                                 env={**env, "PARKER_MACHINE": "omarchy", "HOME": str(self.tmp)})
-        self.assertIn("dotfiles-check", omarchy.stdout)
-        mac = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
-                             env={**env, "PARKER_MACHINE": "mac", "HOME": str(self.tmp)})
-        self.assertNotIn("dotfiles-check", mac.stdout)
+        home = self.tmp / "home"
+        kit_defs = home / "Documents/internal/repos/parker-agent-kit/jobs/defs"
+        kit_defs.mkdir(parents=True)
+        (kit_defs / "client-brief.toml").write_text(f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n')
+        (home / "dotfiles").symlink_to(ROOT.parent)
 
+        def listed(machine):
+            out = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
+                                 env={**env, "PARKER_MACHINE": machine, "HOME": str(home)})
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return out.stdout
+        self.assertIn("client-brief", listed("mac"))
+        self.assertNotIn("dotfiles-check", listed("mac"))
+        self.assertIn("dotfiles-check", listed("omarchy"))
+        self.assertNotIn("client-brief", listed("omarchy"))
+
+    # ---- review fixes
+
+    def test_schedules_name_the_engine_in_home_dotfiles_not_this_checkout(self):
+        self.weekly()
+        out = self.job("unit", "weekly", env={"JOB_SCHEDULER_FORMAT": "systemd", "HOME": str(self.tmp)}).stdout
+        self.assertIn(f"{self.tmp}/dotfiles/herdr-app/jobs/job run weekly", out)
+
+    def test_real_installs_refuse_to_run_from_another_checkout(self):
+        self.weekly()
+        # HOME has no dotfiles, so this checkout isn't ~/dotfiles; it must stop before writing anything.
+        out = self.job("install", "weekly", env={"JOB_SCHEDULER": "launchd", "HOME": str(self.tmp)}, check=False)
+        self.assertIn("run this from ~/dotfiles", out.stderr)
+        self.assertFalse((self.tmp / "launchd").exists())
+
+    def test_refresh_rewrites_old_schedules_and_reports_with_exit_codes(self):
+        self.weekly()
+        self.hook()
+        self.job("install", "weekly")
+        self.job("install", "mail-inbox")
+        plist = self.tmp / "launchd/com.parker.job.weekly.plist"
+        if plist.exists():  # macOS format; on Linux the systemd files are checked instead
+            plist.write_bytes(plist.read_bytes().replace(b"run", b"old"))
+        else:
+            unit = self.tmp / "systemd/parker-job-weekly.service"
+            unit.write_text(unit.read_text().replace("run weekly", "old weekly"))
+        self.assertEqual(self.job("refresh", "--check", check=False).returncode, 3)
+        self.assertIn("rewrote the job schedule for weekly", self.job("refresh").stdout)
+        self.assertEqual(self.job("refresh", "--check", check=False).returncode, 0)
+
+    def test_refresh_keeps_going_past_a_broken_definition(self):
+        self.weekly()
+        self.write("aaa-broken", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n[schedule]\ntimes = ["01:00"]\n')
+        self.job("install", "aaa-broken")
+        self.job("install", "weekly")
+        (self.defs / "aaa-broken.toml").write_text('repo = "/nonexistent"\nagent = "claude"\nprompt = "x"\n[schedule]\ntimes = ["01:00"]\n')
+        out = self.job("refresh", "--check", check=False)
+        self.assertEqual(out.returncode, 4)
+        self.assertIn("aaa-broken", out.stderr)
+
+    def test_status_shows_a_broken_definition_on_its_own_row(self):
+        self.weekly()
+        self.write("gone", 'repo = "/nonexistent"\nagent = "claude"\nprompt = "x"\n')
+        data = json.loads(self.job("status").stdout)
+        rows = {r["name"]: r for r in data["jobs"]}
+        self.assertIsNone(rows["weekly"]["error"])
+        self.assertIn("not a folder", rows["gone"]["error"])
+
+    def test_a_broken_hook_can_still_be_turned_off(self):
+        self.hook()
+        self.job("install", "mail-inbox", env={"JOB_SCHEDULER_FORMAT": "systemd"})
+        (self.defs / "hook.py").unlink()
+        self.job("uninstall", "mail-inbox", env={"JOB_SCHEDULER_FORMAT": "systemd"})
+        self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
+
+    def test_systemd_words_escape_percent_and_dollar(self):
+        sys.path.insert(0, str(ROOT))
+        import importlib.machinery, importlib.util
+        loader = importlib.machinery.SourceFileLoader("job_engine", str(JOB))
+        spec = importlib.util.spec_from_loader("job_engine", loader)
+        engine = importlib.util.module_from_spec(spec)
+        loader.exec_module(engine)
+        self.assertEqual(engine.systemd_arg("PATH=/a b"), '"PATH=/a b"')
+        self.assertEqual(engine.systemd_arg("50%$x"), "50%%$$x")
 
 if __name__ == "__main__":
     unittest.main()
