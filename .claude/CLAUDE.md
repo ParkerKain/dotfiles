@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Personal context lives in the private repo devclarityai/parker-agent-kit, shared with Codex. Edit it there. `parker.md` is portable to every app, and `local.md` is for sessions on this Mac.
+Parker Core supplies my shared preferences. The DevClarity kit supplies work context and setup for this Mac. Codex loads the same preferences and work context.
 
+@~/.config/parker-agent-kit/core/context/preferences.md
 @~/Documents/internal/repos/parker-agent-kit/context/parker.md
 @~/Documents/internal/repos/parker-agent-kit/context/local.md
