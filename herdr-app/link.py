@@ -156,7 +156,11 @@ class Linker:
         args = [sys.executable, str(HERE / "jobs/job"), "refresh"] + (["--check"] if self.check else [])
         env = {**os.environ, "PARKER_MACHINE": self.m["name"]}
         if self.sandboxed:
-            env.setdefault("JOB_SCHEDULER", "none")
+            # Never the real scheduler or its folders from a sandboxed run.
+            env["JOB_SCHEDULER"] = "none"
+            state = self.home / ".link-state"
+            for key, folder in (("JOB_LAUNCHD_DIR", "launchd"), ("JOB_SYSTEMD_DIR", "systemd"), ("JOB_STATE_DIR", "jobs")):
+                env.setdefault(key, str(state / folder))
         out = subprocess.run(args, capture_output=True, text=True, env=env)
         for line in out.stdout.splitlines():
             print(line)

@@ -377,8 +377,8 @@ def hook_status(hook):
             raise ValueError(out.stderr.strip() or "status failed")
         first = (data.get("hooks") or [{}])[0]
         row["last_check"], row["last_trigger"] = first.get("last_check"), first.get("last_trigger")
-    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
-        row["error"] = f"{hook['script'].name}: {exc}"
+    except (ValueError, OSError, TypeError, AttributeError, subprocess.TimeoutExpired) as exc:
+        row["error"] = f"{hook['script'].name}: status answered badly ({exc})"
     return row
 
 
@@ -649,6 +649,12 @@ def refresh(check_only):
         try:
             item = load(name)
             if item["kind"] != kind:
+                print(f"stale {kind} schedule '{name}': it's defined as a {item['kind']} now (job uninstall {name})")
+                drift = True
+                continue
+            if kind == "job" and not item.get("schedule"):
+                print(f"stale job schedule '{name}': the job has no [schedule] now (job uninstall {name})")
+                drift = True
                 continue
             units = sched.units(item)
         except DefError as exc:
@@ -738,11 +744,15 @@ def main():
         print(json.dumps({"ok": True, "installed": [str(p) for p in written]}))
     elif args.cmd == "uninstall":
         # A definition that has been deleted can still be uninstalled by name.
-        try:
-            kind = raw(args.name)["kind"]
-        except DefError:  # deleted or unreadable: go by what's installed
-            kind = "hook" if scheduler().loaded(args.name, "hook") else "job"
-        removed = scheduler().uninstall(args.name, kind)
+        # Whatever is installed under this name goes, job or hook, even if the file changed kind or is gone.
+        sched = scheduler()
+        kinds = [k for k in ("job", "hook") if sched.loaded(args.name, k)]
+        if not kinds:
+            try:
+                kinds = [raw(args.name)["kind"]]
+            except DefError:
+                kinds = ["job"]
+        removed = [p for k in kinds for p in sched.uninstall(args.name, k)]
         print(json.dumps({"ok": True, "removed": [str(p) for p in removed]}))
 
 

@@ -309,13 +309,32 @@ class JobTest(unittest.TestCase):
         self.assertIn("badinterval", errors)
         self.assertIn("can't read", errors["unparsable"])
 
-    def test_refresh_survives_a_turned_on_job_that_lost_its_schedule(self):
+    def test_a_turned_on_job_that_lost_its_schedule_is_stale_not_failed(self):
         self.weekly()
         self.job("install", "weekly")
         self.write("weekly", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n')
-        out = self.job("refresh", check=False)
-        self.assertEqual(out.returncode, 4)
-        self.assertIn("no [schedule]", out.stderr)
+        out = self.job("refresh", "--check", check=False)
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("has no [schedule] now (job uninstall weekly)", out.stdout)
+
+    def test_a_schedule_whose_definition_changed_kind_is_stale_and_uninstall_removes_it(self):
+        self.weekly()
+        env = {"JOB_SCHEDULER_FORMAT": "systemd"}
+        self.job("install", "weekly", env=env)
+        self.hook_script()
+        self.write("weekly", 'check = "hook.py"\ninterval = 300\n')
+        out = self.job("refresh", "--check", env=env, check=False)
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("defined as a hook now", out.stdout)
+        self.job("uninstall", "weekly", env=env)
+        self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
+
+    def test_a_hook_status_that_is_not_an_object_stays_on_its_row(self):
+        self.weekly()
+        self.hook(status=1)
+        data = json.loads(self.job("status").stdout)
+        self.assertIn("answered badly", data["hooks"][0]["error"])
+        self.assertEqual(len(data["jobs"]), 1)
 
     def test_an_unparsable_definition_can_still_be_turned_off(self):
         self.hook()

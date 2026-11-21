@@ -160,6 +160,18 @@ class LinkTest(unittest.TestCase):
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("job refresh failed", out.stderr)
 
+    def test_a_sandboxed_link_never_touches_schedules_outside_it(self):
+        agents = self.tmp / "Library/LaunchAgents"
+        agents.mkdir(parents=True)
+        old = agents / "com.parker.job.demo.plist"
+        old.write_text("old")
+        env = {**os.environ, "HOME": str(self.tmp), "LINK_ANY_PLATFORM": "1"}
+        for key in ("JOB_SCHEDULER", "JOB_LAUNCHD_DIR", "JOB_SYSTEMD_DIR", "JOB_STATE_DIR", "JOB_DEFS", "PARKER_MACHINE"):
+            env.pop(key, None)
+        subprocess.run([sys.executable, str(LINK), "--machine", "omarchy", "--herdr-home", str(self.herdr),
+                        "--bin-dir", str(self.bin)], capture_output=True, text=True, env=env)
+        self.assertEqual(old.read_text(), "old")
+
     def test_settings_that_are_not_an_object_stop_the_link(self):
         (self.herdr / "settings.json").write_text("null")
         out = self.run_link("omarchy")
