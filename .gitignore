@@ -25,3 +25,4 @@ zsh/devclarity-mac.zshrc
 .worktrees/
 !/herdr-app/mods/
 /herdr-app/settings.json
+__pycache__/
