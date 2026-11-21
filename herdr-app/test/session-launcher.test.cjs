@@ -5,183 +5,115 @@ const {join} = require('node:path');
 const vm = require('node:vm');
 
 const home = '/home/parker';
-const repos = `${home}/Documents/internal/repos`;
-const kit = `${repos}/parker-agent-kit`;
-const vault = `${repos}/devclarity-vault`;
-const demo = `${repos}/raya-demo`;
-const dotfiles = `${home}/dotfiles`;
+const kit = `${home}/Documents/internal/repos/parker-agent-kit`;
 const source = readFileSync(join(__dirname, '../mods/session-launcher/main.js'), 'utf8')
   .replace(/^import .*;\n/gm, '').replace('export default class ', 'globalThis.Mod = class ');
-const catalog = [kit, vault, dotfiles].map(folder => ({id: folder, folder, name: folder.split('/').pop(), description: folder}));
-const defaultPlan = {project: kit, reason: 'Agent hooks belong in parker-agent-kit.', new_space: false, tab_name: 'focus-fix', split: 'none'};
-function setup(plan = defaultPlan, overrides = {}) {
+const route = {project: kit, folder: kit, project_name: 'parker-agent-kit', reason: 'Agent hooks belong in parker-agent-kit.', space: 'existing', space_id: 'kit'};
+
+function setup(overrides = {}) {
   const calls = [];
+  const files = new Map();
   const context = {View: class {}, home: () => home, appHome: () => '/config',
-    focused: () => ({space: 'demo', cwd: demo}),
-    spaces: () => [{id: 'demo', folder: demo}, {id: 'kit', folder: kit}],
+    focused: () => ({space: 'demo', cwd: '/elsewhere'}),
     exec: async (command, args, options) => {
       calls.push({command, args, options});
-      if (command === 'python3') return {code: 0, stdout: JSON.stringify(catalog)};
-      if (command === 'claude') return {code: 0, stdout: JSON.stringify({structured_output: plan})};
-      return {code: 0};
+      if (command === 'python3' && args[1] === 'plan') return {code: 0, stdout: JSON.stringify(route), stderr: ''};
+      return {code: 0, stdout: '', stderr: ''};
     },
-    props: () => ({overlay: 'launcher'}), closeOverlay: () => {},
+    writeTextFile: async (path, text) => { files.set(path, text); return null; },
+    readTextFile: async path => files.get(path) ?? null,
+    props: () => ({overlay: 'launcher'}), closeOverlay: id => calls.push({command: 'closeOverlay', args: id}),
     knownAgents: async () => [{key: 'codex', installed: true, run: ['codex', '--no-daemon']}],
-    terminals: () => [], run: (command, args) => calls.push({command, args}), ...overrides};
+    ...overrides};
   vm.runInNewContext(source, context);
-  return {mod: new context.Mod(), calls, context};
+  const mod = new context.Mod();
+  Object.assign(mod, {text: 'Fix hooks', extra: '', agent: 'codex', images: new Map(), revision: 0, route: null, override: null, task: null});
+  return {mod, calls, files, context};
 }
-test('planner uses project descriptions, vault fallback and neutral cwd', async () => {
+
+function runner() {
+  const tasks = [];
+  const cx = {notify() {}, sleep: async () => {}, spawn(fn) { tasks.push(fn(cx)); }};
+  return {cx, settle: () => Promise.all(tasks)};
+}
+
+test('preview planning sends the request, origin, override and task to projects.py', async () => {
   const {mod, calls} = setup();
-  await mod.plan('Fix agent hook focus');
-  const call = calls.find(c => c.command === 'claude');
-  assert.match(call.args.at(-1), /Herdr music mod, Spotify controls/);
-  assert.match(call.args.at(-1), /Merely leaving a tab selected is never evidence/);
-  assert.match(call.args.at(-1), /For general work or no identifiable software project, choose devclarity-vault/);
-  assert.equal(call.options.cwd, home);
-  assert.deepEqual(JSON.parse(call.args[call.args.indexOf('--json-schema') + 1]).properties.project.enum, catalog.map(p => p.id));
+  mod.override = `${home}/dotfiles`;
+  mod.task = {folder: kit, title: 'Ops task', slug: 'ops-task', ref: 'T-1', prompt: 'ignored'};
+  assert.equal((await mod.plan('Fix hooks')).folder, kit);
+  const call = calls.find(c => c.command === 'python3');
+  assert.deepEqual([...call.args.slice(0, 2)], ['/config/mods/session-launcher/projects.py', 'plan']);
+  assert.deepEqual(JSON.parse(call.args[2]), {request: 'Fix hooks', override: `${home}/dotfiles`,
+    task: {folder: kit, title: 'Ops task', slug: 'ops-task', ref: 'T-1'}, origin: {space: 'demo', cwd: '/elsewhere'}});
 });
-test('launch uses project Space even after focus switches', async () => {
-  const {mod, calls, context} = setup();
-  const result = await mod.plan('Fix agent hook focus');
-  context.focused = () => ({space: 'unrelated', cwd: '/elsewhere'});
-  await mod.launch(result, 'Fix agent hook focus', 'codex', {});
-  assert.equal(calls.find(c => c.command === 'tab.new').args.space, 'kit');
+
+test('planning errors surface the helper message', async () => {
+  const {mod} = setup({exec: async () => ({code: 1, stdout: '', stderr: 'Folder does not exist: /x\n'})});
+  await assert.rejects(mod.plan('Fix hooks'), /Folder does not exist: \/x/);
 });
-test('rejects arbitrary folders, malformed routes and invalid layouts', async () => {
-  for (const patch of [{project: '/home/parker/random'}, {split: 'left'}, {reason: ''}]) {
-    const {mod} = setup({...defaultPlan, ...patch});
-    await assert.rejects(mod.plan('Fix hooks'), /invalid project choice/);
+
+test('Start closes the window right away and hands routing to a detached helper', async () => {
+  for (const preview of [null, route]) {
+    const {mod, calls, files} = setup();
+    mod.route = preview;
+    const {cx, settle} = runner();
+    mod.start(cx);
+    mod.start(cx);
+    await settle();
+    assert.equal(calls.some(c => c.command === 'python3'), false, 'Start must not wait for routing');
+    const detached = calls.filter(c => c.command === '/bin/sh');
+    assert.equal(detached.length, 1);
+    assert.match(detached[0].args[1], /^nohup python3 "\$0" start "\$1" .*&$/);
+    const job = JSON.parse(files.get(detached[0].args[3]));
+    assert.equal(job.request, 'Fix hooks');
+    assert.deepEqual(job.plan, preview);
+    assert.deepEqual(job.agent, {key: 'codex', run: ['codex', '--no-daemon']});
+    assert.equal(calls.at(-1).command, 'closeOverlay');
   }
 });
-test('closed destination fails without silently creating a different Space', async () => {
-  const {mod, context, calls} = setup();
-  const result = await mod.plan('Fix hooks');
-  context.spaces = () => [];
-  await assert.rejects(mod.launch(result, 'Fix hooks', 'codex', {}), /changed or closed/);
-  assert.equal(calls.some(c => c.command === 'space.new'), false);
-});
-test('music work launches in dotfiles while demo remains selected', async () => {
-  const {mod, calls} = setup({...defaultPlan, project: dotfiles});
-  const result = await mod.plan('Change the music mod');
-  await mod.launch(result, 'Change the music mod', 'codex', {});
-  const launch = calls.find(c => c.command === 'space.new');
-  assert.equal(launch.args.folder, dotfiles);
-  assert.equal(launch.args.machine, '');
-});
-test('remote spaces cannot be reused or supply a current folder', async () => {
-  const {mod, calls} = setup(defaultPlan, {spaces: () => [{id: 'demo', folder: demo, machine: 'server'}, {id: 'remote', folder: kit, machine: 'server'}]});
-  const result = await mod.plan('Fix hooks');
-  assert.equal(result.space, 'new');
-  assert.doesNotMatch(calls.find(c => c.command === 'claude').args.at(-1), /raya-demo/);
-});
-test('planner is told to always pick one project', async () => {
-  const {mod, calls} = setup();
-  await mod.plan('Fix hooks');
-  const prompt = calls.find(c => c.command === 'claude').args.at(-1);
-  assert.match(prompt, /Always choose exactly one project/);
-  assert.doesNotMatch(prompt, /needs_choice/);
-  assert.equal(JSON.parse(calls.find(c => c.command === 'claude').args[calls.find(c => c.command === 'claude').args.indexOf('--json-schema') + 1]).properties.needs_choice, undefined);
-});
-test('user override wins and Tasks Play supplies its default', async () => {
-  const {mod, calls} = setup(defaultPlan);
-  mod.override = dotfiles;
-  mod.task = {folder: vault};
-  const result = await mod.plan('Change this');
-  assert.equal(result.folder, dotfiles);
-  assert.match(calls.find(c => c.command === 'claude').args.at(-1), /Tasks Play default/);
-});
-test('blank prompts cannot launch', () => {
+
+test('blank prompts cannot start', () => {
   const {mod, calls} = setup();
   mod.text = '   ';
-  mod.start({spawn() { throw Error('must not launch'); }});
+  mod.start({spawn() { throw Error('must not start'); }});
   assert.equal(calls.length, 0);
 });
 
-test('Start reuses a current preview or in-flight route, and skips the debounce for a new request', async () => {
-  for (const timing of ['debouncing', 'planning', 'preview ready', 'stale plan']) {
-    const {mod, calls} = setup();
-    Object.assign(mod, {text: 'Fix hooks', agent: 'codex', images: new Map(), revision: 0});
-    const tasks = [];
-    const debounce = Promise.withResolvers();
-    const startedPlanning = Promise.withResolvers();
-    const planning = Promise.withResolvers();
-    const plan = mod.plan.bind(mod);
-    const requests = [];
-    mod.plan = async request => {
-      requests.push(request);
-      startedPlanning.resolve();
-      await planning.promise;
-      return plan(request);
-    };
-    const cx = {notify() {}, sleep: () => debounce.promise, spawn(fn) { tasks.push(fn(cx)); }};
-    mod.scheduleRoute(cx);
-    if (timing !== 'debouncing') {
-      debounce.resolve();
-      await startedPlanning.promise;
-      assert.deepEqual(requests, ['Fix hooks']);
-    }
-    if (timing === 'preview ready') {
-      planning.resolve();
-      await tasks[0];
-      assert.equal(mod.route.folder, kit);
-      assert.equal(calls.some(c => c.command === 'tab.new'), false);
-    }
-    if (timing === 'stale plan') {
-      mod.text = 'Fix updated hooks';
-      mod.scheduleRoute(cx);
-    }
-    mod.start(cx);
-    mod.start(cx);
-    assert.deepEqual(requests, timing === 'stale plan' ? ['Fix hooks', 'Fix updated hooks'] : ['Fix hooks']);
-    planning.resolve();
-    await tasks[1];
-    const launches = calls.filter(c => c.command === 'tab.new');
-    assert.equal(launches.length, 1);
-    assert.equal(launches[0].args.task, mod.text);
-    assert.equal(launches[0].args.folder, kit);
-    debounce.resolve();
-    await tasks[0];
-  }
+test('a missing agent keeps the window open with an error and allows a retry', async () => {
+  const {mod, calls} = setup({knownAgents: async () => []});
+  const {cx, settle} = runner();
+  mod.start(cx);
+  await settle();
+  assert.match(mod.error, /codex is not installed/);
+  assert.equal(mod.busy, false);
+  assert.equal(calls.some(c => c.command === 'closeOverlay' || c.command === '/bin/sh'), false);
 });
 
-test('a failed submitted route can be retried with one Start', async () => {
-  const {mod, calls} = setup();
-  Object.assign(mod, {text: 'Fix hooks', agent: 'codex', images: new Map(), revision: 0});
-  const plan = mod.plan.bind(mod);
-  mod.plan = async () => { throw new Error('Planner unavailable'); };
-  let task;
-  const cx = {notify() {}, spawn(fn) { task = fn(cx); }};
-  mod.start(cx);
-  await task;
-  assert.equal(mod.error, 'Planner unavailable');
-  assert.equal(mod.busy, false);
-  mod.plan = plan;
-  mod.start(cx);
-  await task;
-  assert.equal(calls.filter(c => c.command === 'tab.new').length, 1);
+test('a failed background start brings back its request and error', async () => {
+  const {mod, files} = setup();
+  mod.text = '';
+  mod.input = {set_value(value) { this.value = value; }};
+  mod.scheduleRoute = () => {};
+  files.set(`${home}/.cache/herdr-app/session-launcher-failed.json`, JSON.stringify({request: 'Fix hooks', task: false, error: 'Planner unavailable'}));
+  await mod.restoreFailed({notify() {}});
+  assert.equal(mod.text, 'Fix hooks');
+  assert.equal(mod.input.value, 'Fix hooks');
+  assert.match(mod.error, /Planner unavailable/);
 });
+
 test('typing during a routing call discards stale results and reroutes', async () => {
   const {mod} = setup();
-  Object.assign(mod, {text: 'old request', extra: '', images: new Map(), revision: 0});
-  const tasks = [];
-  const cx = {notify() {}, sleep: async () => {}, spawn(fn) { tasks.push(fn(cx)); }};
+  mod.text = 'old request';
+  const {cx, settle} = runner();
   let count = 0;
   mod.plan = async request => {
     if (++count === 1) { mod.text = 'new request'; mod.scheduleRoute(cx); }
     return {reason: request};
   };
   mod.scheduleRoute(cx);
-  await Promise.all(tasks);
+  await settle();
   assert.equal(mod.route.reason, 'new request');
   assert.equal(count, 2);
   assert.equal(mod.routing, false);
-});
-
-test('current folder enters the catalog only for an explicit current-project reference', async () => {
-  const {mod, calls} = setup({...defaultPlan, project: demo});
-  const plan = await mod.plan('Fix tests in this repo');
-  assert.equal(plan.folder, demo);
-  const call = calls.find(c => c.command === 'claude');
-  assert.ok(JSON.parse(call.args[call.args.indexOf('--json-schema') + 1]).properties.project.enum.includes(demo));
 });

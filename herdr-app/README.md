@@ -8,7 +8,7 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 - `settings.json` - sounds, fonts, theme. Herdr saves the zoom here on every Cmd+= or Cmd+-, so a git clean filter (`settings-clean.py`, wired in `.gitattributes`) drops `zoom` and normalizes the rest before git sees it. Zoom stays local to each Mac
 - `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the usage limits status bar and the Tasks, Jobs and Calendar panels)
 - Tasks panel (`ops-tasks` mod) - source in parker-agent-kit `tasks/herdr-mod/ops-tasks`, linked by its `scripts/link.sh`
-- `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt
+- `mods/session-launcher` - prompt-driven session launcher shared with Tasks Play, where it takes optional extra instructions appended to the task prompt. Start closes the window at once while `projects.py` routes and launches in a detached process, because closing the overlay ends the mod's script
 - Calendar panel (`day-view` mod) - source in parker-agent-kit `calendar/herdr-mod/day-view`, symlinked into `~/.config/herdr-app/mods/day-view`. Cmd+Shift+C toggles it
 - Call Sheet panel (`call-sheet` mod) - source in parker-agent-kit `tasks/herdr-mod/call-sheet`, linked by its `scripts/link.sh`. Cmd+Shift+K toggles it
 - `themes/` - 67 color themes for Herdr's theme picker (Settings > Look, or `Use a theme` in the Cmd+Shift+P palette). `rose-pine-moon.json` is hand-tuned, the rest are converted from Ghostty's bundled themes by `themes/import-ghostty.py` (edit its list and rerun)
