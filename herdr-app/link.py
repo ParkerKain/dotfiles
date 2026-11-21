@@ -35,13 +35,17 @@ machine.need_tomllib()
 
 
 class Linker:
-    def __init__(self, manifest, herdr_home, bin_dir, check):
+    def __init__(self, manifest, herdr_home, bin_dir, check, sandboxed=False):
         self.m = manifest
         self.home = herdr_home
         self.bin = bin_dir
         self.check = check
+        self.sandboxed = sandboxed
         self.changes = []
-        self.backups = Path.home() / ".local/state/herdr-link/backups" / time.strftime("%Y%m%d-%H%M%S")
+        # A sandboxed run (tests) keeps everything under its own folders, never the real home.
+        state = herdr_home / ".link-state" if sandboxed else Path.home() / ".local/state/herdr-link"
+        self.backups = state / "backups" / time.strftime("%Y%m%d-%H%M%S")
+        self.name_file = herdr_home.parent / "parker/machine" if sandboxed else machine.NAME_FILE
 
     def note(self, message):
         self.changes.append(message)
@@ -49,7 +53,8 @@ class Linker:
 
     def backup(self, path):
         """Move a real file or folder aside before replacing it."""
-        dest = self.backups / path.relative_to(Path.home()) if path.is_relative_to(Path.home()) else self.backups / path.name
+        base = self.home.parent.parent if self.sandboxed else Path.home()
+        dest = self.backups / path.relative_to(base) if path.is_relative_to(base) else self.backups / path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         path.rename(dest)
         print(f"moved aside {path} -> {dest}")
@@ -85,7 +90,7 @@ class Linker:
     # ---- pieces
 
     def machine_name(self):
-        self.write(machine.NAME_FILE, self.m["name"] + "\n", backup=False)
+        self.write(self.name_file, self.m["name"] + "\n", backup=False)
 
     def keys(self):
         self.link(self.m["dir"] / "keys.json", self.home / "keys.json")
@@ -94,7 +99,7 @@ class Linker:
         wanted = {}
         for path in (HERE / "settings.base.json", self.m["dir"] / "settings.json"):
             if path.exists():
-                wanted.update(json.loads(path.read_text()))
+                wanted = deep_merge(wanted, json.loads(path.read_text()))
         wanted = dict(expand_home(wanted))
         dest = self.home / "settings.json"
         # The Mac's settings.json links to an untracked file in ~/dotfiles; write through it.
@@ -105,6 +110,8 @@ class Linker:
             current = {}
         except ValueError as exc:
             sys.exit(f"link: {real} isn't valid JSON ({exc}); fix it by hand, then run link.py again")
+        if not isinstance(current, dict):
+            sys.exit(f"link: {real} should hold a JSON object; fix it by hand, then run link.py again")
         merged = deep_merge(current, wanted)
         if merged != current:
             changed = sorted(k for k in wanted if current.get(k) != merged[k])
@@ -147,7 +154,10 @@ class Linker:
             return
         # Turned-on jobs and hooks keep their schedule; rewrite it so it runs this engine.
         args = [sys.executable, str(HERE / "jobs/job"), "refresh"] + (["--check"] if self.check else [])
-        out = subprocess.run(args, capture_output=True, text=True, env={**os.environ, "PARKER_MACHINE": self.m["name"]})
+        env = {**os.environ, "PARKER_MACHINE": self.m["name"]}
+        if self.sandboxed:
+            env.setdefault("JOB_SCHEDULER", "none")
+        out = subprocess.run(args, capture_output=True, text=True, env=env)
         for line in out.stdout.splitlines():
             print(line)
             if line.startswith(("would ", "rewrote ", "stale ")):
@@ -155,7 +165,7 @@ class Linker:
         # 0: all current, 3: --check found drift (listed above). Anything else failed.
         if out.returncode not in (0, 3):
             sys.stderr.write(out.stderr)
-            sys.exit(f"link: job refresh failed (exit {out.returncode}); the schedules above may still run an old engine")
+            sys.exit(f"link: job refresh failed (exit {out.returncode}); the schedules named above kept their old version")
 
     def run(self):
         for step in (self.machine_name, self.keys, self.settings, self.layouts, self.themes, self.mods, self.engine):
@@ -248,7 +258,7 @@ def main():
     herdr_home = args.herdr_home or Path.home() / ".config/herdr-app"
     bin_dir = args.bin_dir or Path.home() / ".local/bin"
     print(f"{'Checking' if args.check else 'Linking'} Herdr for {manifest['name']}")
-    changes = Linker(manifest, herdr_home, bin_dir, args.check).run()
+    changes = Linker(manifest, herdr_home, bin_dir, args.check, sandboxed).run()
     if not changes:
         print("Everything already matches.")
     sys.exit(1 if args.check and changes else 0)

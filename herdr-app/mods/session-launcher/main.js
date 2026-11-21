@@ -68,7 +68,7 @@ export default class SessionLauncher extends View {
         try { machine = JSON.parse(r?.stdout ?? ""); } catch { /* keep the built-in defaults */ }
         if (machine?.name) this.defaultName = machine.name;
         // Omarchy starts on Codex, where it's signed in. Only before anything is chosen by hand.
-        if (machine?.agent && machine.agent !== this.agent && !this.agentTouched && ["claude", "codex"].includes(machine.agent)) this.agent = machine.agent;
+        if (machine?.agent && machine.agent !== this.agent && !this.agentTouched && !this.busy && ["claude", "codex"].includes(machine.agent)) this.agent = machine.agent;
         cx.notify();
       });
     }
@@ -245,8 +245,8 @@ export default class SessionLauncher extends View {
         .child(Textarea.new(this.input).flex_1().min_h(0).w_full().text_color(t.foreground)))
       .child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
-        .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
-        .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
+        .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "claude") this.toggleAgent(cx); }))
+        .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "codex") this.toggleAgent(cx); }))
         .child(div().text_size(11).text_color(t.dim).child(mac() ? "⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image" : "Ctrl+Shift+A switch agent · Ctrl+Shift+S start · Ctrl+V pastes an image")))
       .child(v_flex().flex_shrink_0().gap(4)
         .child(h_flex().items_center().gap(8)

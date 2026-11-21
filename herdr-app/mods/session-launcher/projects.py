@@ -106,7 +106,8 @@ def ask_codex(instruction, schema, home):
     with tempfile.TemporaryDirectory() as tmp:
         schema_file, answer = Path(tmp) / "schema.json", Path(tmp) / "answer.json"
         schema_file.write_text(schema)
-        argv = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+        # --ignore-user-config keeps MCP servers and hooks out of a routing call, like Claude's --safe-mode.
+        argv = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--sandbox", "read-only",
                 "-c", "model_reasoning_effort=low", "--output-schema", str(schema_file), "-o", str(answer),
                 f"{SYSTEM}\n\n{instruction}"]
         result = subprocess.run(argv, cwd=home, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
@@ -156,13 +157,18 @@ def plan(payload, home=HOME, spaces=None, ask=None, config=None):
         f"Request:\n{request}",
     ] if line)
     if ask is None:
+        planner = PLANNERS.get(settings["planner"])
+        if not planner:
+            raise RuntimeError(f"Unknown planner '{settings['planner']}' in this machine's [launcher].")
         try:
-            chosen = PLANNERS[settings["planner"]](instruction, route_schema(projects), home)
-        except (OSError, RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
-            # No planner (not installed, signed out): start in the default folder, and say why.
-            words = " ".join(request.split()[:4]) or "New session"
-            chosen = {"project": default, "reason": f"Routing is unavailable ({str(error)[:80] or type(error).__name__}), so this uses the default folder.",
-                      "new_space": False, "tab_name": words, "split": "none"}
+            chosen = planner(instruction, route_schema(projects), home)
+        except FileNotFoundError:
+            # The planner's CLI isn't installed: start where the request would default, and say so.
+            # Any other planner failure still reaches the person.
+            fallback = override or task.get("folder") or default
+            where = "the folder you chose" if override else "the task's folder" if task.get("folder") else "the default folder"
+            chosen = {"project": fallback, "reason": f"{settings['planner']} isn't installed, so this starts in {where}.",
+                      "new_space": False, "tab_name": " ".join(request.split()[:4]) or "New session", "split": "none"}
     else:
         chosen = ask(instruction, route_schema(projects), home)
     project = next((p for p in projects if p["id"] == chosen.get("project")), None)

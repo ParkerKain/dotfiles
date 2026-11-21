@@ -55,7 +55,7 @@ class LinkTest(unittest.TestCase):
         self.ok("omarchy")
         # Keys: Omarchy's own file; the one Herdr wrote is moved aside, not lost.
         self.assertEqual(Path(os.readlink(self.herdr / "keys.json")), ROOT / "machines/omarchy/keys.json")
-        self.assertTrue(list((self.tmp / ".local/state/herdr-link/backups").rglob("keys.json")))
+        self.assertTrue(list((self.herdr / ".link-state/backups").rglob("keys.json")))
         # Settings: shared look merged in, Herdr's own zoom kept, ~ expanded.
         settings = json.loads((self.herdr / "settings.json").read_text())
         self.assertEqual((settings["zoom"], settings["theme"], settings["font_ligatures"]), (1.5, "rose-pine-moon", True))
@@ -75,7 +75,7 @@ class LinkTest(unittest.TestCase):
         self.assertFalse({"music", "demo-mode", "run-once"} & mods)
         self.assertTrue((self.herdr / "themes/rose-pine-moon.json").is_symlink())
         self.assertEqual(Path(os.readlink(self.bin / "job")), ROOT / "jobs/job")
-        self.assertEqual((self.tmp / ".config/parker/machine").read_text(), "omarchy\n")
+        self.assertEqual((self.tmp / ".config/parker/machine").read_text(), "omarchy\n")  # herdr-home's sibling
 
     def test_a_second_run_changes_nothing(self):
         self.ok("omarchy")
@@ -138,13 +138,13 @@ class LinkTest(unittest.TestCase):
         self.ok("omarchy")
         sounds = json.loads((self.herdr / "settings.json").read_text())["sounds"]
         self.assertEqual((sounds["volume"], sounds["enabled"]), (0.4, True))
-        self.assertTrue(list((self.tmp / ".local/state/herdr-link/backups").rglob(".settings.json.link-old")))
+        self.assertTrue(list((self.herdr / ".link-state/backups").rglob(".settings.json.link-old")))
 
     def test_a_hand_edited_layout_copy_is_backed_up_before_it_is_rewritten(self):
         self.ok("omarchy")
         (self.herdr / "layouts/Parker.json").write_text('{"edited": true}')
         self.ok("omarchy")
-        saved = list((self.tmp / ".local/state/herdr-link/backups").rglob(".Parker.json.link-old"))
+        saved = list((self.herdr / ".link-state/backups").rglob(".Parker.json.link-old"))
         self.assertEqual(saved[0].read_text(), '{"edited": true}')
 
     def test_a_failed_schedule_refresh_fails_the_link(self):
@@ -159,6 +159,11 @@ class LinkTest(unittest.TestCase):
         out = self.run_link("omarchy")
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("job refresh failed", out.stderr)
+
+    def test_settings_that_are_not_an_object_stop_the_link(self):
+        (self.herdr / "settings.json").write_text("null")
+        out = self.run_link("omarchy")
+        self.assertIn("should hold a JSON object", out.stderr)
 
     def test_refuses_a_machine_from_another_platform(self):
         other = "omarchy" if sys.platform == "darwin" else "mac"

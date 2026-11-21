@@ -97,9 +97,8 @@ class JobTest(unittest.TestCase):
         other.mkdir()
         self.weekly()
         self.weekly_path = self.write("weekly", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n', folder=other)
-        out = self.job("list", env={"JOB_DEFS": f"{self.defs}{os.pathsep}{other}"}, check=False)
-        self.assertNotEqual(out.returncode, 0)
-        self.assertIn("defined twice", out.stderr)
+        out = self.job("list", env={"JOB_DEFS": f"{self.defs}{os.pathsep}{other}"})
+        self.assertRegex(out.stdout, r"weekly\s+job\s+broken: 'weekly' is defined twice")
 
     def test_a_hook_needs_a_real_interval(self):
         self.hook_script()
@@ -295,6 +294,37 @@ class JobTest(unittest.TestCase):
         self.job("uninstall", "mail-inbox", env={"JOB_SCHEDULER_FORMAT": "systemd"})
         self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
 
+    def test_malformed_files_become_broken_rows_not_crashes(self):
+        self.weekly()
+        self.write("badtime", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n[schedule]\ntimes = ["7"]\n')
+        self.write("nofile", f'repo = "{self.repo}"\nagent = "claude"\nprompt_file = "missing.md"\n')
+        self.hook_script()
+        self.write("badinterval", 'check = "hook.py"\ninterval = "abc"\n')
+        self.write("unparsable", 'repo = [\n')
+        data = json.loads(self.job("status").stdout)
+        errors = {r["name"]: r["error"] for r in data["jobs"] + data["hooks"]}
+        self.assertIsNone(errors["weekly"])
+        self.assertIn("HH:MM", errors["badtime"])
+        self.assertIn("missing.md", errors["nofile"])
+        self.assertIn("badinterval", errors)
+        self.assertIn("can't read", errors["unparsable"])
+
+    def test_refresh_survives_a_turned_on_job_that_lost_its_schedule(self):
+        self.weekly()
+        self.job("install", "weekly")
+        self.write("weekly", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n')
+        out = self.job("refresh", check=False)
+        self.assertEqual(out.returncode, 4)
+        self.assertIn("no [schedule]", out.stderr)
+
+    def test_an_unparsable_definition_can_still_be_turned_off(self):
+        self.hook()
+        env = {"JOB_SCHEDULER_FORMAT": "systemd"}
+        self.job("install", "mail-inbox", env=env)
+        (self.defs / "mail-inbox.toml").write_text("check = [\n")
+        self.job("uninstall", "mail-inbox", env=env)
+        self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
+
     def test_systemd_words_escape_percent_and_dollar(self):
         sys.path.insert(0, str(ROOT))
         import importlib.machinery, importlib.util
@@ -302,8 +332,10 @@ class JobTest(unittest.TestCase):
         spec = importlib.util.spec_from_loader("job_engine", loader)
         engine = importlib.util.module_from_spec(spec)
         loader.exec_module(engine)
-        self.assertEqual(engine.systemd_arg("PATH=/a b"), '"PATH=/a b"')
+        self.assertEqual(engine.systemd_arg("PATH=/a b", exec_word=False), '"PATH=/a b"')
         self.assertEqual(engine.systemd_arg("50%$x"), "50%%$$x")
+        self.assertEqual(engine.systemd_arg("$x", exec_word=False), "$x")
+        self.assertEqual(engine.systemd_arg('say "hi"'), '"say \\"hi\\""')
 
 if __name__ == "__main__":
     unittest.main()

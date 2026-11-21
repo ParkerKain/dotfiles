@@ -32,7 +32,7 @@ is a daemon: the scheduler fires `job run` or `job check`.
   job refresh [--check]     rewrite the schedule of every job and hook that's turned on,
                             so it runs this engine; list schedules with no definition here
 """
-import argparse, json, os, plistlib, shutil, subprocess, sys, time
+import argparse, json, os, plistlib, re, shutil, subprocess, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -66,6 +66,14 @@ class DefError(Exception):
     """A job or hook file that can't be used. The CLI prints it; status shows it on the item's row."""
 
 
+class ScheduleError(Exception):
+    """launchd or systemd refused a schedule."""
+
+
+# Names defined in more than one source: {name: why}. Each shows as a broken item.
+DUPLICATES = {}
+
+
 def die(msg):
     sys.exit(f"job: {msg}")
 
@@ -88,7 +96,8 @@ def definitions():
             continue
         for path in sorted(folder.glob("*.toml")):
             if path.stem in found:
-                raise DefError(f"'{path.stem}' is defined twice: {found[path.stem]} and {path}")
+                DUPLICATES[path.stem] = f"'{path.stem}' is defined twice: {found[path.stem]} and {path}"
+                continue
             found[path.stem] = path
     return found
 
@@ -108,8 +117,20 @@ def raw(name):
 
 
 def load(name):
+    """A definition, checked. Anything wrong with it raises DefError naming the problem."""
     item = raw(name)
-    path = item["path"]
+    if name in DUPLICATES:
+        raise DefError(DUPLICATES[name])
+    try:
+        return checked(item)
+    except DefError:
+        raise
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise DefError(f"{name}: {type(exc).__name__}: {exc}") from None
+
+
+def checked(item):
+    name, path = item["name"], item["path"]
     if item["kind"] == "hook":
         item["script"] = (path.parent / item["check"]).resolve()
         if not item["script"].exists():
@@ -127,6 +148,13 @@ def load(name):
         item["prompt"] = (path.parent / item["prompt_file"]).read_text()
     if not item.get("prompt", "").strip():
         raise DefError(f"{name}: needs prompt or prompt_file")
+    sched = item.get("schedule")
+    if sched is not None:
+        for t in times_of(sched):
+            if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", t):
+                raise DefError(f"{name}: schedule time '{t}' must be HH:MM")
+        if any(d not in range(1, 8) for d in sched.get("weekdays") or []):
+            raise DefError(f"{name}: weekdays are 1 (Monday) to 7 (Sunday)")
     return item
 
 
@@ -395,7 +423,7 @@ def require_home_checkout():
 
 def require_schedule(item):
     if item["kind"] == "job" and not item.get("schedule"):
-        die(f"{item['name']}: no [schedule] table (times = [\"07:00\"], optional weekdays 1-7 with 1 = Monday)")
+        raise DefError(f"{item['name']}: no [schedule] table (times = [\"07:00\"], optional weekdays 1-7 with 1 = Monday)")
 
 
 class Launchd:
@@ -444,8 +472,13 @@ class Launchd:
             loaded = subprocess.run(["launchctl", "load", str(written[0])], capture_output=True, text=True)
             if loaded.returncode != 0:
                 written[0].unlink(missing_ok=True)
-                die(f"launchctl couldn't load {written[0].name}: {loaded.stderr.strip()}")
+                raise ScheduleError(f"launchctl couldn't load {written[0].name}: {loaded.stderr.strip()}")
         return written
+
+    def activate(self, name, kind):
+        """Load files already on disk (used to put back a schedule a failed rewrite removed)."""
+        if self.live:
+            subprocess.run(["launchctl", "load", str(self.paths(name, kind)[0])], capture_output=True)
 
     def uninstall(self, name, kind):
         paths = self.paths(name, kind)
@@ -491,7 +524,7 @@ class Systemd:
         # unit must not take down anything it started.
         service_body = (f"[Unit]\nDescription=Parker {what}: {item['name']}\n\n"
                         f"[Service]\nType=oneshot\nExecStart={exec_start}\n"
-                        f"Environment={systemd_arg('PATH=' + PATH)}\nTimeoutStartSec=infinity\nKillMode=process\n")
+                        f"Environment={systemd_arg('PATH=' + PATH, exec_word=False)}\nTimeoutStartSec=infinity\nKillMode=process\n")
         if item["kind"] == "hook":
             when = f"OnActiveSec=10\nOnUnitActiveSec={item['interval']}\n"
         else:
@@ -511,11 +544,18 @@ class Systemd:
                 subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True)
                 subprocess.run(["systemctl", "--user", "enable", "--now", f"{unit}.timer"], check=True, capture_output=True)
             except subprocess.CalledProcessError as exc:
-                # Don't leave files that make it look turned on when it isn't.
+                # Don't leave files (or an enabled timer) that make it look turned on when it isn't.
+                subprocess.run(["systemctl", "--user", "disable", "--now", f"{unit}.timer"], capture_output=True)
                 for path in written:
                     path.unlink(missing_ok=True)
-                die(f"systemctl couldn't turn on {unit}.timer: {(exc.stderr or b'').decode().strip() or exc}")
+                subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+                raise ScheduleError(f"systemctl couldn't turn on {unit}.timer: {(exc.stderr or b'').decode().strip() or exc}")
         return written
+
+    def activate(self, name, kind):
+        if self.live:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+            subprocess.run(["systemctl", "--user", "enable", "--now", f"{self.unit(name, kind)}.timer"], capture_output=True)
 
     def uninstall(self, name, kind):
         if self.live:
@@ -528,10 +568,16 @@ class Systemd:
         return paths
 
 
-def systemd_arg(text):
-    """One ExecStart or Environment word: % and $ doubled, quoted when it has a space."""
-    text = text.replace("%", "%%").replace("$", "$$")
-    return f'"{text}"' if " " in text or '"' in text else text
+def systemd_arg(text, exec_word=True):
+    """One ExecStart word (exec_word) or Environment assignment, escaped for systemd:
+    % always doubled, $ doubled only in ExecStart (Environment doesn't expand it),
+    quoted with \\ and \" escaped when it has a space, quote or backslash."""
+    text = text.replace("%", "%%")
+    if exec_word:
+        text = text.replace("$", "$$")
+    if any(c in text for c in ' "\\'):
+        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return text
 
 
 def write_units(units):
@@ -602,24 +648,28 @@ def refresh(check_only):
             continue
         try:
             item = load(name)
+            if item["kind"] != kind:
+                continue
+            units = sched.units(item)
         except DefError as exc:
-            print(f"failed {kind} schedule '{name}': {exc}", file=sys.stderr)
+            print(f"failed {kind} schedule '{name}': {exc} (it keeps its old schedule)", file=sys.stderr)
             failed = True
             continue
-        if item["kind"] != kind:
-            continue
-        units = sched.units(item)
         if all(p.exists() and p.read_bytes() == body for p, body in units.items()):
             continue
         drift = True
         if check_only:
             print(f"would rewrite the {kind} schedule for {name}")
             continue
+        old = {p: p.read_bytes() for p in units if p.exists()}
         try:
             sched.install(item)
             print(f"rewrote the {kind} schedule for {name}")
-        except SystemExit as exc:
-            print(f"failed {kind} schedule '{name}': {exc}", file=sys.stderr)
+        except ScheduleError as exc:
+            # Put the old schedule back rather than leave a job that was on turned off.
+            write_units(old)
+            sched.activate(name, kind)
+            print(f"failed {kind} schedule '{name}': {exc} (its old schedule is back)", file=sys.stderr)
             failed = True
     sys.exit(REFRESH_FAILED if failed else REFRESH_DRIFT if check_only and drift else 0)
 
@@ -688,8 +738,10 @@ def main():
         print(json.dumps({"ok": True, "installed": [str(p) for p in written]}))
     elif args.cmd == "uninstall":
         # A definition that has been deleted can still be uninstalled by name.
-        path = definitions().get(args.name)
-        kind = raw(args.name)["kind"] if path else ("hook" if scheduler().loaded(args.name, "hook") else "job")
+        try:
+            kind = raw(args.name)["kind"]
+        except DefError:  # deleted or unreadable: go by what's installed
+            kind = "hook" if scheduler().loaded(args.name, "hook") else "job"
         removed = scheduler().uninstall(args.name, kind)
         print(json.dumps({"ok": True, "removed": [str(p) for p in removed]}))
 
@@ -697,5 +749,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except DefError as exc:
+    except (DefError, ScheduleError) as exc:
         die(str(exc))

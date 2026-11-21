@@ -75,14 +75,26 @@ class PlannerFallbackTest(unittest.TestCase):
             (home / "Documents").mkdir()
             config = {**OMARCHY, "planner": "codex"}
             original = projects.PLANNERS["codex"]
-            projects.PLANNERS["codex"] = lambda *a: (_ for _ in ()).throw(OSError("codex not found"))
+            projects.PLANNERS["codex"] = lambda *a: (_ for _ in ()).throw(FileNotFoundError("codex"))
             try:
                 route = projects.plan({"request": "Fix the build please now"}, home=home, spaces=[], config=config)
             finally:
                 projects.PLANNERS["codex"] = original
             self.assertEqual(route["folder"], str(home / "Documents"))
-            self.assertIn("Routing is unavailable (codex not found)", route["reason"])
+            self.assertIn("codex isn't installed, so this starts in the default folder", route["reason"])
             self.assertEqual(route["tab_name"], "Fix the build please")
+
+    def test_other_planner_failures_still_reach_the_person(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / "Documents").mkdir()
+            original = projects.PLANNERS["codex"]
+            projects.PLANNERS["codex"] = lambda *a: (_ for _ in ()).throw(RuntimeError("rate limited"))
+            try:
+                with self.assertRaisesRegex(RuntimeError, "rate limited"):
+                    projects.plan({"request": "x"}, home=home, spaces=[], config={**OMARCHY, "planner": "codex"})
+            finally:
+                projects.PLANNERS["codex"] = original
 
 
 class PlanTest(unittest.TestCase):
