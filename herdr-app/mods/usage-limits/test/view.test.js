@@ -61,15 +61,16 @@ test("barModel: both providers, all windows, in registry order", () => {
   assert.deepEqual(m.groups[0].segments.map((s) => s.short), ["5h", "wk", "Fable"]);
 });
 
-test("Codex Personal has its own controls and keeps its reading when Omarchy goes offline", () => {
+test("Codex Personal stays off the bar and keeps its reading in the panel when Omarchy goes offline", () => {
   const personal = PROVIDERS.find((p) => p.id === "codex-personal");
   const states = STATES();
   const report = personal.parse(read("codex-app-server.plus.json"), NOW);
   states[personal.id] = nextState(null, report, true);
-  assert.deepEqual(barModel(states, PREFS, NOW).groups.slice(1).map((g) => g.accountLabel), ["W", "P"]);
+  assert.deepEqual(barModel(states, PREFS, NOW).groups.map((g) => g.providerId), ["claude", "codex"]);
+  assert.equal(cardModel(states, NOW).groups[2].name, "Codex Personal");
   assert.deepEqual(TOKEN_PROVIDERS.map((p) => p.id), ["claude", "codex"]);
   const prefs = { ...PREFS, hiddenWindows: ["codex:codex:secondary"] };
-  assert.deepEqual(barModel(states, prefs, NOW).groups.slice(1).map((g) => g.segments.length), [1, 2]);
+  assert.deepEqual(barModel(states, prefs, NOW).groups.slice(1).map((g) => g.segments.length), [1]);
   states[personal.id] = nextState(states[personal.id], personal.parse("", NOW + 1200), true);
   const group = cardModel(states, NOW + 1200).groups[2];
   assert.deepEqual([group.name, group.failed, group.age, group.rows[1].percent],

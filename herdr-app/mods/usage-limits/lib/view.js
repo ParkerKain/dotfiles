@@ -88,7 +88,7 @@ export function panelOnEnter(panel, leftAt, nowMs, closeDelay) {
 export function barModel(states, prefs, now, providers = PROVIDERS) {
   const groups = [];
   for (const p of providers) {
-    if (!isShown(prefs, p.id)) continue;
+    if (p.panelOnly || !isShown(prefs, p.id)) continue;
     const st = states[p.id] ?? { report: null, lastGood: null, installed: null };
     if (st.installed === false) continue;
     let mark = null;

@@ -192,23 +192,13 @@
           "type": "row",
           "children": [
             {
-              "id": "status",
-              "type": "block",
-              "content": {
-                "mod": "workspace-status"
-              },
-              "size": {
-                "weight": 1
-              }
-            },
-            {
               "id": "usage-limits",
               "type": "block",
               "content": {
                 "mod": "usage-limits"
               },
               "size": {
-                "weight": 2.200000047683716
+                "weight": 1
               },
               "min": 130
             }

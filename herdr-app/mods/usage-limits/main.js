@@ -6,7 +6,7 @@
 // this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
-import { checking, exec, focused, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
+import { checking, exec, focused, spaces, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
 import { PROVIDERS, TOKEN_PROVIDERS } from "./providers/index.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
@@ -221,15 +221,27 @@ export default class UsageLimits extends View {
       .child(div().whitespace_nowrap().text_color(limitColor(s.level, s.text, t)).child(density === 3 ? s.brief : s.text));
   }
 
+  // Where this space runs, on the left: the part of Herdr's workspace-status this bar replaces.
+  location(t) {
+    const space = spaces().find((s) => s.active);
+    const label = (icon, text) => h_flex().gap(6).items_center().flex_none().whitespace_nowrap()
+      .child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
+    const parts = [label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer")];
+    if (space?.branch) parts.push(label("branch", space.branch));
+    const width = parts.length * 20 + 16 + 7 * ((space?.machine ?? "This computer").length + (space?.branch?.length ?? 0));
+    return { el: h_flex().gap(16).items_center().flex_none().children(parts), width };
+  }
+
   renderBar(cx) {
     const t = theme();
+    const where = this.location(t);
     const st = states();
     const prefs = this.prefs();
     const model = barModel(st, prefs, now());
     const numbers = sessionOnBar(this.session?.data, prefs);
     const numbersWidth = numbers.reduce((w, n) => w + 7 * n.text.length + 14, numbers.length ? 14 : 0);
-    const density = chooseDensity(model, this.width ? this.width - 24 - numbersWidth : Infinity, prefs.showBars);
-    const root = h_flex().id("root").size_full().px(12).items_center().justify_end().overflow_hidden()
+    const density = chooseDensity(model, this.width ? this.width - 28 - where.width - numbersWidth : Infinity, prefs.showBars);
+    const root = h_flex().id("root").size_full().px(14).gap(16).items_center().overflow_hidden()
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
       .on_size_change((size, cx) => { this.width = size.width; cx.notify(); });
     // Only the limits themselves open the panel, not the empty rest of the block.
@@ -255,7 +267,7 @@ export default class UsageLimits extends View {
     const body = this.panel === "settings" || panel.empty ? this.settings(!panel.empty, t)
       : this.panel === "tokens" ? this.tokensPanel(t)
       : this.limits(panel, t);
-    return root.child(HoverCard.new("ul-panel").anchor("bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
+    return root.child(where.el).child(div().flex_1()).child(HoverCard.new("ul-panel").anchor("bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
       .trigger(content)
       .content(body));
   }
@@ -433,7 +445,7 @@ export default class UsageLimits extends View {
     const st = states();
     const save = (p) => setShared(KEY_PREFS, p);
     const rows = [];
-    for (const p of PROVIDERS) {
+    for (const p of PROVIDERS.filter((p) => !p.panelOnly)) {
       const s = st[p.id] ?? {};
       const on = isShown(prefs, p.id);
       const reason = s.installed === false ? (p.remote ? "not configured" : "not installed")

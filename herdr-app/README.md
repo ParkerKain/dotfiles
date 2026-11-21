@@ -25,11 +25,11 @@ Mods here change how Herdr looks or behaves for Parker. A mod that a skill or a 
 - `mods/revive` - Cmd+Shift+R popup: recently killed terminals with their last screen; Enter resumes the Claude/Codex session (or reopens the shell) in a new tab
 - `mods/space-sessions` - collapsible space groups with inset dividers between session rows, expanded by default
 - `mods/my-tabs` - a clone of the shipped tab bar with the Tasks and Jobs buttons (with `props.demo`, Files and Changes only)
-- `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91)
+- `mods/usage-limits` - from github.com/nozikov/herdr-usage-limits (commit 19fda91). It fills the whole status row: the machine and branch on the left (in place of Herdr's `workspace-status`, which also showed the agent count and palette hint) and the limits on the right
 
 To enable **Codex Personal**, put Omarchy's machine name from `hc machine ls`
 in `~/.config/herdr-app/data/usage-limits/personal-machine`. The mod uses Herdr's
-existing connection and Omarchy's signed-in Codex via mise.
+existing connection and Omarchy's signed-in Codex via mise. Codex Personal shows only in the hover panel, not on the bar.
 
 To link on a new machine:
 
