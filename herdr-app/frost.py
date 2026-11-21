@@ -4,25 +4,29 @@
 Usage:
   frost.py <image>            put this image behind the panes (blurred), rebuild the Frosted layout
   frost.py <image> --blur 0   the image sharp, unblurred
-  frost.py <image> --desktop  also set it as the macOS desktop wallpaper
-  frost.py --list             wallpapers in ~/Pictures/wallpapers
+  frost.py <image> --desktop  also set it as the macOS desktop wallpaper (macOS only)
+  frost.py --list             wallpapers in ~/Pictures/wallpapers (or ~/Wallpapers)
   frost.py --thumbs           rebuild the wallpaper picker's thumbnails and index (Cmd+Shift+B)
 
-The Frosted layout is rebuilt from layouts/Parker.json on every run, so it keeps up with
-Parker's blocks and only differs in look. Switch to it with Cmd+Shift+L or Settings > Look.
+The Frosted layout is rebuilt from this machine's installed Parker layout on every run, so
+it keeps up with Parker's blocks (and the panels this machine has) and only differs in look.
+Run it through ./frost, which finds a Python with Pillow on either machine. Switch to it with Cmd+Shift+L or Settings > Look.
 """
 import argparse
 import hashlib
 import io
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageEnhance, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 HOME = Path.home() / ".config/herdr-app"
-WALLPAPERS = Path.home() / "Pictures/wallpapers"
+# The work Mac keeps them in ~/Pictures/wallpapers; Omarchy in ~/Wallpapers.
+WALLPAPERS = next((p for p in (Path.home() / "Pictures/wallpapers", Path.home() / "Wallpapers") if p.is_dir()),
+                  Path.home() / "Pictures/wallpapers")
 SCREEN = (3024, 1964)  # built-in display, px
 # The picker's thumbnails. A real folder under mods/: Herdr doesn't load images through a symlink.
 THUMBS = HOME / "mods/wallpaper-thumbs"
@@ -69,7 +73,8 @@ def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
 
 
 def build_layout(background: Path) -> None:
-    layout = json.loads((HERE / "layouts/Parker.json").read_text())
+    # The installed copy: link.py writes one without the panels this machine lacks.
+    layout = json.loads((HOME / "layouts/Parker.json").read_text())
     layout.pop("cloned_from", None)
     layout["background"] = {"image": str(background.relative_to(HOME)), "fit": "cover"}
     layout["terminal_opacity"] = LOOK["terminal_opacity"]
@@ -121,6 +126,8 @@ def build_thumbs() -> None:
 
 
 def set_desktop(src: Path) -> None:
+    if sys.platform != "darwin":
+        sys.exit("--desktop sets the macOS desktop wallpaper only")
     script = f'tell application "System Events" to tell every desktop to set picture to POSIX file "{src}"'
     subprocess.run(["osascript", "-e", script], check=True)
 

@@ -9,5 +9,8 @@
   "training-materials": "Training slide library, workshop decks, exercises and AI coding training materials.",
   "transcript-machine": "Meeting transcript, recording, search and Zoom processing application.",
   "ai-coding-platform": "AI coding adoption, usage telemetry, metrics and dashboard application.",
-  "dc-specs": "Spec driven development plugin, specification lifecycle and templates."
+  "dc-specs": "Spec driven development plugin, specification lifecycle and templates.",
+  "omarchy-dotfiles": "Omarchy-only shell and tmux overlay (Stow packages) on Parker's personal Linux machine.",
+  "Documents": "General personal work, notes, research and finance on the personal machine. Default when no software project owns the request.",
+  "parker-plugins": "Parker Core personal plugin marketplace: shared preferences, writing and explain-tech skills."
 }

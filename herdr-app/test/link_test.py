@@ -1,0 +1,129 @@
+"""Tests for herdr-app/link.py: per-machine keys, settings, layouts, mods and the job CLI.
+
+Run: python3 -m unittest herdr-app/test/link_test.py
+Each test links into a temp home; nothing outside it changes and no scheduler is touched.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LINK = ROOT / "link.py"
+sys.path.insert(0, str(ROOT))
+import link  # noqa: E402
+
+WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory"}
+
+
+def panel_ids(layout):
+    ids, stack = [], [layout]
+    while stack:
+        node = stack.pop()
+        if node.get("id") == "panel-body":
+            return [c["id"] for c in node["children"]], node.get("active")
+        stack.extend(node.get("children", []))
+    return ids, None
+
+
+class LinkTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.tmp)])
+        self.herdr = self.tmp / ".config/herdr-app"
+        (self.herdr / "mods").mkdir(parents=True)
+        self.bin = self.tmp / ".local/bin"
+
+    def run_link(self, machine, *args):
+        env = {**os.environ, "HOME": str(self.tmp), "JOB_SCHEDULER": "none",
+               "JOB_LAUNCHD_DIR": str(self.tmp / "launchd"), "JOB_SYSTEMD_DIR": str(self.tmp / "systemd")}
+        env.pop("PARKER_MACHINE", None)
+        return subprocess.run([sys.executable, str(LINK), "--machine", machine, "--herdr-home", str(self.herdr),
+                               "--bin-dir", str(self.bin), *args], capture_output=True, text=True, env=env)
+
+    def ok(self, machine, *args):
+        out = self.run_link(machine, *args)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        return out.stdout
+
+    def test_omarchy_gets_shared_look_and_its_own_keys_mods_and_layout(self):
+        (self.herdr / "keys.json").write_text('{"global": {}}')
+        (self.herdr / "settings.json").write_text('{"zoom": 1.5, "font_ligatures": false}')
+        self.ok("omarchy")
+        # Keys: Omarchy's own file; the one Herdr wrote is moved aside, not lost.
+        self.assertEqual(Path(os.readlink(self.herdr / "keys.json")), ROOT / "machines/omarchy/keys.json")
+        self.assertTrue(list((self.tmp / ".local/state/herdr-link/backups").rglob("keys.json")))
+        # Settings: shared look merged in, Herdr's own zoom kept, ~ expanded.
+        settings = json.loads((self.herdr / "settings.json").read_text())
+        self.assertEqual((settings["zoom"], settings["theme"], settings["font_ligatures"]), (1.5, "rose-pine-moon", True))
+        self.assertEqual(settings["sounds"]["done"], f"{self.tmp}/dotfiles/herdr/sounds/rising-two-note.mp3")
+        self.assertNotIn("font_size", settings)
+        # Layout: a written copy with Jobs but none of the work Mac's panels.
+        parker = self.herdr / "layouts/Parker.json"
+        self.assertFalse(parker.is_symlink())
+        panels, active = panel_ids(json.loads(parker.read_text()))
+        self.assertIn("jobs", panels)
+        self.assertFalse(WORK_PANELS & set(panels))
+        self.assertIn(active, panels)
+        self.assertFalse((self.herdr / "layouts/Demo.json").exists())
+        # Mods: shared ones linked, Mac-only ones not.
+        mods = {p.name for p in (self.herdr / "mods").iterdir()}
+        self.assertTrue({"jobs", "session-launcher", "wallpaper", "my-tabs"} <= mods)
+        self.assertFalse({"music", "demo-mode", "run-once"} & mods)
+        self.assertTrue((self.herdr / "themes/rose-pine-moon.json").is_symlink())
+        self.assertEqual(Path(os.readlink(self.bin / "job")), ROOT / "jobs/job")
+        self.assertEqual((self.tmp / ".config/parker/machine").read_text(), "omarchy\n")
+
+    def test_a_second_run_changes_nothing(self):
+        self.ok("omarchy")
+        self.assertIn("Everything already matches", self.ok("omarchy"))
+        self.assertEqual(self.run_link("omarchy", "--check").returncode, 0)
+
+    def test_check_reports_drift_and_changes_nothing(self):
+        out = self.run_link("omarchy", "--check")
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("would link", out.stdout)
+        self.assertFalse((self.herdr / "keys.json").exists())
+
+    def test_mac_links_every_layout_and_its_mac_only_mods(self):
+        self.ok("mac")
+        self.assertEqual(Path(os.readlink(self.herdr / "layouts/Parker.json")), ROOT / "layouts/Parker.json")
+        self.assertTrue((self.herdr / "layouts/Demo.json").is_symlink())
+        self.assertTrue({"music", "demo-mode", "jobs"} <= {p.name for p in (self.herdr / "mods").iterdir()})
+        self.assertEqual(json.loads((self.herdr / "settings.json").read_text())["font_size"], 13.0)
+
+    def test_a_dotfiles_mod_the_machine_no_longer_lists_is_unlinked_and_others_are_kept(self):
+        (self.herdr / "mods/music").symlink_to(ROOT / "mods/music")
+        (self.herdr / "mods/ops-tasks").symlink_to(self.tmp / "kit/herdr-mods/ops-tasks")
+        out = self.ok("omarchy")
+        self.assertIn("remove", out)
+        self.assertFalse((self.herdr / "mods/music").is_symlink())
+        self.assertTrue((self.herdr / "mods/ops-tasks").is_symlink())
+
+    def test_settings_write_through_a_settings_link(self):
+        real = self.tmp / "dotfiles-settings.json"
+        real.write_text('{"zoom": 1.2}')
+        (self.herdr / "settings.json").symlink_to(real)
+        self.ok("mac")
+        self.assertTrue((self.herdr / "settings.json").is_symlink())
+        self.assertEqual(json.loads(real.read_text())["theme"], "rose-pine-moon")
+
+    def test_drop_panels_moves_the_active_panel_to_one_that_remains(self):
+        layout = {"id": "root", "children": [{"id": "panel-body", "type": "stack", "active": "ops-tasks", "children": [
+            {"id": "files", "content": {"mod": "my-files"}}, {"id": "ops-tasks", "content": {"mod": "ops-tasks"}}]}]}
+        trimmed = link.drop_panels(layout, {"ops-tasks"})
+        self.assertEqual(panel_ids(trimmed), (["files"], "files"))
+        self.assertEqual(len(layout["children"][0]["children"]), 2)  # the original is untouched
+
+    def test_refuses_to_run_from_a_checkout_other_than_home_dotfiles(self):
+        env = {**os.environ, "HOME": str(self.tmp)}
+        out = subprocess.run([sys.executable, str(LINK), "--check"], capture_output=True, text=True, env=env)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("run this from ~/dotfiles", out.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

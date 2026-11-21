@@ -1,0 +1,16 @@
+# Daily check that Omarchy's dotfiles are current and its Herdr setup matches the manifest.
+repo = "~/dotfiles"
+agent = "codex"
+tab = "Dotfiles check"
+# Exit the Herdr session once the agent reports a finished run; a blocked run stays open.
+close_when_done = true
+prompt = """
+Check that this machine's dotfiles and Herdr setup are current. Change nothing except the pull.
+
+1. Run `git pull --ff-only` in ~/dotfiles. If it can't fast-forward (local commits or changes), stop and report why.
+2. Run `python3 herdr-app/link.py --check` and read what it reports.
+3. Reply in at most three lines: what the pull brought in (or "already current"), and any drift link.py found with the command that fixes it (usually `python3 herdr-app/link.py`).
+"""
+
+[schedule]
+times = ["09:00"]

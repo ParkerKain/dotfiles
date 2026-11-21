@@ -1,0 +1,613 @@
+#!/usr/bin/env python3
+"""job - scheduled agent jobs and hooks for this machine, run as Herdr sessions.
+
+Each machine lists its own job sources in herdr-app/machines/<machine>.toml
+([jobs] sources), so work jobs live on the work Mac and personal jobs on
+Omarchy, and neither machine sees the other's.
+
+A source folder holds TOML files of two kinds:
+
+  job   repo, agent, prompt or prompt_file, optional [schedule] and space/tab.
+        `job run <name>` starts one interactive agent under herdr-core (hc), so
+        it shows in the Herdr app and phone inbox and can take another turn.
+  hook  check = "<script>" and interval = <seconds>. The script answers
+        `check` (do the work now) and `status` (JSON: {ok, hooks: [{last_check,
+        last_trigger}]}). The engine schedules `check` every interval.
+
+Scheduling uses launchd on macOS and systemd user timers on Linux. Nothing here
+is a daemon: the scheduler fires `job run` or `job check`.
+
+  job list                  every job and hook, its kind and schedule
+  job status                every job and hook as JSON for the Jobs panel
+  job run <name> [--wait]   start a job now (--wait: block until it stops working;
+                            close_when_done = true in the job also exits it after an ok run)
+  job check <hook>          run a hook's check now
+  job pause | resume        stop or restart scheduled jobs and hooks (for demos);
+                            a run started by hand (--force) still goes.
+                            --by <who> tags the pause; resume --by <who> only lifts a
+                            pause that <who> made (the Demo layout uses --by demo)
+  job unit <name>           print the launchd plist or systemd units for its schedule
+  job install <name>        write and load that schedule
+  job uninstall <name>      unload and remove it
+  job refresh [--check]     rewrite the schedule of every job and hook that's turned on,
+                            so it runs this engine; list schedules with no definition here
+"""
+import argparse, json, os, plistlib, shutil, subprocess, sys, time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+import machine  # noqa: E402
+
+machine.need_tomllib()
+import tomllib  # noqa: E402
+
+HOME = Path.home()
+LINUX = sys.platform.startswith("linux")
+# Scheduled runs don't load the shell, so name where hc, herdr-app and the agents live.
+if LINUX:
+    PATH = f"{HOME}/.local/bin:{HOME}/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin"
+else:
+    PATH = f"{HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+PATH = os.environ.get("JOB_PATH", PATH)  # tests point this at fake hc and herdr-app
+# Codex only sees Herdr when it runs its shell commands in-process.
+AGENTS = {"claude": ["claude"], "codex": ["codex", "--no-daemon"]}
+STATE = Path(os.environ.get("JOB_STATE_DIR", HOME / ".local/state/parker-jobs"))
+RUNS = STATE / "runs.jsonl"
+# While this file exists, scheduled job runs and hook checks skip.
+PAUSED = STATE / "paused"
+LAUNCHD = Path(os.environ.get("JOB_LAUNCHD_DIR", HOME / "Library/LaunchAgents"))
+SYSTEMD = Path(os.environ.get("JOB_SYSTEMD_DIR", HOME / ".config/systemd/user"))
+# Tests and dry runs set this to "none" so nothing is loaded into the real scheduler.
+SCHEDULER = os.environ.get("JOB_SCHEDULER") or ("systemd" if LINUX else "launchd")
+
+
+def die(msg):
+    sys.exit(f"job: {msg}")
+
+
+# ---- definitions ----------------------------------------------------------
+
+def sources():
+    """This machine's job folders. $JOB_DEFS (colon-separated) overrides the manifest."""
+    env = os.environ.get("JOB_DEFS")
+    if env:
+        return [Path(p) for p in env.split(os.pathsep) if p]
+    return [machine.expand(p) for p in machine.manifest().get("jobs", {}).get("sources", [])]
+
+
+def definitions():
+    """{name: path} for every job and hook file in this machine's sources."""
+    found = {}
+    for folder in sources():
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.toml")):
+            if path.stem in found:
+                die(f"'{path.stem}' is defined twice: {found[path.stem]} and {path}")
+            found[path.stem] = path
+    return found
+
+
+def load(name):
+    path = definitions().get(name)
+    if not path:
+        die(f"no job or hook '{name}' on this machine ({', '.join(map(str, sources())) or 'no sources'})")
+    item = tomllib.loads(path.read_text())
+    item["name"], item["path"] = name, path
+    if "check" in item:
+        item["kind"] = "hook"
+        item["script"] = (path.parent / item["check"]).resolve()
+        if not item["script"].exists():
+            die(f"{name}: check script {item['script']} is missing")
+        if int(item.get("interval", 0)) < 60:
+            die(f"{name}: a hook needs interval = <seconds>, at least 60")
+        item["interval"] = int(item["interval"])
+        return item
+    item["kind"] = "job"
+    item["repo"] = str(machine.expand(item.get("repo", "")).resolve())
+    if not Path(item["repo"]).is_dir():
+        die(f"{name}: repo {item['repo']} is not a folder")
+    if item.get("agent") not in AGENTS:
+        die(f"{name}: agent must be one of {', '.join(AGENTS)}")
+    if "prompt_file" in item:
+        item["prompt"] = (path.parent / item["prompt_file"]).read_text()
+    if not item.get("prompt", "").strip():
+        die(f"{name}: needs prompt or prompt_file")
+    return item
+
+
+def all_items():
+    return [load(name) for name in definitions()]
+
+
+# ---- Herdr ----------------------------------------------------------------
+
+def clean_env():
+    """A scheduled agent must not inherit another agent's session settings."""
+    keep = ("HOME", "USER", "LOGNAME", "SHELL", "LANG", "TMPDIR", "HC_SESSION", "SSH_AUTH_SOCK",
+            "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "PARKER_MACHINE")
+    env = {k: os.environ[k] for k in keep if k in os.environ}
+    env["PATH"] = PATH
+    return env
+
+
+def hc(*args, check=True):
+    out = subprocess.run(["hc", args[0], "--json", *args[1:]], capture_output=True, text=True, env=clean_env())
+    if check and out.returncode != 0:
+        die(f"hc {args[0]} failed: {out.stderr.strip() or out.stdout.strip()}")
+    try:
+        return json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+
+def herdr_spaces():
+    if not shutil.which("herdr-app", path=PATH):
+        return None
+    out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, env=clean_env())
+    try:
+        return json.loads(out.stdout).get("spaces", [])
+    except json.JSONDecodeError:
+        return None
+
+
+def space_id(name):
+    """The Herdr app space to show the session in, if the window is open."""
+    if not name:
+        return None
+    return next((s["id"] for s in herdr_spaces() or [] if s.get("name") == name), None)
+
+
+def name_tab(addr, name):
+    """Name the Herdr tab that holds addr. Herdr otherwise calls it by its number."""
+    for _ in range(10):  # the pane can take a moment to show up
+        spaces = herdr_spaces()
+        if spaces is None:
+            return
+        for space in spaces:
+            for tab in space.get("tabs", []):
+                if addr in [t.get("terminal") for t in tab.get("terminals", [])]:
+                    subprocess.run(["herdr-app", "do", "tab.rename", "--id", tab["id"], "--name", name],
+                                   capture_output=True, text=True, env=clean_env())
+                    return
+        time.sleep(1)
+
+
+# ---- pause ----------------------------------------------------------------
+
+def paused():
+    """{"ts": epoch, "by"?: who} when jobs are paused, else None."""
+    try:
+        return json.loads(PAUSED.read_text())
+    except (OSError, ValueError):
+        return {"ts": int(PAUSED.stat().st_mtime)} if PAUSED.exists() else None
+
+
+# ---- run a job ------------------------------------------------------------
+
+def run(args):
+    job = load(args.name)
+    if job["kind"] != "job":
+        die(f"{job['name']} is a hook; use `job check {job['name']}`")
+    if paused() and not args.force:
+        print(json.dumps({"session": None, "started": False, "paused": True,
+                          "why": f"jobs are paused; {job['name']} skipped (job resume, or run it with --force)"}))
+        return
+    session = f"{job['name']}-{time.strftime('%m%d-%H%M')}"[:32]
+    # Started from a Herdr terminal (an agent or a person): nest the session under
+    # it, and let it outlive that terminal. Started by the scheduler or the app: no parent.
+    parent = os.environ.get("HC_TERMINAL_ID")
+    family = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
+    cmd = ["run", "--bg", *family, "--name", session, "--cwd", job["repo"], "--label", f"job={job['name']}"]
+    space = space_id(job.get("space"))
+    if space:
+        cmd += ["--label", f"herdr.space={space}"]
+    prompt = job["prompt"]
+    close = bool(job.get("close_when_done"))
+    if close:
+        outcome = outcome_file(job["name"])
+        outcome.parent.mkdir(parents=True, exist_ok=True)
+        outcome.unlink(missing_ok=True)
+        prompt += ("\n\n## Closing this session\n\n"
+                   f"As your very last step, write one line to `{outcome}`: `ok: <what changed, or no changes>` "
+                   "when the run finished, or `blocked: <why>` when something stopped it. "
+                   "After `ok`, the job runner exits this session; after `blocked`, or no file, it stays open for me.\n")
+    started = hc(*cmd, *AGENTS[job["agent"]], prompt)
+    addr = started.get("address", session)
+    name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
+    # A folder the agent has not trusted yet stops at a dialog with no status,
+    # and the first message waits behind it. Say so instead of looking like it ran.
+    hc("wait", addr, "--timeout", "45", check=False)
+    info = hc("get", addr, check=False)
+    status = (info.get("status") or {}).get("state")
+    record(job["name"], session, addr)
+    if status is None or (status == "idle" and info.get("turn", 0) == 0):
+        print(json.dumps({"session": session, "address": addr, "started": False,
+                          "why": "agent is not working: probably a folder trust question. "
+                                 f"Open it (hc attach {session}) and answer; the prompt is delivered once the folder is trusted, so do not resend it."}))
+        sys.exit(2)
+    if (args.wait or close) and status == "working":
+        while True:
+            state = hc("wait", addr, "--timeout", "600", check=False)
+            status = state.get("status") or status
+            if state.get("reason") != "timeout" and status != "working":
+                break
+    result = {"session": session, "address": addr, "started": True, "status": status}
+    if close:
+        result["closed"], result["outcome"] = close_if_ok(addr, outcome)
+    print(json.dumps(result))
+
+
+def outcome_file(name):
+    return STATE / f"{name}.outcome"
+
+
+def close_if_ok(addr, outcome):
+    """Exit a finished session whose agent reported `ok`; leave anything else open.
+
+    /exit rather than a kill, so the agent's own end-of-session hooks run.
+    keep is turned off first, or Herdr would replace the exited agent with a shell.
+    """
+    text = outcome.read_text().strip() if outcome.exists() else ""
+    line = text.splitlines()[0] if text else ""
+    if not line.lower().startswith("ok"):
+        return False, line or None
+    hc("keep", addr, "--off", check=False)
+    hc("send", addr, "/exit", check=False)
+    for _ in range(180):  # the end-of-session hook may save and push first
+        if hc("get", addr, check=False).get("state") != "live":
+            break
+        time.sleep(1)
+    else:
+        hc("kill", addr, check=False)
+        time.sleep(2)
+    hc("rm", addr, check=False)
+    return True, line
+
+
+def record(name, session, address):
+    RUNS.parent.mkdir(parents=True, exist_ok=True)
+    with RUNS.open("a") as f:
+        f.write(json.dumps({"job": name, "session": session, "address": address, "ts": int(time.time())}) + "\n")
+
+
+def last_runs():
+    last = {}
+    if RUNS.exists():
+        for line in RUNS.read_text().splitlines():
+            try:
+                r = json.loads(line)
+                last[r["job"]] = r
+            except (ValueError, KeyError):
+                pass
+    return last
+
+
+# ---- hooks ----------------------------------------------------------------
+
+def python():
+    return shutil.which("python3", path=PATH) or sys.executable
+
+
+def hook_script(hook, *args, timeout):
+    return subprocess.run([python(), str(hook["script"]), *args], capture_output=True, text=True, timeout=timeout)
+
+
+def check(args):
+    hook = load(args.name)
+    if hook["kind"] != "hook":
+        die(f"{hook['name']} is a job; use `job run {hook['name']}`")
+    # Paused: skip without running the check, so the first check after resuming catches up.
+    if paused() and not args.force:
+        print(json.dumps({"ok": True, "result": "paused", "triggered": 0}))
+        return
+    out = hook_script(hook, "check", timeout=600)
+    sys.stdout.write(out.stdout)
+    sys.stderr.write(out.stderr)
+    sys.exit(out.returncode)
+
+
+def hook_status(hook):
+    row = {"name": hook["name"], "title": hook.get("title") or hook["name"].replace("-", " ").capitalize(),
+           "interval": hook["interval"], "loaded": scheduler().loaded(hook["name"], "hook"),
+           "last_check": None, "last_trigger": None, "error": None}
+    try:
+        out = hook_script(hook, "status", timeout=20)
+        data = json.loads(out.stdout)
+        if not data.get("ok"):
+            raise ValueError(out.stderr.strip() or "status failed")
+        first = (data.get("hooks") or [{}])[0]
+        row["last_check"], row["last_trigger"] = first.get("last_check"), first.get("last_trigger")
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        row["error"] = f"{hook['script'].name}: {exc}"
+    return row
+
+
+# ---- schedules ------------------------------------------------------------
+
+def times_of(sched):
+    return sched.get("times") or [f"{int(sched['hour']):02d}:{int(sched.get('minute', 0)):02d}"]
+
+
+def next_run(sched, now=None):
+    """Epoch seconds of the next scheduled start, in local time."""
+    now = now or time.time()
+    days = sched.get("weekdays")
+    for ahead in range(8):
+        day = time.localtime(now + ahead * 86400)
+        if days and (day.tm_wday + 1) not in days:
+            continue
+        for t in sorted(times_of(sched)):
+            h, m = (int(x) for x in t.split(":"))
+            at = time.mktime((day.tm_year, day.tm_mon, day.tm_mday, h, m, 0, 0, 0, -1))
+            if at > now:
+                return int(at)
+    return None
+
+
+def command_for(item):
+    """What the scheduler runs: `job run <name>` or `job check <name>`."""
+    verb = "check" if item["kind"] == "hook" else "run"
+    return [python(), str(HERE / "job"), verb, item["name"]]
+
+
+def require_schedule(item):
+    if item["kind"] == "job" and not item.get("schedule"):
+        die(f"{item['name']}: no [schedule] table (times = [\"07:00\"], optional weekdays 1-7 with 1 = Monday)")
+
+
+class Launchd:
+    """macOS: one LaunchAgent plist per job or hook."""
+
+    def __init__(self, live=True):
+        self.live = live  # False writes the files but never loads them (tests)
+
+    @staticmethod
+    def label(name, kind):
+        return f"com.parker.{kind}.{name}"
+
+    def paths(self, name, kind):
+        return [LAUNCHD / f"{self.label(name, kind)}.plist"]
+
+    def loaded(self, name, kind):
+        return self.paths(name, kind)[0].exists()
+
+    def installed(self):
+        """(name, kind) of every schedule this engine wrote."""
+        return [(p.stem.split(".", 3)[3], p.stem.split(".")[2]) for p in sorted(LAUNCHD.glob("com.parker.*.*.plist"))
+                if p.stem.split(".")[2] in ("job", "hook")]
+
+    def units(self, item):
+        require_schedule(item)
+        label = self.label(item["name"], item["kind"])
+        log = HOME / "Library/Logs" / f"{label}.log"
+        plist = {"Label": label, "ProgramArguments": command_for(item),
+                 "EnvironmentVariables": {"PATH": PATH},
+                 "StandardOutPath": str(log), "StandardErrorPath": str(log)}
+        if item["kind"] == "hook":
+            plist |= {"StartInterval": item["interval"], "RunAtLoad": True}
+        else:
+            sched, when = item["schedule"], []
+            for t in times_of(sched):
+                h, m = (int(x) for x in t.split(":"))
+                for d in sched.get("weekdays") or [None]:
+                    when.append({"Hour": h, "Minute": m} | ({"Weekday": d % 7} if d else {}))
+            plist["StartCalendarInterval"] = when
+        return {self.paths(item["name"], item["kind"])[0]: plistlib.dumps(plist)}
+
+    def install(self, item):
+        written = write_units(self.units(item))
+        if self.live:
+            subprocess.run(["launchctl", "unload", str(written[0])], capture_output=True)
+            subprocess.run(["launchctl", "load", str(written[0])], check=True)
+        return written
+
+    def uninstall(self, name, kind):
+        paths = self.paths(name, kind)
+        if self.live:
+            subprocess.run(["launchctl", "unload", str(paths[0])], capture_output=True)
+        for path in paths:
+            path.unlink(missing_ok=True)
+        return paths
+
+
+class Systemd:
+    """Linux: a oneshot service and a timer per job or hook, in the user's systemd."""
+    DAYS = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    def __init__(self, live=True):
+        self.live = live
+
+    @staticmethod
+    def unit(name, kind):
+        return f"parker-{kind}-{name}"
+
+    def paths(self, name, kind):
+        base = SYSTEMD / self.unit(name, kind)
+        return [base.with_suffix(".service"), base.with_suffix(".timer")]
+
+    def loaded(self, name, kind):
+        return self.paths(name, kind)[1].exists()
+
+    def installed(self):
+        found = []
+        for p in sorted(SYSTEMD.glob("parker-*-*.timer")):
+            _, kind, name = p.stem.split("-", 2)
+            if kind in ("job", "hook"):
+                found.append((name, kind))
+        return found
+
+    def units(self, item):
+        require_schedule(item)
+        service, timer = self.paths(item["name"], item["kind"])
+        what = "hook check" if item["kind"] == "hook" else "job"
+        exec_start = " ".join(f'"{a}"' if " " in a else a for a in command_for(item))
+        # KillMode=process: the agent session belongs to herdr-core, so ending this
+        # unit must not take down anything it started.
+        service_body = (f"[Unit]\nDescription=Parker {what}: {item['name']}\n\n"
+                        f"[Service]\nType=oneshot\nExecStart={exec_start}\n"
+                        f"Environment=PATH={PATH}\nTimeoutStartSec=infinity\nKillMode=process\n")
+        if item["kind"] == "hook":
+            when = f"OnActiveSec=10\nOnUnitActiveSec={item['interval']}\n"
+        else:
+            sched = item["schedule"]
+            days = ",".join(self.DAYS[d] for d in sched.get("weekdays") or [])
+            when = "".join(f"OnCalendar={days + ' ' if days else ''}*-*-* {t}:00\n" for t in times_of(sched))
+            when += "Persistent=true\n"
+        timer_body = (f"[Unit]\nDescription=Parker {what}: {item['name']}\n\n"
+                      f"[Timer]\n{when}\n[Install]\nWantedBy=timers.target\n")
+        return {service: service_body.encode(), timer: timer_body.encode()}
+
+    def install(self, item):
+        written = write_units(self.units(item))
+        if self.live:
+            unit = self.unit(item["name"], item["kind"])
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+            subprocess.run(["systemctl", "--user", "enable", "--now", f"{unit}.timer"], check=True, capture_output=True)
+        return written
+
+    def uninstall(self, name, kind):
+        if self.live:
+            subprocess.run(["systemctl", "--user", "disable", "--now", f"{self.unit(name, kind)}.timer"], capture_output=True)
+        paths = self.paths(name, kind)
+        for path in paths:
+            path.unlink(missing_ok=True)
+        if self.live:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
+        return paths
+
+
+def write_units(units):
+    for path, body in units.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+    return list(units)
+
+
+def scheduler():
+    """launchd on macOS, systemd on Linux. JOB_SCHEDULER=none writes files without loading
+    them (tests); JOB_SCHEDULER_FORMAT then picks which kind of file."""
+    if SCHEDULER == "none":
+        fmt = os.environ.get("JOB_SCHEDULER_FORMAT") or ("systemd" if LINUX else "launchd")
+        return {"launchd": Launchd, "systemd": Systemd}[fmt](live=False)
+    return {"launchd": Launchd, "systemd": Systemd}[SCHEDULER]()
+
+
+# ---- status ---------------------------------------------------------------
+
+def job_status(job, last):
+    sched = job.get("schedule")
+    loaded = scheduler().loaded(job["name"], "job")
+    row = {"name": job["name"], "agent": job["agent"], "repo": job["repo"],
+           "times": times_of(sched) if sched else [], "weekdays": (sched or {}).get("weekdays") or [],
+           "next": next_run(sched) if sched else None, "loaded": loaded, "last": None}
+    run_ = last.get(job["name"])
+    if run_:
+        info = hc("get", run_["session"], check=False)
+        live = info.get("state") == "live"
+        state = (info.get("status") or {}).get("state") if live else None
+        row["last"] = {"ts": run_["ts"], "session": run_["session"], "address": info.get("address") if live else None,
+                       "state": state or ("ended" if info.get("state") == "finished" else "gone" if not info.get("state") else "no status")}
+    return row
+
+
+def status():
+    last = last_runs()
+    items = all_items()
+    jobs = [job_status(i, last) for i in items if i["kind"] == "job"]
+    hooks = [hook_status(i) for i in items if i["kind"] == "hook"]
+    print(json.dumps({"ok": True, "machine": machine.name(), "paused": paused(), "jobs": jobs, "hooks": hooks}))
+
+
+def refresh(check_only):
+    """Rewrite turned-on schedules that differ from what this engine would write."""
+    sched, defs, drift = scheduler(), definitions(), False
+    for name, kind in sched.installed():
+        if name not in defs:
+            print(f"stale {kind} schedule '{name}': no definition on this machine (job uninstall {name})")
+            drift = True
+            continue
+        item = load(name)
+        if item["kind"] != kind:
+            continue
+        units = sched.units(item)
+        if all(p.exists() and p.read_bytes() == body for p, body in units.items()):
+            continue
+        drift = True
+        if check_only:
+            print(f"would rewrite the {kind} schedule for {name}")
+        else:
+            sched.install(item)
+            print(f"rewrote the {kind} schedule for {name}")
+    sys.exit(1 if check_only and drift else 0)
+
+
+def describe(item):
+    if item["kind"] == "hook":
+        return f"every {item['interval'] // 60} min"
+    s = item.get("schedule")
+    if not s:
+        return "manual"
+    return ", ".join(times_of(s)) + (f" days {s['weekdays']}" if s.get("weekdays") else " daily")
+
+
+# ---- main -----------------------------------------------------------------
+
+def main():
+    p = argparse.ArgumentParser(prog="job", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("list")
+    sub.add_parser("status")
+    for c in ("pause", "resume"):
+        sub.add_parser(c).add_argument("--by", help="who paused; resume --by only lifts that one's pause")
+    r = sub.add_parser("run"); r.add_argument("name"); r.add_argument("--wait", action="store_true")
+    r.add_argument("--force", action="store_true", help="run even while jobs are paused")
+    c = sub.add_parser("check"); c.add_argument("name")
+    c.add_argument("--force", action="store_true", help="check even while jobs are paused")
+    for name in ("unit", "install", "uninstall"):
+        sub.add_parser(name).add_argument("name")
+    sub.add_parser("refresh").add_argument("--check", action="store_true", help="report, change nothing")
+    args = p.parse_args()
+
+    if args.cmd == "list":
+        for item in all_items():
+            where = item.get("repo") or str(item["script"])
+            print(f"{item['name']:<24} {item['kind']:<5} {item.get('agent', ''):<7} {describe(item):<22} {where}")
+    elif args.cmd == "status":
+        status()
+    elif args.cmd == "run":
+        run(args)
+    elif args.cmd == "check":
+        check(args)
+    elif args.cmd == "pause":
+        PAUSED.parent.mkdir(parents=True, exist_ok=True)
+        # An existing pause keeps its owner, so a demo never lifts a pause made by hand.
+        if not paused():
+            PAUSED.write_text(json.dumps({"ts": int(time.time())} | ({"by": args.by} if args.by else {})))
+        print(json.dumps({"ok": True, "paused": paused()}))
+    elif args.cmd == "resume":
+        if not args.by or (paused() or {}).get("by") == args.by:
+            PAUSED.unlink(missing_ok=True)
+        print(json.dumps({"ok": True, "paused": paused()}))
+    elif args.cmd == "refresh":
+        refresh(args.check)
+    elif args.cmd == "unit":
+        for path, body in scheduler().units(load(args.name)).items():
+            print(f"# {path}")
+            sys.stdout.write(body.decode())
+            print()
+    elif args.cmd == "install":
+        item = load(args.name)
+        written = scheduler().install(item)
+        print(json.dumps({"ok": True, "installed": [str(p) for p in written]}))
+    elif args.cmd == "uninstall":
+        # A definition that has been deleted can still be uninstalled by name.
+        path = definitions().get(args.name)
+        kind = load(args.name)["kind"] if path else ("hook" if scheduler().loaded(args.name, "hook") else "job")
+        removed = scheduler().uninstall(args.name, kind)
+        print(json.dumps({"ok": True, "removed": [str(p) for p in removed]}))
+
+
+if __name__ == "__main__":
+    main()

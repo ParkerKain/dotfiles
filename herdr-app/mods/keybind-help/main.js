@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { appHome, closeOverlay, props, readTextFile, theme } from "herdr";
+import { appHome, closeOverlay, props, readTextFile, theme, window } from "herdr";
 
 // Keep descriptions here; resolve the actual keys from keys.json whenever the pane opens.
 const GROUPS = [
@@ -21,6 +21,7 @@ const GROUPS = [
     ["my-tabs.panel-day-view", "Calendar"],
     ["my-tabs.panel-artifacts", "Artifacts"],
     ["my-tabs.panel-call-sheet", "Call Sheet"],
+    ["my-tabs.panel-factory", "Factory"],
     ["my-tabs.hints", "Pick a sidebar row"],
     ["space-sessions.hints", "Jump to a tab in Spaces"],
     ["my-tabs.refresh", "Refresh open sidebar"],
@@ -39,8 +40,12 @@ const GROUPS = [
   ]],
 ];
 
+// ⌘⇧T on macOS; Ctrl+Shift+T on Linux, where keys.json's cmd is the Super key.
 function showKey(binding) {
-  return binding.split("-").map(part => ({ cmd: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧" })[part] ?? part.toUpperCase()).join("");
+  const parts = binding.split("-");
+  if (window()?.platform !== "linux") return parts.map(part => ({ cmd: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧" })[part] ?? part.toUpperCase()).join("");
+  const name = { cmd: "Super", ctrl: "Ctrl", alt: "Alt", shift: "Shift" };
+  return parts.map(part => name[part] ?? (part.length === 1 ? part.toUpperCase() : part[0].toUpperCase() + part.slice(1))).join("+");
 }
 
 export default class KeybindHelp extends View {

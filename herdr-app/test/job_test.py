@@ -1,0 +1,240 @@
+"""Tests for herdr-app/jobs/job: definitions, both schedulers, hooks, pause and per-machine sources.
+
+Run: python3 -m unittest herdr-app/test/job_test.py
+Nothing is loaded into launchd or systemd (JOB_SCHEDULER=none) and hc is a fake.
+"""
+import json
+import os
+import plistlib
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+JOB = ROOT / "jobs/job"
+
+
+class JobTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.tmp)])
+        self.defs = self.tmp / "defs"
+        self.defs.mkdir()
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        bin_ = self.tmp / "bin"
+        bin_.mkdir()
+        # hc: every call answers an empty object, `get` reports nothing live.
+        (bin_ / "hc").write_text("#!/bin/sh\necho '{}'\n")
+        (bin_ / "hc").chmod(0o755)
+        self.env = {**os.environ, "JOB_DEFS": str(self.defs), "JOB_STATE_DIR": str(self.tmp / "state"),
+                    "JOB_SCHEDULER": "none", "JOB_LAUNCHD_DIR": str(self.tmp / "launchd"),
+                    "JOB_SYSTEMD_DIR": str(self.tmp / "systemd"),
+                    "JOB_PATH": f"{bin_}:{Path(sys.executable).parent}:/usr/bin:/bin"}
+
+    def write(self, name, body, folder=None):
+        path = (folder or self.defs) / f"{name}.toml"
+        path.write_text(textwrap.dedent(body))
+        return path
+
+    def hook_script(self, name="hook.py", status=None, fail=False):
+        """A hook script that records each check and answers status."""
+        status = status or {"ok": True, "hooks": [{"last_check": {"ts": 1, "state": "ok", "result": "no new"}}]}
+        script = self.defs / name
+        script.write_text(textwrap.dedent(f"""\
+            import json, sys, pathlib
+            if sys.argv[1] == "check":
+                pathlib.Path({str(self.tmp / 'checked')!r}).write_text("yes")
+                print(json.dumps({{"ok": True, "triggered": 0}}))
+            elif sys.argv[1] == "status":
+                {"sys.exit('boom')" if fail else f"print(json.dumps({status!r}))"}
+            """))
+        return script
+
+    def job(self, *args, env=None, check=True):
+        out = subprocess.run([sys.executable, str(JOB), *args], capture_output=True, text=True,
+                             env={**self.env, **(env or {})})
+        if check and out.returncode != 0:
+            self.fail(f"job {' '.join(args)} exited {out.returncode}: {out.stderr}")
+        return out
+
+    def weekly(self, name="weekly"):
+        self.write(name, f"""\
+            repo = "{self.repo}"
+            agent = "claude"
+            prompt = "do it"
+            [schedule]
+            times = ["05:00", "12:30"]
+            weekdays = [1, 7]
+            """)
+
+    def hook(self, name="mail-inbox", **kw):
+        self.hook_script(**kw)
+        self.write(name, """\
+            title = "Mail inbox"
+            check = "hook.py"
+            interval = 300
+            """)
+
+    # ---- definitions
+
+    def test_lists_jobs_and_hooks_from_every_source(self):
+        other = self.tmp / "other"
+        other.mkdir()
+        self.weekly()
+        self.hook()
+        self.write("manual", f'repo = "{self.repo}"\nagent = "codex"\nprompt = "x"\n', folder=other)
+        out = self.job("list", env={"JOB_DEFS": f"{self.defs}{os.pathsep}{other}"}).stdout
+        self.assertRegex(out, r"weekly\s+job\s+claude\s+05:00, 12:30 days \[1, 7\]")
+        self.assertRegex(out, r"mail-inbox\s+hook\s+every 5 min")
+        self.assertRegex(out, r"manual\s+job\s+codex\s+manual")
+
+    def test_a_name_defined_twice_is_an_error(self):
+        other = self.tmp / "other"
+        other.mkdir()
+        self.weekly()
+        self.weekly_path = self.write("weekly", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n', folder=other)
+        out = self.job("list", env={"JOB_DEFS": f"{self.defs}{os.pathsep}{other}"}, check=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("defined twice", out.stderr)
+
+    def test_a_hook_needs_a_real_interval(self):
+        self.hook_script()
+        self.write("fast", 'check = "hook.py"\ninterval = 5\n')
+        out = self.job("list", check=False)
+        self.assertIn("at least 60", out.stderr)
+
+    # ---- launchd
+
+    def test_launchd_job_runs_at_each_time_and_weekday(self):
+        self.weekly()
+        self.job("install", "weekly", env={"JOB_SCHEDULER_FORMAT": "launchd"})
+        plist = plistlib.loads((self.tmp / "launchd/com.parker.job.weekly.plist").read_bytes())
+        self.assertEqual(plist["ProgramArguments"][-2:], ["run", "weekly"])
+        # launchd counts Sunday as 0; job files use 1 = Monday ... 7 = Sunday.
+        self.assertEqual(plist["StartCalendarInterval"], [
+            {"Hour": 5, "Minute": 0, "Weekday": 1}, {"Hour": 5, "Minute": 0, "Weekday": 0},
+            {"Hour": 12, "Minute": 30, "Weekday": 1}, {"Hour": 12, "Minute": 30, "Weekday": 0}])
+
+    def test_launchd_hook_checks_every_interval_through_the_engine(self):
+        self.hook()
+        self.job("install", "mail-inbox", env={"JOB_SCHEDULER_FORMAT": "launchd"})
+        plist = plistlib.loads((self.tmp / "launchd/com.parker.hook.mail-inbox.plist").read_bytes())
+        self.assertEqual(plist["Label"], "com.parker.hook.mail-inbox")
+        self.assertEqual(plist["ProgramArguments"][-2:], ["check", "mail-inbox"])
+        self.assertEqual((plist["StartInterval"], plist["RunAtLoad"]), (300, True))
+
+    # ---- systemd
+
+    def test_systemd_job_timer_uses_calendar_times(self):
+        self.weekly()
+        self.job("install", "weekly", env={"JOB_SCHEDULER_FORMAT": "systemd"})
+        timer = (self.tmp / "systemd/parker-job-weekly.timer").read_text()
+        service = (self.tmp / "systemd/parker-job-weekly.service").read_text()
+        self.assertIn("OnCalendar=Mon,Sun *-*-* 05:00:00\n", timer)
+        self.assertIn("OnCalendar=Mon,Sun *-*-* 12:30:00\n", timer)
+        self.assertIn("Persistent=true", timer)
+        self.assertIn("WantedBy=timers.target", timer)
+        self.assertRegex(service, r"ExecStart=\S+python\S* \S+/jobs/job run weekly\n")
+        # The agent session belongs to herdr-core; ending the unit must not kill it.
+        self.assertIn("KillMode=process", service)
+        self.assertIn("TimeoutStartSec=infinity", service)
+
+    def test_systemd_daily_job_has_no_weekday_prefix(self):
+        self.write("daily", f'repo = "{self.repo}"\nagent = "codex"\nprompt = "x"\n[schedule]\ntimes = ["09:00"]\n')
+        self.job("install", "daily", env={"JOB_SCHEDULER_FORMAT": "systemd"})
+        self.assertIn("OnCalendar=*-*-* 09:00:00\n", (self.tmp / "systemd/parker-job-daily.timer").read_text())
+
+    def test_systemd_hook_timer_repeats_after_each_check(self):
+        self.hook()
+        self.job("install", "mail-inbox", env={"JOB_SCHEDULER_FORMAT": "systemd"})
+        timer = (self.tmp / "systemd/parker-hook-mail-inbox.timer").read_text()
+        self.assertIn("OnUnitActiveSec=300", timer)
+        self.assertIn("OnActiveSec=10", timer)
+        self.assertIn("check mail-inbox", (self.tmp / "systemd/parker-hook-mail-inbox.service").read_text())
+
+    def test_uninstall_removes_both_systemd_units(self):
+        self.hook()
+        env = {"JOB_SCHEDULER_FORMAT": "systemd"}
+        self.job("install", "mail-inbox", env=env)
+        self.job("uninstall", "mail-inbox", env=env)
+        self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
+
+    def test_a_job_without_a_schedule_cannot_be_installed(self):
+        self.write("manual", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n')
+        out = self.job("install", "manual", check=False)
+        self.assertIn("no [schedule]", out.stderr)
+
+    # ---- status
+
+    def test_status_reports_jobs_hooks_and_what_is_loaded(self):
+        self.weekly()
+        self.hook()
+        self.job("install", "mail-inbox")
+        data = json.loads(self.job("status").stdout)
+        self.assertTrue(data["ok"])
+        job, = data["jobs"]
+        self.assertEqual((job["name"], job["loaded"], job["times"], job["weekdays"]), ("weekly", False, ["05:00", "12:30"], [1, 7]))
+        hook, = data["hooks"]
+        self.assertEqual((hook["name"], hook["title"], hook["interval"], hook["loaded"]), ("mail-inbox", "Mail inbox", 300, True))
+        self.assertEqual(hook["last_check"]["result"], "no new")
+        self.assertIsNone(hook["error"])
+
+    def test_a_failing_hook_status_shows_its_error_without_hiding_jobs(self):
+        self.weekly()
+        self.hook(fail=True)
+        data = json.loads(self.job("status").stdout)
+        self.assertEqual(len(data["jobs"]), 1)
+        self.assertIn("hook.py", data["hooks"][0]["error"])
+
+    # ---- running
+
+    def test_check_skips_while_paused_and_runs_with_force(self):
+        self.hook()
+        self.job("pause", "--by", "demo")
+        out = json.loads(self.job("check", "mail-inbox").stdout)
+        self.assertEqual(out["result"], "paused")
+        self.assertFalse((self.tmp / "checked").exists())
+        self.job("check", "mail-inbox", "--force")
+        self.assertTrue((self.tmp / "checked").exists())
+
+    def test_resume_by_someone_else_keeps_the_pause(self):
+        self.job("pause")
+        self.assertIsNotNone(json.loads(self.job("resume", "--by", "demo").stdout)["paused"])
+        self.assertIsNone(json.loads(self.job("resume").stdout)["paused"])
+
+    def test_run_skips_while_paused(self):
+        self.weekly()
+        self.job("pause")
+        out = json.loads(self.job("run", "weekly").stdout)
+        self.assertEqual((out["started"], out["paused"]), (False, True))
+
+    def test_run_and_check_refuse_the_other_kind(self):
+        self.weekly()
+        self.hook()
+        self.assertIn("is a hook", self.job("run", "mail-inbox", check=False).stderr)
+        self.assertIn("is a job", self.job("check", "weekly", check=False).stderr)
+
+    # ---- machines
+
+    def test_each_machine_sees_only_its_own_jobs(self):
+        env = {k: v for k, v in self.env.items() if k != "JOB_DEFS"}
+        omarchy = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
+                                 env={**env, "PARKER_MACHINE": "omarchy", "HOME": str(self.tmp)})
+        # HOME is the temp dir, so ~/dotfiles doesn't exist: Omarchy's source is skipped, not the Mac's used.
+        self.assertEqual(omarchy.returncode, 0, omarchy.stderr)
+        self.assertNotIn("client-brief", omarchy.stdout)
+        (self.tmp / "dotfiles").symlink_to(ROOT.parent)
+        omarchy = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
+                                 env={**env, "PARKER_MACHINE": "omarchy", "HOME": str(self.tmp)})
+        self.assertIn("dotfiles-check", omarchy.stdout)
+        mac = subprocess.run([sys.executable, str(JOB), "list"], capture_output=True, text=True,
+                             env={**env, "PARKER_MACHINE": "mac", "HOME": str(self.tmp)})
+        self.assertNotIn("dotfiles-check", mac.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

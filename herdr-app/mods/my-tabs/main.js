@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { appHome, checking, exec, spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props } from "herdr";
+import { appHome, checking, exec, spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props, keys } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -11,6 +11,32 @@ function find(node, id) {
   return null;
 }
 
+// Panel buttons, in tab-bar order. A machine shows only the panels its layout has
+// (link.py drops the ones whose mod isn't installed there, like Tasks on Omarchy).
+const WORK_PANELS = [
+  ["ops-tasks", "Tasks", "mods/workspace-chrome/check.svg"],
+  ["jobs", "Jobs", "mods/workspace-chrome/clock.svg"],
+  ["day-view", "Calendar", "mods/day-view/calendar.svg"],
+  ["artifacts", "Artifacts", "mods/artifacts/layers.svg"],
+  ["call-sheet", "Call", "mods/call-sheet/clipboard.svg"],
+  ["factory", "Factory", "mods/factory/factory.svg"],
+];
+
+// The key bound to an action in keys.json, written the way this platform writes it:
+// ⇧⌘T on macOS, Ctrl+Shift+T elsewhere. Null when nothing is bound.
+function keyFor(action, platform) {
+  const binding = (keys?.() ?? []).find(k => k.section === "global" && k.action === action)?.keys;
+  if (!binding) return null;
+  const parts = binding.split("-");
+  if (platform === "macos") {
+    const order = ["ctrl", "alt", "shift", "cmd"], sym = { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" };
+    const mods = order.filter(m => parts.includes(m)).map(m => sym[m]).join("");
+    return mods + parts.filter(p => !order.includes(p)).join("-").toUpperCase();
+  }
+  const name = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", cmd: "Super" };
+  return parts.map(p => name[p] ?? (p.length === 1 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join("+");
+}
+
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
@@ -18,7 +44,13 @@ export default class Tabs extends View {
     try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
     if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
     this.musicReading = false;
+    this.hasMusic = false;
     if (!checking()) {
+      cx.spawn(async cx => {
+        const r = await exec("test", ["-e", `${appHome()}/mods/music/mod.json`]).catch(() => null);
+        this.hasMusic = r?.code === 0;
+        cx.notify();
+      });
       this.refreshMusic(cx);
       cx.timer.every(8000, cx => this.refreshMusic(cx));
     }
@@ -221,7 +253,9 @@ export default class Tabs extends View {
     const panel = find(root, "panel"), body = find(root, "panel-body");
     // The Demo layout passes {demo: true}: Files and Changes only, none of the work panels.
     const demo = Boolean(props()?.demo);
-    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), "ops-tasks", "jobs", "day-view", "artifacts", "call-sheet", "factory"])];
+    const inLayout = new Set((body?.children ?? []).map(child => child.id));
+    const workPanels = WORK_PANELS.filter(([id]) => inLayout.has(id));
+    const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), ...workPanels.map(([id]) => id)])];
     this.syncPanel(space, panel, body, enabled);
     // Icon-only buttons with a tooltip. The open panel widens to show its name,
     // and a panel can publish "<id>.badge" ({count} or {dot: true, tone}) for a mark.
@@ -270,18 +304,15 @@ export default class Tabs extends View {
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(!demo, el => el
-        .child(divider("divider-work"))
-        .child(panelButton("ops-tasks", "Tasks", "mods/workspace-chrome/check.svg", "⇧⌘T"))
-        .child(panelButton("jobs", "Jobs", "mods/workspace-chrome/clock.svg", "⇧⌘J"))
-        .child(panelButton("day-view", "Calendar", "mods/day-view/calendar.svg", "⇧⌘C"))
-        .child(panelButton("artifacts", "Artifacts", "mods/artifacts/layers.svg", "⇧⌘A"))
-        .child(panelButton("call-sheet", "Call", "mods/call-sheet/clipboard.svg", "⇧⌘K"))
-        .child(panelButton("factory", "Factory", "mods/factory/factory.svg", "⇧⌘F"))
-        .child(divider("divider-ambient"))
-        .child(iconButton("music", musicPlaying ? "Music (playing)" : "Music", `mods/music/${musicIcon}.svg`, "⇧⌘U", {
-          tint: musicPlaying ? t.accent : null,
-          action: () => run("mod.open", { name: "music" }),
-        })))
+        .when(workPanels.length, el => el.child(divider("divider-work")))
+        .children(workPanels.map(([id, label, icon]) => panelButton(id, label, icon, keyFor(`my-tabs.panel-${id}`, w?.platform))))
+        // Music is Mac-only: the button shows where the music mod is installed.
+        .when(this.hasMusic, el => el
+          .child(divider("divider-ambient"))
+          .child(iconButton("music", musicPlaying ? "Music (playing)" : "Music", `mods/music/${musicIcon}.svg`, keyFor("mod.open:music", w?.platform), {
+            tint: musicPlaying ? t.accent : null,
+            action: () => run("mod.open", { name: "music" }),
+          }))))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

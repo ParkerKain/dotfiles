@@ -1,0 +1,30 @@
+# Omarchy, Parker's personal Linux machine.
+#
+# link.py reads [herdr] to link this machine's Herdr config, the job engine reads
+# [jobs] for this machine's jobs and hooks, and the session launcher reads [launcher].
+# Per-machine files (keys.json, settings.json, jobs/) sit in machines/omarchy/.
+
+[herdr]
+# Mods from herdr-app/mods/ that this machine links. music, demo-mode, demo-quiet
+# and run-once are Mac-only (Apple Music, client demos, zsh demo helpers).
+mods = [
+  "my-files", "my-changes", "my-tabs", "space-sessions", "keybind-help", "usage-limits",
+  "session-launcher", "revive", "wallpaper", "jobs",
+]
+external_mods = []
+# Layouts from herdr-app/layouts/ that this machine links. Panels whose mod this
+# machine doesn't have are dropped from its copy.
+layouts = ["Parker"]
+
+[jobs]
+# Personal jobs only. Work jobs live on the work Mac.
+sources = ["~/dotfiles/herdr-app/machines/omarchy/jobs"]
+
+[launcher]
+repo_roots = ["~/Projects"]
+extra_folders = ["~/dotfiles", "~/omarchy-dotfiles"]
+default_folder = "~/Documents"
+rules = [
+  "Herdr UI, launcher, keys, layouts, job engine and machine configuration shared with the work Mac belong in dotfiles. Omarchy-only shell and tmux setup belongs in omarchy-dotfiles. Use the catalog descriptions for other work.",
+  "For general work or no identifiable software project, choose Documents. For Tasks Play with no identifiable project, use its default folder instead.",
+]

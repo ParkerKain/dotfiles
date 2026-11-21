@@ -3,7 +3,7 @@
 set -eu
 
 usage() {
-    printf '%s\n' 'Usage: ./install-omarchy.sh [--check] git|neovim'
+    printf '%s\n' 'Usage: ./install-omarchy.sh [--check] git|neovim|herdr'
 }
 
 check_only=false
@@ -71,6 +71,14 @@ case "$1" in
         check_link "$nvim_source/lua" "$profile/lua"
         install_link "$nvim_source/init.lua" "$profile/init.lua"
         install_link "$nvim_source/lua" "$profile/lua"
+        ;;
+    herdr)
+        # Herdr's keys, settings, layouts, themes, mods and the job engine, from
+        # herdr-app/machines/omarchy.toml (see herdr-app/README.md).
+        if "$check_only"; then
+            exec python3 "$dotfiles/herdr-app/link.py" --check
+        fi
+        exec python3 "$dotfiles/herdr-app/link.py"
         ;;
     *) usage >&2; exit 2 ;;
 esac

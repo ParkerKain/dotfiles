@@ -1,14 +1,21 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex, TextareaState, Textarea } from "gpui-base";
-import { appHome, checking, closeOverlay, exec, focused, home, knownAgents, nextCommand, pickFolder, props, readTextFile, theme, writeTextFile } from "herdr";
+import { appHome, checking, closeOverlay, exec, focused, home, knownAgents, nextCommand, pickFolder, props, readTextFile, theme, window, writeTextFile } from "herdr";
 
 const HELPER = `${appHome()}/mods/session-launcher/projects.py`;
 const JOBS = `${home()}/.cache/herdr-app/session-launcher`;
 // projects.py leaves the request and error here when a background start fails.
 const FAILED = `${home()}/.cache/herdr-app/session-launcher-failed.json`;
 
+const mac = () => window()?.platform !== "linux";
+
 // Writes the clipboard's image to a PNG file. Returns false when it holds no image.
 async function saveClipboardImage(path) {
+  if (!mac()) {
+    // Wayland (Omarchy): wl-paste lists the clipboard's types and writes the PNG.
+    const result = await exec("/bin/sh", ["-c", 'wl-paste --list-types | grep -qx image/png && wl-paste --type image/png > "$0" && echo ok', path], { timeout: 10000 });
+    return result.code === 0 && result.stdout.trim() === "ok";
+  }
   const script = [
     "try",
     "  set png to (the clipboard as «class PNGf»)",
@@ -54,6 +61,11 @@ export default class SessionLauncher extends View {
       // Usually cached by Herdr. Fetching now keeps Start from waiting on the agent check.
       this.agents = knownAgents().catch(() => null);
       if (!task) cx.spawn(async cx => this.restoreFailed(cx));
+      // The machine's default folder (vault on the work Mac, Documents on Omarchy), for the destination line.
+      cx.spawn(async cx => {
+        const r = await exec("python3", [HELPER, "default"], { timeout: 10000 }).catch(() => null);
+        if (r?.code === 0 && r.stdout.trim()) { this.defaultName = r.stdout.trim(); cx.notify(); }
+      });
     }
     cx.spawn(async cx => {
       for (;;) {
@@ -218,7 +230,8 @@ export default class SessionLauncher extends View {
         if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
         // Ctrl+V pastes an image, as in Claude Code. ⌘V reaches pasteImage through the textarea's paste_other.
-        if (e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
+        // On Linux Ctrl+V is the textarea's own paste, which already reaches paste_other.
+        if (mac() && e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
       })
       .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       // Keep padding outside the native editor so its scroll viewport matches its visible height.
@@ -228,10 +241,10 @@ export default class SessionLauncher extends View {
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child("⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image")))
+        .child(div().text_size(11).text_color(t.dim).child(mac() ? "⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image" : "Ctrl+Shift+A switch agent · Ctrl+Shift+S start · Ctrl+V pastes an image")))
       .child(v_flex().flex_shrink_0().gap(4)
         .child(h_flex().items_center().gap(8)
-          .child(div().flex_1().text_size(12).text_color(t.foreground).child(choosing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : "Destination · DevClarity vault by default"))
+          .child(div().flex_1().text_size(12).text_color(t.foreground).child(choosing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : `Destination · ${this.defaultName ?? "the default folder"} by default`))
           .child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Change folder").on_click((_e, cx) => this.changeFolder(cx)))
           .when(Boolean(this.override), el => el.child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Auto").on_click((_e, cx) => { if (!this.busy) { this.override = null; this.scheduleRoute(cx); } }))))
         .when(Boolean(this.route), el => el.child(div().text_size(11).text_color(t.muted).child(this.route.reason))))

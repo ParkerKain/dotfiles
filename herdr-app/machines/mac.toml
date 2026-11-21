@@ -1,0 +1,33 @@
+# The DevClarity work Mac.
+#
+# link.py reads [herdr] to link this machine's Herdr config, the job engine reads
+# [jobs] for this machine's jobs and hooks, and the session launcher reads [launcher].
+# Per-machine files (keys.json, settings.json) sit in machines/mac/.
+
+[herdr]
+# Mods from herdr-app/mods/ that this machine links.
+mods = [
+  "my-files", "my-changes", "my-tabs", "space-sessions", "keybind-help", "usage-limits",
+  "session-launcher", "revive", "wallpaper", "jobs",
+  "music", "demo-mode", "demo-quiet", "run-once",
+]
+# Mods another repo links here (parker-agent-kit's scripts/link.sh). Listed so
+# layouts keep their panels on this machine.
+external_mods = ["artifacts", "call-sheet", "day-view", "draft-review", "factory", "ops-tasks", "report-review"]
+# Layouts from herdr-app/layouts/ that this machine links.
+layouts = ["Parker", "Demo"]
+
+[jobs]
+# Work jobs and hooks only. Personal jobs live on Omarchy.
+sources = ["~/Documents/internal/repos/parker-agent-kit/jobs/defs"]
+
+[launcher]
+# Every git checkout directly under these folders is a project the launcher can route to.
+repo_roots = ["~/Documents/internal/repos"]
+extra_folders = ["~/dotfiles"]
+# Where general work goes when no project owns the request. Must be in the catalog.
+default_folder = "~/Documents/internal/repos/devclarity-vault"
+rules = [
+  "Herdr music mod, Spotify controls, UI, launcher, keys, layouts and machine configuration belong in dotfiles. Agent skills, hooks, agent CLIs and context belong in parker-agent-kit. Use the catalog descriptions for other work.",
+  "For general work or no identifiable software project, choose devclarity-vault. For Tasks Play with no identifiable project, use its default folder instead.",
+]

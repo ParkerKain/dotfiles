@@ -61,7 +61,7 @@ test('Music pill tracks external playback changes without issuing mutations', as
   assert.equal(mod.musicReading, false);
 });
 test('Demo blocks every work panel shortcut and the wallpaper switcher', () => {
-  const keys = JSON.parse(readFileSync(join(root, 'keys.json')));
+  const keys = JSON.parse(readFileSync(join(root, 'machines/mac/keys.json')));
   for (const [key, action] of Object.entries(keys.global)) {
     if (/^my-tabs.panel-/.test(action) || ['mod.open:wallpaper', 'mod.open:music'].includes(action)) {
       assert.equal(keys['layout:Demo'][key], 'terminal', key);
@@ -90,9 +90,23 @@ test('panel zoom ignores a hidden panel', () => {
   load('my-tabs', {layout: () => ({children: [{id: 'main'}, {id: 'panel', hidden: true}]})}).zoomPanel();
 });
 test('every work panel gets the zoom shortcut while terminal zoom stays native', () => {
-  const keys = JSON.parse(readFileSync(join(root, 'keys.json')));
+  const keys = JSON.parse(readFileSync(join(root, 'machines/mac/keys.json')));
   assert.equal(keys.global['cmd-shift-enter'], 'pane.zoom');
   for (const name of ['my-files', 'my-changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory']) {
     assert.equal(keys[`mod:${name}`]['cmd-shift-enter'], 'my-tabs.zoom-panel');
   }
+});
+
+test('Omarchy keys only open mods Omarchy installs, and its panels zoom on its pane-zoom key', () => {
+  const keys = JSON.parse(readFileSync(join(root, 'machines/omarchy/keys.json')));
+  const manifest = readFileSync(join(root, 'machines/omarchy.toml'), 'utf8');
+  const mods = JSON.parse(manifest.match(/\nmods = (\[[^\]]*\])/)[1].replace(/,\s*\]/, ']'));
+  for (const action of Object.values(keys.global)) {
+    const opened = action.match(/^mod\.open:(.+)$/)?.[1];
+    if (opened && opened !== 'picker') assert.ok(mods.includes(opened), action);
+    const panel = action.match(/^my-tabs\.panel-(.+)$/)?.[1];
+    if (panel) assert.ok(mods.includes(panel), action);
+  }
+  const zoom = Object.entries(keys.global).find(([, action]) => action === 'pane.zoom')[0];
+  for (const name of ['my-files', 'my-changes', 'jobs']) assert.equal(keys[`mod:${name}`][zoom], 'my-tabs.zoom-panel');
 });

@@ -1,9 +1,12 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
+# These tests describe the work Mac's catalog; OmarchyCatalogTest passes its own config.
+os.environ["PARKER_MACHINE"] = "mac"
 spec = importlib.util.spec_from_file_location("projects", Path(__file__).parents[1] / "mods/session-launcher/projects.py")
 projects = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(projects)
@@ -23,12 +26,46 @@ class CatalogTest(unittest.TestCase):
             (repos / "other/README.md").write_text("Other project overview")
             (repos / "linked/.git").write_text("gitdir: elsewhere")
             (repos / "CLAUDE.md").write_text("Parent instructions")
+            (home / "dotfiles").mkdir()  # extra folders are offered only when they exist
             rows = {row["name"]: row for row in projects.catalog(home)}
             self.assertEqual(set(rows), {"devclarity-vault", "other", "dotfiles"})
             self.assertIn("Default", rows["devclarity-vault"]["description"])
             self.assertIn("music mod", rows["dotfiles"]["description"])
             self.assertEqual(rows["other"]["description"], "Other project overview")
             json.dumps(list(rows.values()))
+
+
+OMARCHY = {"repo_roots": ["~/Projects"], "extra_folders": ["~/dotfiles", "~/omarchy-dotfiles"],
+           "default_folder": "~/Documents", "rules": ["Omarchy-only shell and tmux setup belongs in omarchy-dotfiles."]}
+
+
+class OmarchyCatalogTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        for name in ["Projects/rts-engine", "dotfiles", "Documents"]:
+            (self.home / name).mkdir(parents=True)
+        (self.home / "Projects/rts-engine/.git").mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_personal_repos_and_the_default_folder_are_offered_without_work_repos(self):
+        rows = {row["name"]: row for row in projects.catalog(self.home, OMARCHY)}
+        # omarchy-dotfiles is listed in the config but missing here, so it's skipped.
+        self.assertEqual(set(rows), {"rts-engine", "dotfiles", "Documents"})
+        self.assertIn("Default", rows["Documents"]["description"])
+
+    def test_planner_uses_the_machine_rules_and_default_folder(self):
+        asked = []
+
+        def ask(instruction, schema, home):
+            asked.append(instruction)
+            return {**DEFAULT_ROUTE, "project": str(self.home / "Documents")}
+        route = projects.plan({"request": "Plan my week"}, home=self.home, spaces=[], ask=ask, config=OMARCHY)
+        self.assertEqual(route["folder"], str(self.home / "Documents"))
+        self.assertIn("omarchy-dotfiles", asked[0])
+        self.assertNotIn("devclarity-vault", asked[0])
 
 
 class PlanTest(unittest.TestCase):

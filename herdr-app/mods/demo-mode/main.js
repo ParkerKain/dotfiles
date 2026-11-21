@@ -9,7 +9,8 @@ import { View, div } from "gpui-kit";
 import { checking, closeOverlay, exec, home, layouts, props, run, setShared, shared } from "herdr";
 
 const DEMO_LAYOUT = "Demo";
-const JOB = () => `${home()}/Documents/internal/repos/parker-agent-kit/jobs/job`;
+// The job engine (herdr-app/jobs/job), linked here by link.py.
+const JOB = () => `${home()}/.local/bin/job`;
 
 // Pause or resume jobs, then tell the Jobs panel to reload. A failure must not block the switch.
 function jobs(command) {

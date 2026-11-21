@@ -33,7 +33,7 @@ export default class Wallpaper extends View {
         this.layoutRows();
         const at = this.items.findIndex(w => w.path === this.current);
         if (at >= 0) this.sel = at;
-        if (!this.items.length) this.error = "No thumbnails yet. Run: python3 ~/dotfiles/herdr-app/frost.py --thumbs";
+        if (!this.items.length) this.error = "No thumbnails yet. Run: ~/dotfiles/herdr-app/frost --thumbs";
         cx.notify();
         this.reveal();
       } catch (error) {
@@ -89,8 +89,8 @@ export default class Wallpaper extends View {
     cx.notify();
     cx.spawn(async cx => {
       try {
-        // Through an interactive zsh so python3 is the shell's (Homebrew, with Pillow), not /usr/bin's.
-        const r = await exec("zsh", ["-ic", 'python3 "$@"', "zsh", `${home()}/dotfiles/herdr-app/frost.py`, w.path, "--blur", String(this.blur)], { cwd: home(), timeout: 60000 });
+        // ./frost finds a Python with Pillow on either machine (Homebrew's, or uv's on Omarchy).
+        const r = await exec(`${home()}/dotfiles/herdr-app/frost`, [w.path, "--blur", String(this.blur)], { cwd: home(), timeout: 120000 });
         this.busy = false;
         if (r.code !== 0) {
           this.error = (r.stderr.trim() || r.stdout.trim()).split("\n").pop();
