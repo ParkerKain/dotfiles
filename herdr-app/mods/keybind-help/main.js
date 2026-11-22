@@ -34,6 +34,10 @@ const GROUPS = [
     ["space.prev", "Previous space"],
     ["layout.switch", "Switch layout"],
   ]],
+  ["Files", [
+    ["my-files.toggle-wrap", "Wrap long lines"],
+    ["my-files.toggle-rendered", "Markdown: rendered or source"],
+  ]],
   ["Session launcher", [
     ["session-launcher.toggle-agent", "Toggle agent"],
     ["session-launcher.toggle-model", "Change model"],
@@ -70,8 +74,10 @@ export default class KeybindHelp extends View {
     const bindings = this.keys ?? {};
     const findKeys = action => Object.entries(bindings.global ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key));
     const row = ([action, label]) => {
-      const keys = action.startsWith("session-launcher.")
-        ? Object.entries(bindings["mod:session-launcher"] ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key))
+      // A mod's own keys (session launcher, Files) sit in its section and work while it has the keyboard.
+      const own = ["session-launcher", "my-files"].find(mod => action.startsWith(`${mod}.`));
+      const keys = own
+        ? Object.entries(bindings[`mod:${own}`] ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key))
         : findKeys(action);
       if (!keys.length) return null;
       return h_flex().id(action).items_center().justify_between().px(10).py(5).rounded(6)

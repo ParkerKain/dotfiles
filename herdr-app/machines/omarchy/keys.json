@@ -88,7 +88,9 @@
     "ctrl-shift-z": "my-tabs.zoom-panel"
   },
   "mod:my-files": {
-    "ctrl-shift-z": "my-tabs.zoom-panel"
+    "ctrl-shift-z": "my-tabs.zoom-panel",
+    "alt-z": "my-files.toggle-wrap",
+    "ctrl-shift-v": "my-files.toggle-rendered"
   },
   "mod:my-changes": {
     "ctrl-shift-z": "my-tabs.zoom-panel"

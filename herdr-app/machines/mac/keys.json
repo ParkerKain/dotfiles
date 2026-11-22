@@ -140,7 +140,9 @@
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:my-files": {
-    "cmd-shift-enter": "my-tabs.zoom-panel"
+    "cmd-shift-enter": "my-tabs.zoom-panel",
+    "alt-z": "my-files.toggle-wrap",
+    "cmd-shift-v": "my-files.toggle-rendered"
   },
   "mod:my-changes": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
