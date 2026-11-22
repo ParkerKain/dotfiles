@@ -135,14 +135,14 @@ test('number keys pick a model and then its effort, per agent', async () => {
   assert.equal(mod.pickNumber(3, cx), true);
   assert.equal(mod.picking, null);
   assert.equal(focus.at(-1), 'prompt');
-  assert.deepEqual([mod.models.claude.model.id, mod.models.claude.effort], ['claude-sonnet-5-5', 'high']);
+  assert.deepEqual([mod.models.claude.model.id, mod.models.claude.effort], ['sonnet', 'high']);
   assert.deepEqual([mod.models.codex.model.id, mod.models.codex.effort], ['gpt-6.2-sol', 'medium']);
   const {cx: run, settle} = runner();
   mod.text = 'Fix hooks';
   mod.start(run);
   await settle();
   const job = JSON.parse([...files.values()].at(-1));
-  assert.deepEqual(job.agent.run, ['claude', '--model', 'claude-sonnet-5-5', '--effort', 'high']);
+  assert.deepEqual(job.agent.run, ['claude', '--model', 'sonnet', '--effort', 'high']);
 });
 
 test('a model without the current effort falls back to medium', () => {
@@ -157,4 +157,32 @@ test('a model without the current effort falls back to medium', () => {
   mod.toggleModelPicker(cx);
   mod.pickNumber(4, cx);
   assert.deepEqual([mod.models.codex.model.id, mod.models.codex.effort], ['gpt-6-luna', 'medium']);
+});
+
+const cache = JSON.stringify({models: [
+  {slug: 'gpt-6.1-sol', visibility: 'list', priority: 4, supported_reasoning_levels: [{effort: 'low'}, {effort: 'medium'}]},
+  {slug: 'gpt-7-luna', visibility: 'list', priority: 3, supported_reasoning_levels: [{effort: 'low'}, {effort: 'high'}]},
+  {slug: 'gpt-7-sol', display_name: 'GPT-7-Sol', visibility: 'list', priority: 1, supported_reasoning_levels: [{effort: 'low'}, {effort: 'medium'}, {effort: 'ultra'}]},
+  {slug: 'gpt-reserve', visibility: 'hide', priority: 0, supported_reasoning_levels: [{effort: 'medium'}]}]});
+
+test('Codex models come from its cache, newest per family, in its menu order', async () => {
+  const {mod, files} = setup();
+  files.set(`${home}/.codex/models_cache.json`, cache);
+  mod.models = {codex: {model: {id: 'gpt-6.2-sol'}, effort: 'medium'}};
+  await mod.loadCodexModels({notify() {}});
+  assert.equal(JSON.stringify(mod.modelList('codex').map(m => [m.id, m.name, m.efforts])),
+    JSON.stringify([['gpt-7-sol', 'Sol 7', ['low', 'medium', 'ultra']], ['gpt-7-luna', 'Luna 7', ['low', 'high']]]));
+  assert.equal(mod.models.codex.model.id, 'gpt-7-sol');
+  assert.equal(mod.models.codex.effort, 'medium');
+});
+
+test('a hand-picked Codex model survives the cache load, and a missing cache keeps the built-in list', async () => {
+  const {mod, files} = setup();
+  await mod.loadCodexModels({notify() {}});
+  assert.equal(mod.modelList('codex')[0].id, 'gpt-6.2-sol');
+  files.set(`${home}/.codex/models_cache.json`, cache);
+  mod.codexTouched = true;
+  mod.models = {codex: {model: {id: 'gpt-7-luna'}, effort: 'medium'}};
+  await mod.loadCodexModels({notify() {}});
+  assert.deepEqual([mod.models.codex.model.id, mod.models.codex.effort], ['gpt-7-luna', 'low']);
 });

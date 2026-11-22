@@ -11,12 +11,14 @@ const mac = () => window()?.platform !== "linux";
 
 // Models the launcher offers for each agent, in the order their number keys pick them.
 // The first entry in each list is the default, and both default to medium effort.
+// Claude uses the CLI's family aliases, which always start the newest model in that family.
+// Codex's list is replaced by codexModels() from Codex's own model cache when that file reads.
 const MODELS = {
   claude: [
-    { id: "claude-opus-5-5", name: "Opus 5.5" },
-    { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
-    { id: "claude-fable-5-2", name: "Fable 5.2" },
-    { id: "claude-haiku-5-5", name: "Haiku 5.5" }
+    { id: "opus", name: "Opus" },
+    { id: "sonnet", name: "Sonnet" },
+    { id: "fable", name: "Fable" },
+    { id: "haiku", name: "Haiku" }
   ],
   codex: [
     { id: "gpt-6.2-sol", name: "Sol 6.2" },
@@ -30,11 +32,40 @@ const EFFORTS = {
   codex: ["low", "medium", "high", "xhigh", "max", "ultra"]
 };
 const DEFAULT_EFFORT = "medium";
-const defaultModels = () => ({
-  claude: { model: MODELS.claude[0], effort: DEFAULT_EFFORT },
-  codex: { model: MODELS.codex[0], effort: DEFAULT_EFFORT }
-});
+const CODEX_CACHE = () => `${home()}/.codex/models_cache.json`;
+const defaultChoice = (agent, models = MODELS[agent]) => {
+  const model = models[0];
+  const efforts = effortsFor(agent, model);
+  return { model, effort: efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : efforts[0] };
+};
+const defaultModels = () => ({ claude: defaultChoice("claude"), codex: defaultChoice("codex") });
 const effortsFor = (agent, model) => model.efforts ?? EFFORTS[agent];
+
+// The newest model in each Codex family (Sol, Astra, Terra, Luna), in Codex's own menu order.
+// Returns null when the cache is missing or unreadable, so the built-in list stays.
+function codexModels(text) {
+  let models;
+  try { models = JSON.parse(text ?? "")?.models; } catch { return null; }
+  if (!Array.isArray(models)) return null;
+  const families = new Set();
+  const list = models
+    .filter(m => m?.slug && m.visibility === "list")
+    .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
+    .filter(m => {
+      const family = m.slug.split("-").at(-1);
+      if (families.has(family)) return false;
+      families.add(family);
+      return true;
+    })
+    .slice(0, 9)
+    .map(m => {
+      const named = /^gpt-([\d.]+)-([a-z]+)$/i.exec(m.slug);
+      const efforts = (m.supported_reasoning_levels ?? []).map(l => l?.effort).filter(Boolean);
+      return { id: m.slug, name: named ? `${named[2][0].toUpperCase()}${named[2].slice(1)} ${named[1]}` : (m.display_name ?? m.slug),
+        ...(efforts.length ? { efforts } : {}) };
+    });
+  return list.length ? list : null;
+}
 
 // The flags that start each agent CLI on the chosen model and effort.
 function modelFlags(agent, choice) {
@@ -76,6 +107,7 @@ export default class SessionLauncher extends View {
     this.agent = "claude";
     // Model and effort per agent, so switching agents keeps each one's choice.
     this.models = defaultModels();
+    this.modelLists = { ...MODELS };
     // Model picker step: null when closed, then "model", then "effort".
     this.picking = null;
     this.busy = false;
@@ -99,6 +131,7 @@ export default class SessionLauncher extends View {
       // Usually cached by Herdr. Fetching now keeps Start from waiting on the agent check.
       this.agents = knownAgents().catch(() => null);
       if (!task) cx.spawn(async cx => this.restoreFailed(cx));
+      cx.spawn(async cx => this.loadCodexModels(cx));
       // The machine's default folder (vault on the work Mac, Documents on Omarchy) and starting agent.
       cx.spawn(async cx => {
         const r = await exec("python3", [HELPER, "default"], { timeout: 10000 }).catch(() => null);
@@ -149,6 +182,25 @@ export default class SessionLauncher extends View {
     this.closeModelPicker(cx);
   }
 
+  // Swaps in Codex's current model list. Keeps a model already picked by hand if it's still listed.
+  async loadCodexModels(cx) {
+    const list = codexModels(await readTextFile(CODEX_CACHE()).catch(() => null));
+    if (!list) return;
+    this.modelLists = { ...(this.modelLists ?? MODELS), codex: list };
+    const picked = this.codexTouched && list.find(m => m.id === this.models.codex.model.id);
+    if (picked) {
+      const efforts = effortsFor("codex", picked);
+      this.models.codex = { model: picked, effort: efforts.includes(this.models.codex.effort) ? this.models.codex.effort : defaultChoice("codex", [picked]).effort };
+    } else {
+      this.models.codex = defaultChoice("codex", list);
+    }
+    cx.notify();
+  }
+
+  modelList(agent = this.agent) {
+    return (this.modelLists ?? MODELS)[agent];
+  }
+
   choice() {
     this.models ??= defaultModels();
     return this.models[this.agent] ?? null;
@@ -174,10 +226,11 @@ export default class SessionLauncher extends View {
     const choice = this.choice();
     if (!this.picking || !choice) return false;
     if (this.picking === "model") {
-      const model = MODELS[this.agent][n - 1];
+      const model = this.modelList()[n - 1];
       if (!model) return false;
+      if (this.agent === "codex") this.codexTouched = true;
       const efforts = effortsFor(this.agent, model);
-      this.models[this.agent] = { model, effort: efforts.includes(choice.effort) ? choice.effort : DEFAULT_EFFORT };
+      this.models[this.agent] = { model, effort: efforts.includes(choice.effort) ? choice.effort : defaultChoice(this.agent, [model]).effort };
       this.picking = "effort";
       cx.notify();
       return true;
@@ -185,6 +238,7 @@ export default class SessionLauncher extends View {
     const effort = effortsFor(this.agent, choice.model)[n - 1];
     if (!effort) return false;
     choice.effort = effort;
+    if (this.agent === "codex") this.codexTouched = true;
     this.closeModelPicker(cx);
     return true;
   }
@@ -315,7 +369,7 @@ export default class SessionLauncher extends View {
       .bg(selected ? t.selected : t.raised).text_color(selected ? t.foreground : t.muted)
       .child(`${n} ${label}`).on_click((_e, cx) => { if (!this.busy) this.pickNumber(n, cx); });
     if (this.picking === "model") return row
-      .children(MODELS[this.agent].map((model, i) => chip(i + 1, model.name, model.id === choice.model.id)))
+      .children(this.modelList().map((model, i) => chip(i + 1, model.name, model.id === choice.model.id)))
       .child(hint("Press a number · Esc keeps it"));
     if (this.picking === "effort") return row
       .child(div().text_size(12).text_color(t.foreground).child(choice.model.name))
