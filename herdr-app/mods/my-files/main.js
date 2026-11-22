@@ -21,55 +21,58 @@ const EXTENSION = {
   cs: "c#", csx: "c#", kt: "java", kts: "java", gradle: "groovy",
   hpp: "cpp", hh: "cpp", cc: "cpp", cxx: "cpp",
   toml: "properties", ini: "properties", cfg: "properties", conf: "properties", env: "properties", editorconfig: "properties",
-  zsh: "sh", bash: "sh", fish: "sh", zshrc: "sh", bashrc: "sh", zshenv: "sh", zprofile: "sh", profile: "sh", envrc: "sh",
+  zsh: "sh", bash: "sh", fish: "sh", zshrc: "sh", bashrc: "sh", zshenv: "sh", zprofile: "sh", profile: "sh", bash_profile: "sh", envrc: "sh", dockerfile: "sh",
   rake: "rb", gemspec: "rb", ru: "rb", jbuilder: "rb", thor: "rb",
   pyi: "py", pyw: "py",
   scss: "css", sass: "css", less: "css",
   svelte: "html", vue: "html", cshtml: "html", razor: "html", htm: "html",
   svg: "xml", csproj: "xml", props: "xml", targets: "xml", xaml: "xml", plist: "xml", xsd: "xml",
-  markdown: "md", mdx: "md", lock: "yaml",
+  markdown: "md", mdx: "md",
 };
 // Whole file names, lower case, for files whose name says more than their extension.
 const FILENAME = {
   makefile: "makefile", gnumakefile: "makefile", dockerfile: "sh", containerfile: "sh", justfile: "makefile",
   gemfile: "rb", rakefile: "rb", brewfile: "rb", guardfile: "rb", vagrantfile: "rb", podfile: "rb", fastfile: "rb",
-  procfile: "yaml", "cargo.lock": "properties", "uv.lock": "properties", "poetry.lock": "properties", "package-lock.json": "json",
+  procfile: "yaml", "gemfile.lock": "yaml", "yarn.lock": "yaml", "pnpm-lock.yaml": "yaml", "flake.lock": "json", "pipfile.lock": "json",
+  "cargo.lock": "properties", "uv.lock": "properties", "poetry.lock": "properties", ".prettierrc": "json", ".babelrc": "json",
   ".gitignore": "properties", ".dockerignore": "properties", ".gitattributes": "properties", ".gitconfig": "properties",
   ".stow-local-ignore": "properties", ".npmrc": "properties", ".tool-versions": "properties", ".ruby-version": "txt",
 };
 
 // The language to hand the editor for a path inside the shown folder.
 function languageFor(path) {
+  const own = (table, key) => Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
   const name = path.split(/[\\/]/).pop().toLowerCase();
-  if (FILENAME[name]) return FILENAME[name];
-  // "Dockerfile.dev" and ".env.local" are named by their first part.
-  const first = name.replace(/^\./, "").split(".")[0];
-  if (name.startsWith("dockerfile.") || name.startsWith("makefile.")) return FILENAME[first];
-  if (name.startsWith(".env")) return "properties";
-  const ext = name.includes(".") ? name.split(".").pop() : "txt";
-  return EXTENSION[ext] ?? ext;
+  if (own(FILENAME, name)) return own(FILENAME, name);
+  // "Dockerfile.dev" is named by its first part.
+  if (name.startsWith("dockerfile.") || name.startsWith("makefile.")) return own(FILENAME, name.split(".")[0]);
+  if (name === ".env" || name.startsWith(".env.")) return "properties";
+  const ext = name.includes(".") ? name.split(".").pop() : "";
+  return own(EXTENSION, ext) ?? (ext || "txt");
 }
 
 function isMarkdown(path) {
   return languageFor(path) === "md";
 }
 
-// Markdown for the rendered view: YAML front matter becomes a code block, since the
-// renderer would otherwise read its closing "---" as a heading underline.
-function renderable(text) {
-  const clipped = text.length > RENDER_LIMIT ? text.slice(0, RENDER_LIMIT) + "\n\n… (file truncated)" : text;
-  const front = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(clipped);
-  if (!front) return clipped;
-  return "```yaml\n" + front[1] + "\n```\n\n" + clipped.slice(front[0].length);
+// Markdown split for the rendered view. YAML front matter comes off the top to be shown
+// on its own, since the renderer would read its closing "---" as a heading underline.
+// It has to start with a "key:" line, so a document that opens with a rule is left whole.
+function rendering(text) {
+  const whole = text.replace(/^\uFEFF/, "");
+  const clipped = whole.length > RENDER_LIMIT ? whole.slice(0, RENDER_LIMIT) + "\n\n… (file truncated)" : whole;
+  const front = /^---[ \t]*\r?\n([\w.-]+[ \t]*:[\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(clipped);
+  return front ? { front: front[1].split(/\r?\n/), body: clipped.slice(front[0].length) } : { front: null, body: clipped };
 }
 
 // Editor colors from the theme's terminal colors. Most themes name them by hue (ansi2 is
 // green, ansi5 magenta). Rosé Pine puts its own palette in those slots (ansi2 is pine,
-// ansi6 rose), so it gets the arrangement its editor themes use.
+// ansi5 iris, ansi6 rose), so it gets an arrangement close to its editor themes: pine
+// keywords, gold strings, rose functions and literals, iris types, plain variables.
 function syntaxColors(t, themeName) {
   const quiet = { comment: t.dim, operator: t.muted, punctuation: t.muted };
-  if (/^rose-pine/.test(themeName ?? "")) return { ...quiet, keyword: t.ansi2, string: t.ansi3, function: t.ansi6, type: t.ansi4,
-    number: t.ansi3, boolean: t.ansi6, constant: t.ansi3, variable: t.ansi5, "string.escape": t.ansi2 };
+  if (/^rose-pine/.test(themeName ?? "")) return { ...quiet, keyword: t.ansi2, string: t.ansi3, function: t.ansi6, type: t.ansi5,
+    number: t.ansi6, boolean: t.ansi6, constant: t.ansi3, variable: t.foreground, "string.escape": t.ansi2 };
   return { ...quiet, keyword: t.ansi5, string: t.ansi2, function: t.ansi4, type: t.ansi3,
     number: t.ansi1, boolean: t.ansi1, constant: t.ansi6, variable: t.ansi6, "string.escape": t.ansi3 };
 }
@@ -80,11 +83,16 @@ function themeName() {
   return typeof name === "string" ? name : name?.[s?.dark ? "dark" : "light"] ?? "";
 }
 
-// A saved on/off choice for this copy of the panel; on unless turned off.
-function saved(name) {
+// What the editor's colors depend on, to notice a theme change.
+function look() {
+  return JSON.stringify(syntaxColors(theme(), themeName()));
+}
+
+// An on/off choice kept for this copy of the panel; on unless turned off.
+function preference(name) {
   try { return localStorage.getItem(name) !== "off"; } catch { return true; }
 }
-function save(name, on) {
+function remember(name, on) {
   try { localStorage.setItem(name, on ? "on" : "off"); } catch {}
 }
 const PER_FOLDER = 500, TOTAL = 5000;
@@ -120,17 +128,31 @@ export default class Files extends View {
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
-        if (command === "focus") this.handle.focus();
-        if (command === "toggle-wrap") this.setWrap(!this.wrap);
-        if (command === "toggle-rendered") this.setRendered(!this.rendered);
+        // A failed command must not end the loop: the panel would stop taking focus and keys.
+        try { this.command(command); } catch (e) { this.fileError = String(e); }
         cx.notify();
       }
     });
     this.saved = new Map();
-    this.wrap = saved("wrap"); this.rendered = saved("rendered");
+    this.wrap = preference("wrap"); this.rendered = preference("rendered");
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
-    cx.timer.every(10000, cx => this.refresh(cx));
+    cx.timer.every(10000, cx => {
+      this.refresh(cx);
+      // An open source view keeps the colors it was made with; make it again after a theme change.
+      if (this.code && this.look !== look()) { this.rebuild(); cx.notify(); }
+    });
+  }
+
+  // Keys act only on what the header offers: Wrap for a source view, Rendered and Source for markdown.
+  command(command) {
+    if (command === "focus") this.handle.focus();
+    if (command === "toggle-wrap" && this.code) this.setWrap(!this.wrap);
+    if (command === "toggle-rendered" && this.text !== null && isMarkdown(this.file)) this.setRendered(!this.rendered);
+  }
+
+  close() {
+    this.code?.release(); this.code = null;
   }
 
   watch(root, cx) {
@@ -215,7 +237,7 @@ export default class Files extends View {
   }
 
   show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.text = null;
+    this.code?.release(); this.code = null; this.markdown = null; this.file = path; this.fileError = null; this.text = null;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
     cx.spawn(async cx => {
@@ -236,23 +258,31 @@ export default class Files extends View {
     return Boolean(this.file) && this.rendered && isMarkdown(this.file);
   }
 
-  // Makes the source view for the loaded file. Wrapping is fixed when an editor is made,
-  // so a change to it makes a new one. Called from tasks and clicks, never from render.
+  // Makes the view for the loaded file: the split markdown, or a source editor. Wrapping is
+  // fixed when an editor is made, so a change to it makes a new one. Called from tasks and
+  // clicks, never from render.
   build() {
-    this.code?.release(); this.code = null;
-    if (this.text === null || this.showsRendered()) return;
+    this.code?.release(); this.code = null; this.markdown = null;
+    if (this.text === null) return;
+    if (this.showsRendered()) { this.markdown = rendering(this.text); return; }
     const text = this.text;
+    this.look = look();
     this.code = EditorState.new({ language: languageFor(this.file), readonly: true, soft_wrap: this.wrap,
       value: text.length > PREVIEW_LIMIT ? text.slice(0, PREVIEW_LIMIT) + "\n… (file truncated)" : text,
       font_family: settings().font_family, font_size: 12, syntax: syntaxColors(theme(), themeName()) });
   }
 
+  // build() for a click, a key or the timer: a failure shows in the preview's place.
+  rebuild() {
+    try { this.build(); } catch { this.fileError = "Cannot preview this file"; }
+  }
+
   setWrap(on) {
-    this.wrap = on; save("wrap", on); this.build();
+    this.wrap = on; remember("wrap", on); this.rebuild();
   }
 
   setRendered(on) {
-    this.rendered = on; save("rendered", on); this.build();
+    this.rendered = on; remember("rendered", on); this.rebuild();
   }
 
   // A header button; `on` marks the choice in effect.
@@ -264,9 +294,15 @@ export default class Files extends View {
 
   // What the open file's preview shows, below the header.
   preview(t) {
-    if (this.text === null) return div().p(12).text_color(t.dim).child(this.fileError || "Loading file…");
-    if (this.showsRendered()) return div().id(`files-rendered-${this.file}`).flex_1().min_h(0).overflow_y_scrollbar().px(16).py(12).text_size(13)
-      .child(TextView.markdown(`files-markdown-${this.file}`, renderable(this.text)).selectable(true));
+    if (this.fileError || this.text === null) return div().p(12).text_color(t.dim).child(this.fileError || "Loading file…");
+    if (this.showsRendered() && this.markdown) {
+      const { front, body } = this.markdown;
+      return v_flex().id(`files-rendered-${this.file}`).flex_1().min_h(0).overflow_y_scrollbar().px(16).py(12).gap(12).text_size(13)
+        // Front matter keeps its lines, set apart from the document and wrapping like it.
+        .when(Boolean(front), el => el.child(v_flex().flex_none().px(10).py(8).gap(2).rounded(8).border_1().border_color(t.border).bg(t.surface).text_size(12).text_color(t.muted)
+          .children(front.map(line => div().child(line || " ")))))
+        .child(TextView.markdown(`files-markdown-${this.file}`, body).selectable(true));
+    }
     return this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child("Loading file…");
   }
 
@@ -298,11 +334,13 @@ export default class Files extends View {
           .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.root?.split(/[\\/]/).pop() ?? "")))
         .when(Boolean(this.file), el => el.child(div().min_w(0).truncate().font_semibold().child(this.file.split("/").pop()))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(this.file.split("/").slice(0, -1).join("/"))))
-        .when(Boolean(this.file) && this.text !== null, el => el
-          .when(isMarkdown(this.file), el => el.child(h_flex().flex_none().gap(2)
+        .when(Boolean(this.file) && this.text !== null && !this.fileError, el => el
+          // Rendered and Source are one choice, so they share a track; Wrap is a switch of its own.
+          .when(isMarkdown(this.file), el => el.child(h_flex().flex_none().p(2).gap(2).rounded(8).bg(t.surface)
             .child(this.pill("files-rendered", "Rendered", this.rendered, "Show the formatted text", t, () => this.setRendered(true)))
             .child(this.pill("files-source", "Source", !this.rendered, "Show the markdown source", t, () => this.setRendered(false)))))
-          .when(!this.showsRendered(), el => el.child(this.pill("files-wrap", "Wrap", this.wrap, this.wrap ? "Long lines wrap. Click to scroll sideways instead" : "Long lines scroll sideways. Click to wrap them", t, () => this.setWrap(!this.wrap))))))
+          .when(!this.showsRendered(), el => el.child(this.pill("files-wrap", "Wrap", this.wrap, this.wrap ? "Long lines wrap. Click to scroll sideways instead" : "Long lines scroll sideways. Click to wrap them", t, () => this.setWrap(!this.wrap))
+            .border_1().border_color(this.wrap ? t.selected : t.border)))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

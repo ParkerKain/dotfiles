@@ -141,7 +141,7 @@
   },
   "mod:my-files": {
     "cmd-shift-enter": "my-tabs.zoom-panel",
-    "alt-z": "my-files.toggle-wrap",
+    "cmd-shift-z": "my-files.toggle-wrap",
     "cmd-shift-v": "my-files.toggle-rendered"
   },
   "mod:my-changes": {
