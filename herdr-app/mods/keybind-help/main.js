@@ -16,6 +16,8 @@ const GROUPS = [
     ["app.palette", "Command palette"],
   ]],
   ["Sidebars", [
+    ["my-tabs.panel-files", "Files"],
+    ["my-tabs.panel-changes", "Changes"],
     ["my-tabs.panel-ops-tasks", "Tasks"],
     ["my-tabs.panel-jobs", "Jobs"],
     ["my-tabs.panel-day-view", "Calendar"],

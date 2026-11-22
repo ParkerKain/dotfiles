@@ -66,6 +66,8 @@
     "ctrl-shift-j": "my-tabs.panel-jobs",
     "alt-p": "my-tabs.hints",
     "alt-g": "space-sessions.hints",
+    "alt-e": "my-tabs.panel-files",
+    "alt-shift-g": "my-tabs.panel-changes",
     "ctrl-shift-r": "my-tabs.refresh"
   },
   "terminal": {

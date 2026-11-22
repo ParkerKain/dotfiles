@@ -46,6 +46,8 @@
     "cmd-shift-a": "my-tabs.panel-artifacts",
     "cmd-shift-k": "my-tabs.panel-call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
+    "cmd-e": "my-tabs.panel-files",
+    "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
     "cmd-=": "app.zoom_in",
     "cmd-+": "app.zoom_in",
