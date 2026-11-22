@@ -49,7 +49,7 @@ function languageFor(path) {
   if (name.startsWith("dockerfile.") || name.startsWith("makefile.")) return own(FILENAME, name.split(".")[0]);
   if (name === ".env" || name.startsWith(".env.") || name.endsWith("ignore")) return "properties";
   const parts = name.split("."), ext = parts.length > 1 ? parts.pop() : "";
-  // ".zshrc.local" is a zshrc: a dot file with an unknown ending goes by its first part.
+  // ".zshrc.local" is a zshrc: a dot file whose ending EXTENSION lacks goes by its first part.
   return own(EXTENSION, ext) ?? (name.startsWith(".") ? own(EXTENSION, parts[1]) : undefined) ?? (ext || "txt");
 }
 
