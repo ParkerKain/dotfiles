@@ -385,8 +385,8 @@ esac
         self.assertIn("--label herdr.space=spVAULT", calls)
         self.assertNotIn("space.new", calls)
 
-    def visible_job(self):
-        self.write("visible", f"""\
+    def visible_job(self, name="visible", extra=""):
+        body = textwrap.dedent(f"""\
             repo = "{self.repo}"
             agent = "codex"
             space = "Jobs"
@@ -394,6 +394,7 @@ esac
             require_visible = true
             prompt = "do the job"
             """)
+        self.write(name, body + extra)
 
     def test_visible_job_without_local_space_or_app_stops_before_launch(self):
         self.visible_job()
@@ -422,6 +423,43 @@ esac
                                       "herdr-app ls", "hc send --json --if idle t1 do the job"])
         row, = json.loads(self.job("status").stdout)["jobs"]
         self.assertEqual(row["last"]["session"], "t1")
+
+    def test_finance_jobs_opt_in_to_automatic_review_in_the_visible_tab(self):
+        tab = {"id": "tb1", "name": "Visible job", "terminals": [{"terminal": "t1"}]}
+        log = self.fake_herdr([{"id": "sp1", "name": "Jobs", "tabs": [tab]}],
+                              tab_reply={"tab": "tb1", "terminal": "t1"}, agent_status="idle")
+        for name in ("household-budget", "weekly-finances"):
+            with self.subTest(name=name):
+                self.visible_job(name, extra="approve_for_me = true\n")
+                log.write_text("")
+                self.job("run", name)
+                calls = log.read_text().splitlines()
+                launch = json.loads(calls[1].split("tab.new ", 1)[1])
+                self.assertEqual(launch["argv"], ["codex", "--no-daemon", "--approve-for-me"])
+                self.assertNotIn("task", launch)
+                self.assertEqual(calls[4:6], ["herdr-app ls", "hc send --json --if idle t1 do the job"])
+
+    def test_automatic_review_rejects_invalid_type_agent_visibility_or_job(self):
+        log = self.fake_herdr([])
+        for name, agent, visible, option, error in [
+            ("weekly-finances", "codex", "true", '"true"', "must be a boolean"),
+            ("weekly-finances", "codex", "true", "1", "must be a boolean"),
+            ("weekly-finances", "claude", "true", "true", "only supported for visible Codex jobs"),
+            ("weekly-finances", "codex", "false", "true", "only supported for visible Codex jobs"),
+            ("other", "codex", "true", "true", "only supported for visible Codex jobs"),
+        ]:
+            with self.subTest(name=name, agent=agent, visible=visible, option=option):
+                self.write(name, f"""\
+                    repo = "{self.repo}"
+                    agent = "{agent}"
+                    require_visible = {visible}
+                    approve_for_me = {option}
+                    prompt = "do the job"
+                    """)
+                out = self.job("run", name, check=False)
+                self.assertNotEqual(out.returncode, 0)
+                self.assertIn(error, out.stderr)
+                self.assertFalse(log.exists())
 
     def test_visible_job_withholds_prompt_on_creation_placement_or_startup_failure(self):
         self.visible_job()

@@ -1,0 +1,22 @@
+repo = "~/dotfiles"
+agent = "codex"
+space = "Jobs"
+tab = "Weekly finances run"
+require_visible = true
+approve_for_me = true
+close_when_done = false
+prompt = """
+Give Parker a concise weekly finances update in this visible Herdr tab. Use the supported read-only Finances connection and check the source coverage and freshness for each section.
+
+1. Compare posted month-to-date spending by category with the same elapsed calendar days of the previous month, using Eastern dates and capping the prior period at month-end. State the date ranges and highlight the largest changes. Count purchases once, exclude internal transfers and credit card repayments, and apply attributable refunds. Flag coverage gaps or ambiguous classifications that affect the comparison.
+2. Update net worth using dated balances or valuations for assets and liabilities, including verified manual records when available. Report change since the prior comparable snapshot when available. If coverage or dates are incomplete, identify the missing balances, valuations, snapshot dates, or prior baseline. Withhold a complete or current figure until the required inputs are available. Never infer net worth from transactions.
+3. Suggest a few practical next steps grounded in the evidence. If evidence is incomplete, limit suggestions to what it supports, including concrete ways to resolve the gaps.
+
+If any section is blocked, report which read or dataset is unavailable, what evidence is missing, and the smallest action Parker can take to proceed. If Finances is unavailable in this Herdr session, ask Parker to make the existing read-only Finances connection available to this session. If a read is awaiting approval, leave the prompt open and name the pending action. Complete any sections with sufficient evidence.
+
+Keep the result or blocker in this tab. Use aggregate figures and omit raw transaction rows, account identifiers, and credentials. Make no financial or access changes, write no finance data to the repo, and send no messages or external updates.
+"""
+
+[schedule]
+times = ["08:00"]
+weekdays = [6]

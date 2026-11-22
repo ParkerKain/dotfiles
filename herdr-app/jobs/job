@@ -10,6 +10,7 @@ A source folder holds TOML files of two kinds:
   job   repo, agent, prompt or prompt_file, optional [schedule], space (default
         "Jobs", created when missing) and tab.
         require_visible = true requires an open app and an existing local space.
+        approve_for_me = true opts the two visible Codex Finance jobs into automatic review.
         `job run <name>` starts one interactive agent under herdr-core (hc), so
         it shows in the Herdr app and phone inbox and can take another turn.
   hook  check = "<script>" and interval = <seconds>. The script answers
@@ -133,6 +134,13 @@ def load(name):
 
 def checked(item):
     name, path = item["name"], item["path"]
+    approve_for_me = item.get("approve_for_me", False)
+    if not isinstance(approve_for_me, bool):
+        raise DefError(f"{name}: approve_for_me must be a boolean")
+    if approve_for_me and (item["kind"] != "job" or item.get("agent") != "codex"
+                           or item.get("require_visible") is not True
+                           or name not in {"household-budget", "weekly-finances"}):
+        raise DefError(f"{name}: approve_for_me is only supported for visible Codex jobs household-budget and weekly-finances")
     if item["kind"] == "hook":
         item["script"] = (path.parent / item["check"]).resolve()
         if not item["script"].exists():
@@ -274,8 +282,11 @@ def start_visible(job, prompt):
     # Let the app create the visible tab. Keep the task out of argv and the tab
     # creation request so Codex cannot receive it before placement is verified.
     tab_name = job.get("tab") or job["name"].replace("-", " ").capitalize()
+    argv = AGENTS[job["agent"]].copy()
+    if job.get("approve_for_me"):
+        argv.append("--approve-for-me")
     made = herdr_do("tab.new", {"space": space, "name": tab_name, "folder": job["repo"],
-                                "argv": AGENTS[job["agent"]], "focus": False})
+                                "argv": argv, "focus": False})
     addr = made.get("terminal")
     if not addr:
         die(f"{job['name']}: Herdr did not confirm tab creation; prompt withheld")
