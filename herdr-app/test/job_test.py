@@ -344,7 +344,7 @@ class JobTest(unittest.TestCase):
         self.job("uninstall", "mail-inbox", env=env)
         self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
 
-    def fake_herdr(self, spaces):
+    def fake_herdr(self, spaces, *, ls_exit=0, tab_reply=None, agent_status="working"):
         """Fake hc and herdr-app that log their arguments; run reports a working agent."""
         log = self.tmp / "calls.log"
         bin_ = self.tmp / "bin"
@@ -352,15 +352,16 @@ class JobTest(unittest.TestCase):
 echo "hc $*" >> {log}
 case "$1" in
   run) echo '{{"address": "t1"}}' ;;
-  get) echo '{{"state": "live", "status": {{"state": "working"}}, "turn": 1}}' ;;
+  get) echo '{{"state": "live", "status": {{"state": "{agent_status}"}}, "turn": 1}}' ;;
   *) echo '{{}}' ;;
 esac
 """)
         (bin_ / "herdr-app").write_text(f"""#!/bin/sh
 echo "herdr-app $*" >> {log}
 case "$1 $2" in
-  "ls "*) echo '{json.dumps({"spaces": spaces})}' ;;
+  "ls "*) echo '{json.dumps({"spaces": spaces})}'; exit {ls_exit} ;;
   "do space.new") echo '{{"space": "spNEW", "tab": "tbSHELL", "terminal": "t9"}}' ;;
+  "do tab.new") echo '{json.dumps(tab_reply or {})}' ;;
   *) echo '{{"ok": true}}' ;;
 esac
 """)
@@ -383,6 +384,65 @@ esac
         calls = log.read_text()
         self.assertIn("--label herdr.space=spVAULT", calls)
         self.assertNotIn("space.new", calls)
+
+    def visible_job(self):
+        self.write("visible", f"""\
+            repo = "{self.repo}"
+            agent = "codex"
+            space = "Jobs"
+            tab = "Visible job"
+            require_visible = true
+            prompt = "do the job"
+            """)
+
+    def test_visible_job_without_local_space_or_app_stops_before_launch(self):
+        self.visible_job()
+        for ls_exit, error in [(1, "Herdr app unavailable"), (0, "local Herdr space 'Jobs' unavailable")]:
+            with self.subTest(ls_exit=ls_exit):
+                log = self.fake_herdr([{"id": "spREMOTE", "name": "Jobs", "machine": "mac"}], ls_exit=ls_exit)
+                log.write_text("")
+                out = self.job("run", "visible", "--force", check=False)
+                self.assertNotEqual(out.returncode, 0)
+                self.assertIn(error, out.stderr)
+                self.assertEqual(log.read_text().splitlines(), ["herdr-app ls"])
+
+    def test_visible_job_sends_only_after_idle_and_placement_readback(self):
+        self.visible_job()
+        tab = {"id": "tb1", "name": "Visible job", "terminals": [{"terminal": "t1"}]}
+        log = self.fake_herdr([{"id": "sp1", "name": "Jobs", "tabs": [tab]}],
+                              tab_reply={"tab": "tb1", "terminal": "t1"}, agent_status="idle")
+        out = json.loads(self.job("run", "visible").stdout)
+        self.assertEqual((out["started"], out["address"]), (True, "t1"))
+        calls = log.read_text().splitlines()
+        self.assertEqual(json.loads(calls[1].split("tab.new ", 1)[1]), {
+            "space": "sp1", "name": "Visible job", "folder": str(self.repo),
+            "argv": ["codex", "--no-daemon"], "focus": False,
+        })
+        self.assertEqual(calls[2:6], ["hc wait --json t1 --timeout 30", "hc get --json t1",
+                                      "herdr-app ls", "hc send --json --if idle t1 do the job"])
+        row, = json.loads(self.job("status").stdout)["jobs"]
+        self.assertEqual(row["last"]["session"], "t1")
+
+    def test_visible_job_withholds_prompt_on_creation_placement_or_startup_failure(self):
+        self.visible_job()
+        tab = {"id": "tb1", "name": "Visible job", "terminals": [{"terminal": "t1"}]}
+        reply = {"tab": "tb1", "terminal": "t1"}
+        for tabs, tab_reply, error, kill in [
+            ([], None, "did not confirm tab creation", False),
+            ([{**tab, "name": "Other tab"}], reply, "could not verify placement", True),
+            ([tab], reply, "agent did not become idle", False),
+        ]:
+            with self.subTest(error=error):
+                log = self.fake_herdr([{"id": "sp1", "name": "Jobs", "tabs": tabs}],
+                                      tab_reply=tab_reply, agent_status="blocked")
+                log.write_text("")
+                out = self.job("run", "visible", check=False)
+                self.assertNotEqual(out.returncode, 0)
+                self.assertIn(error, out.stderr)
+                calls = log.read_text()
+                self.assertNotIn("do the job", calls)
+                self.assertNotIn("hc run", calls)
+                self.assertEqual("hc kill --json t1" in calls, kill)
 
     def test_systemd_words_escape_percent_and_dollar(self):
         sys.path.insert(0, str(ROOT))

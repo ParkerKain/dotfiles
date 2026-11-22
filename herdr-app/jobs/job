@@ -9,6 +9,7 @@ A source folder holds TOML files of two kinds:
 
   job   repo, agent, prompt or prompt_file, optional [schedule], space (default
         "Jobs", created when missing) and tab.
+        require_visible = true requires an open app and an existing local space.
         `job run <name>` starts one interactive agent under herdr-core (hc), so
         it shows in the Herdr app and phone inbox and can take another turn.
   hook  check = "<script>" and interval = <seconds>. The script answers
@@ -200,9 +201,12 @@ def herdr_spaces():
     if not shutil.which("herdr-app", path=PATH):
         return None
     out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, env=clean_env())
+    if out.returncode != 0:
+        return None
     try:
-        return json.loads(out.stdout).get("spaces", [])
-    except json.JSONDecodeError:
+        spaces = json.loads(out.stdout).get("spaces")
+        return spaces if isinstance(spaces, list) else None
+    except (json.JSONDecodeError, AttributeError):
         return None
 
 
@@ -258,6 +262,41 @@ def paused():
 
 # ---- run a job ------------------------------------------------------------
 
+def start_visible(job, prompt):
+    space_name = job.get("space") or "Jobs"
+    spaces = herdr_spaces()
+    if spaces is None:
+        die(f"{job['name']}: Herdr app unavailable; no agent started")
+    space = next((s["id"] for s in spaces if s.get("name") == space_name and not s.get("machine")), None)
+    if not space:
+        die(f"{job['name']}: local Herdr space '{space_name}' unavailable; no agent started")
+
+    # Let the app create the visible tab. Keep the task out of argv and the tab
+    # creation request so Codex cannot receive it before placement is verified.
+    tab_name = job.get("tab") or job["name"].replace("-", " ").capitalize()
+    made = herdr_do("tab.new", {"space": space, "name": tab_name, "folder": job["repo"],
+                                "argv": AGENTS[job["agent"]], "focus": False})
+    addr = made.get("terminal")
+    if not addr:
+        die(f"{job['name']}: Herdr did not confirm tab creation; prompt withheld")
+
+    hc("wait", addr, "--timeout", "30", check=False)
+    info = hc("get", addr, check=False)
+    tabs = (t for s in herdr_spaces() or []
+            if s.get("id") == space and s.get("name") == space_name and not s.get("machine")
+            for t in s.get("tabs", []))
+    if not any(t.get("name") == tab_name
+               and any(p.get("terminal") == addr for p in t.get("terminals", [])) for t in tabs):
+        hc("kill", addr)
+        die(f"{job['name']}: could not verify placement in '{space_name}' / '{tab_name}'; prompt withheld")
+
+    record(job["name"], addr, addr)
+    if info.get("state") != "live" or (info.get("status") or {}).get("state") != "idle":
+        die(f"{job['name']}: agent did not become idle in '{tab_name}' ({addr}); prompt withheld")
+    hc("send", "--if", "idle", addr, prompt)
+    return addr
+
+
 def run(args):
     job = load(args.name)
     if job["kind"] != "job":
@@ -267,15 +306,7 @@ def run(args):
                           "why": f"jobs are paused; {job['name']} skipped (job resume, or run it with --force)"}))
         return
     session = f"{job['name']}-{time.strftime('%m%d-%H%M')}"[:32]
-    # Started from a Herdr terminal (an agent or a person): nest the session under
-    # it, and let it outlive that terminal. Started by the scheduler or the app: no parent.
-    parent = os.environ.get("HC_TERMINAL_ID")
-    family = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
-    cmd = ["run", "--bg", *family, "--name", session, "--cwd", job["repo"], "--label", f"job={job['name']}"]
-    # Every job shows in a space: its own `space`, else "Jobs".
-    space, placeholder = ensure_space(job.get("space") or "Jobs", job["repo"])
-    if space:
-        cmd += ["--label", f"herdr.space={space}"]
+    require_visible = job.get("require_visible") is True
     prompt = job["prompt"]
     close = bool(job.get("close_when_done"))
     if close:
@@ -286,18 +317,29 @@ def run(args):
                    f"As your very last step, write one line to `{outcome}`: `ok: <what changed, or no changes>` "
                    "when the run finished, or `blocked: <why>` when something stopped it. "
                    "After `ok`, the job runner exits this session; after `blocked`, or no file, it stays open for me.\n")
-    started = hc(*cmd, *AGENTS[job["agent"]], prompt)
-    addr = started.get("address", session)
-    if placeholder:
-        herdr_do("tab.close", {"id": placeholder, "confirmed": True})
-    name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
+    if require_visible:
+        addr = session = start_visible(job, prompt)
+    else:
+        # A manually started job can outlive its parent terminal.
+        parent = os.environ.get("HC_TERMINAL_ID")
+        family = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
+        cmd = ["run", "--bg", *family, "--name", session, "--cwd", job["repo"], "--label", f"job={job['name']}"]
+        space, placeholder = ensure_space(job.get("space") or "Jobs", job["repo"])
+        if space:
+            cmd += ["--label", f"herdr.space={space}"]
+        started = hc(*cmd, *AGENTS[job["agent"]], prompt)
+        addr = started.get("address", session)
+        if placeholder:
+            herdr_do("tab.close", {"id": placeholder, "confirmed": True})
+        name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
     # A folder the agent has not trusted yet stops at a dialog with no status,
     # and the first message waits behind it. Say so instead of looking like it ran.
     hc("wait", addr, "--timeout", "45", check=False)
     info = hc("get", addr, check=False)
     status = (info.get("status") or {}).get("state")
-    record(job["name"], session, addr)
-    if status is None or (status == "idle" and info.get("turn", 0) == 0):
+    if not require_visible:
+        record(job["name"], session, addr)
+    if not require_visible and (status is None or (status == "idle" and info.get("turn", 0) == 0)):
         print(json.dumps({"session": session, "address": addr, "started": False,
                           "why": "agent is not working: probably a folder trust question. "
                                  f"Open it (hc attach {session}) and answer; the prompt is delivered once the folder is trusted, so do not resend it."}))

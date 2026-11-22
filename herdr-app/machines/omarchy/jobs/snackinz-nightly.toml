@@ -1,0 +1,101 @@
+repo = "~/dotfiles"
+agent = "codex"
+space = "Jobs"
+tab = "Snackinz nightly"
+require_visible = true
+close_when_done = false
+
+prompt = """
+Add five new recipes to Parker's owner-private Snackinz recipe database at
+https://parker-jen-supper-table.parkerjkain.chatgpt.site (project
+appgprj_6ad55d1e0d608191bf862754d64ea3a1).
+
+## Preflight
+
+Discover the current tool schemas for the authenticated Snackinz connector. Use
+only `get_recipe_catalog`, `get_recipe_details`, `get_planner_context`,
+`upload_recipe_image` and `append_recipe_batch` for Snackinz. All five must be
+visible. If a tool is missing, authorization fails or an approval is required,
+stop and identify the tool and blocker in Herdr. Leave any approval prompt
+pending. Use the documented connector payloads with the existing account and
+permissions. Never use a substitute database, browser write, direct API,
+source edit, deployment, credentials, approval change or ChatGPT delivery.
+
+## Read and reconcile
+
+Use the run date in America/New_York to set `nightly:YYYY-MM-DD` once, even if
+the run crosses midnight. Look up that key with `get_recipe_catalog` before
+research or writes. If a receipt exists, read it and all five full recipes at
+the same revision. Verify the key, five distinct recipe IDs and five matching
+immutable image IDs. Leave the verified receipt in Herdr and stop. Report any
+incomplete or inconsistent receipt as a blocker and make no writes.
+
+With the catalog revision as `expectedRevision`, page the complete catalog,
+all full recipe details and `get_planner_context` for preferences, feedback,
+favorites, cooked meals, weeks and requests. Use the complete household
+exclusions, preferences and saved notes. Keep every read at the same revision.
+On a revision conflict, restart the snapshot with the same batch key. Keep
+blocked historical recipes out of the selections and include them in duplicate
+checks. Compare IDs, normalized titles, canonical source URLs and near-identical
+recipes within the batch and against the full database.
+
+## Research five recipes
+
+Choose a varied mix of simple, flavorful, reasonably healthy meals with
+familiar ingredients. Favor options such as chicken, beef, vegetarian bowls,
+tacos, flatbreads, prepared ingredients and low-prep slow-cooker meals. Avoid
+excess heat or acidity and repetitive creamy chicken pastas. Use at least four
+servings and preserve useful larger yields. Keep ordinary recipes within 45
+minutes, preferably 30. For slow-cooker recipes, distinguish hands-on time,
+elapsed time and finishing tasks.
+
+Exclude all fish and shellfish, including crustaceans, molluscs and seafood
+derivatives. Check sauces, prepared ingredients and seasonings for hidden
+sources. Flag exact-package label review where needed. Never claim cross-contact
+safety, omit warnings, disguise ingredients or weaken allergy constraints.
+
+Verify ingredients and methods on the original recipe sites. Preserve source
+links and attribution, label adaptations and write original concise summaries
+and paraphrased methods. Match each convenience shortcut across ingredients,
+instructions and shopping quantities. Use the recipe photo only with verified
+reuse permission or a reusable license, and record the source, credit and
+evidence. Otherwise use an original generated illustration and label it as
+such. Never invent permission, image provenance or product prices.
+
+## Validate, append and verify
+
+Before uploading, have five complete, distinct recipes and five verified or
+generated images ready. Check again for the date receipt and a current revision
+before uploading and before committing. If the revision changed, reread and
+reconcile the full snapshot, including exclusions and duplicates. If a receipt
+appears at either checkpoint, verify it and stop further writes.
+
+Upload the five images with `upload_recipe_image` and keep the returned immutable
+IDs and provenance. Validate the entire five-recipe payload with
+`append_recipe_batch` in `validateOnly` mode. Fix only the recipe or schema
+issues identified by validation, then validate the complete batch again. Send
+one validated commit for this date and revision, with a stable operation ID.
+Treat a definite stale-revision rejection as a signal to reread, reconcile and
+revalidate before any new attempt. On an uncertain write outcome, independently
+check the receipt and details. If you cannot verify the outcome, stop and report
+it. Never blindly retry a write or upload.
+
+Use a separate `get_recipe_catalog` call for the committed receipt, then
+`get_recipe_details` for all five full records at the receipt read's revision.
+Verify the batch key, recipe IDs and immutable image IDs against the submitted
+batch and both readbacks. On a read conflict, restart verification from the
+receipt. Claim success only after both reads agree. Preserve all menus, the ten
+weekly choices, selected meals, locked snapshots, favorites, feedback and
+personalized versions. Make no other changes, including grocery carts, orders,
+sharing, repository files or deployments. Do not attempt code repair.
+
+Leave the receipt, verification revision and recipe IDs in this Herdr tab. Stay
+quiet elsewhere after success. On a blocker, record the exact failure, useful
+research or IDs already obtained, any confirmed or uncertain writes and the
+action needed to proceed. If a source or image fails, preserve the useful work
+in Herdr and report the failure. Do not claim an incomplete batch succeeded.
+"""
+
+[schedule]
+# The Linux job runner interprets this in Omarchy's local timezone (America/New_York).
+times = ["23:00"]
