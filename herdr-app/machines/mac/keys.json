@@ -106,6 +106,7 @@
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
+    "cmd-shift-m": "session-launcher.toggle-model",
     "cmd-shift-s": "session-launcher.start"
   },
   "terminal": {

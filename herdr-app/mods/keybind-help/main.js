@@ -36,6 +36,7 @@ const GROUPS = [
   ]],
   ["Session launcher", [
     ["session-launcher.toggle-agent", "Toggle agent"],
+    ["session-launcher.toggle-model", "Change model"],
     ["session-launcher.start", "Start session"],
   ]],
 ];

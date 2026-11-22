@@ -68,7 +68,7 @@ test('Start closes the window right away and hands routing to a detached helper'
     const job = JSON.parse(files.get(detached[0].args[3]));
     assert.equal(job.request, 'Fix hooks');
     assert.deepEqual(job.plan, preview);
-    assert.deepEqual(job.agent, {key: 'codex', run: ['codex', '--no-daemon']});
+    assert.deepEqual(job.agent, {key: 'codex', run: ['codex', '--no-daemon', '-m', 'gpt-6.2-sol', '-c', 'model_reasoning_effort=medium']});
     assert.equal(calls.at(-1).command, 'closeOverlay');
   }
 });
@@ -116,4 +116,45 @@ test('typing during a routing call discards stale results and reroutes', async (
   assert.equal(mod.route.reason, 'new request');
   assert.equal(count, 2);
   assert.equal(mod.routing, false);
+});
+
+test('number keys pick a model and then its effort, per agent', async () => {
+  const {mod, files} = setup({knownAgents: async () => [
+    {key: 'claude', installed: true, run: ['claude']}, {key: 'codex', installed: true, run: ['codex', '--no-daemon']}]});
+  const focus = [];
+  mod.handle = {focus: () => focus.push('menu')};
+  mod.input = {focus: () => focus.push('prompt')};
+  const cx = {notify() {}};
+  mod.agent = 'claude';
+  mod.toggleModelPicker(cx);
+  assert.equal(mod.picking, 'model');
+  assert.equal(focus.at(-1), 'menu', 'number keys must not type into the prompt');
+  assert.equal(mod.pickNumber(9, cx), false);
+  assert.equal(mod.pickNumber(2, cx), true);
+  assert.equal(mod.picking, 'effort');
+  assert.equal(mod.pickNumber(3, cx), true);
+  assert.equal(mod.picking, null);
+  assert.equal(focus.at(-1), 'prompt');
+  assert.deepEqual([mod.models.claude.model.id, mod.models.claude.effort], ['claude-sonnet-5-5', 'high']);
+  assert.deepEqual([mod.models.codex.model.id, mod.models.codex.effort], ['gpt-6.2-sol', 'medium']);
+  const {cx: run, settle} = runner();
+  mod.text = 'Fix hooks';
+  mod.start(run);
+  await settle();
+  const job = JSON.parse([...files.values()].at(-1));
+  assert.deepEqual(job.agent.run, ['claude', '--model', 'claude-sonnet-5-5', '--effort', 'high']);
+});
+
+test('a model without the current effort falls back to medium', () => {
+  const {mod} = setup();
+  mod.handle = {focus() {}};
+  mod.input = {focus() {}};
+  const cx = {notify() {}};
+  mod.toggleModelPicker(cx);
+  mod.pickNumber(1, cx);
+  mod.pickNumber(6, cx);
+  assert.equal(mod.models.codex.effort, 'ultra');
+  mod.toggleModelPicker(cx);
+  mod.pickNumber(4, cx);
+  assert.deepEqual([mod.models.codex.model.id, mod.models.codex.effort], ['gpt-6-luna', 'medium']);
 });

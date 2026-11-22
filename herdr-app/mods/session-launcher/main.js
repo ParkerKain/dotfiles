@@ -9,6 +9,40 @@ const FAILED = `${home()}/.cache/herdr-app/session-launcher-failed.json`;
 
 const mac = () => window()?.platform !== "linux";
 
+// Models the launcher offers for each agent, in the order their number keys pick them.
+// The first entry in each list is the default, and both default to medium effort.
+const MODELS = {
+  claude: [
+    { id: "claude-opus-5-5", name: "Opus 5.5" },
+    { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
+    { id: "claude-fable-5-2", name: "Fable 5.2" },
+    { id: "claude-haiku-5-5", name: "Haiku 5.5" }
+  ],
+  codex: [
+    { id: "gpt-6.2-sol", name: "Sol 6.2" },
+    { id: "gpt-6.2-astra", name: "Astra 6.2" },
+    { id: "gpt-6.1-terra", name: "Terra 6.1" },
+    { id: "gpt-6-luna", name: "Luna 6", efforts: ["low", "medium", "high", "xhigh", "max"] }
+  ]
+};
+const EFFORTS = {
+  claude: ["low", "medium", "high", "xhigh", "max"],
+  codex: ["low", "medium", "high", "xhigh", "max", "ultra"]
+};
+const DEFAULT_EFFORT = "medium";
+const defaultModels = () => ({
+  claude: { model: MODELS.claude[0], effort: DEFAULT_EFFORT },
+  codex: { model: MODELS.codex[0], effort: DEFAULT_EFFORT }
+});
+const effortsFor = (agent, model) => model.efforts ?? EFFORTS[agent];
+
+// The flags that start each agent CLI on the chosen model and effort.
+function modelFlags(agent, choice) {
+  if (agent === "claude") return ["--model", choice.model.id, "--effort", choice.effort];
+  if (agent === "codex") return ["-m", choice.model.id, "-c", `model_reasoning_effort=${choice.effort}`];
+  return [];
+}
+
 // Writes the clipboard's image to a PNG file. Returns false when it holds no image.
 async function saveClipboardImage(path) {
   if (!mac()) {
@@ -40,6 +74,10 @@ export default class SessionLauncher extends View {
     // Tasks Play: optional extra instructions appended to the task's prompt.
     this.extra = "";
     this.agent = "claude";
+    // Model and effort per agent, so switching agents keeps each one's choice.
+    this.models = defaultModels();
+    // Model picker step: null when closed, then "model", then "effort".
+    this.picking = null;
     this.busy = false;
     this.error = "";
     this.origin = focused();
@@ -77,6 +115,7 @@ export default class SessionLauncher extends View {
         const command = await nextCommand();
         if (command === "start") this.start(cx);
         if (command === "toggle-agent") this.toggleAgent(cx);
+        if (command === "toggle-model") this.toggleModelPicker(cx);
       }
     });
   }
@@ -107,8 +146,47 @@ export default class SessionLauncher extends View {
     if (this.busy) return;
     this.agentTouched = true;
     this.agent = this.agent === "claude" ? "codex" : "claude";
+    this.closeModelPicker(cx);
+  }
+
+  choice() {
+    this.models ??= defaultModels();
+    return this.models[this.agent] ?? null;
+  }
+
+  // Opens the numbered model list. Focus moves off the prompt so number keys pick instead of typing.
+  toggleModelPicker(cx) {
+    if (this.busy) return;
+    if (this.picking) { this.closeModelPicker(cx); return; }
+    this.picking = "model";
+    this.handle.focus();
+    cx.notify();
+  }
+
+  closeModelPicker(cx) {
+    this.picking = null;
     this.input.focus();
     cx.notify();
+  }
+
+  // Number keys pick a model, then its effort. Returns true when the key was used.
+  pickNumber(n, cx) {
+    const choice = this.choice();
+    if (!this.picking || !choice) return false;
+    if (this.picking === "model") {
+      const model = MODELS[this.agent][n - 1];
+      if (!model) return false;
+      const efforts = effortsFor(this.agent, model);
+      this.models[this.agent] = { model, effort: efforts.includes(choice.effort) ? choice.effort : DEFAULT_EFFORT };
+      this.picking = "effort";
+      cx.notify();
+      return true;
+    }
+    const effort = effortsFor(this.agent, choice.model)[n - 1];
+    if (!effort) return false;
+    choice.effort = effort;
+    this.closeModelPicker(cx);
+    return true;
   }
 
   request() {
@@ -189,7 +267,8 @@ export default class SessionLauncher extends View {
         const agents = (await this.agents) ?? await knownAgents();
         const agent = agents.find(a => a.installed && (a.key?.toLowerCase() === selectedAgent || a.name?.toLowerCase().includes(selectedAgent)));
         if (!agent) throw new Error(`${selectedAgent} is not installed in Herdr.`);
-        job.agent = { key: selectedAgent, run: agent.run };
+        const choice = this.models?.[selectedAgent] ?? defaultModels()[selectedAgent];
+        job.agent = { key: selectedAgent, run: [...agent.run, ...(choice ? modelFlags(selectedAgent, choice) : [])] };
         const path = `${JOBS}/${Date.now()}.json`;
         await exec("mkdir", ["-p", JOBS]);
         await writeTextFile(path, JSON.stringify(job), null);
@@ -225,6 +304,29 @@ export default class SessionLauncher extends View {
     cx.notify();
   }
 
+  // The current model and effort, and while picking, the numbered options for the current step.
+  modelRow(t) {
+    const choice = this.choice();
+    const row = h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
+      .child(div().text_size(11).text_color(t.dim).child("Model"));
+    if (!choice) return row;
+    const hint = text => div().text_size(11).text_color(t.dim).child(text);
+    const chip = (n, label, selected) => div().cursor_pointer().px(9).py(4).rounded(6)
+      .bg(selected ? t.selected : t.raised).text_color(selected ? t.foreground : t.muted)
+      .child(`${n} ${label}`).on_click((_e, cx) => { if (!this.busy) this.pickNumber(n, cx); });
+    if (this.picking === "model") return row
+      .children(MODELS[this.agent].map((model, i) => chip(i + 1, model.name, model.id === choice.model.id)))
+      .child(hint("Press a number · Esc keeps it"));
+    if (this.picking === "effort") return row
+      .child(div().text_size(12).text_color(t.foreground).child(choice.model.name))
+      .children(effortsFor(this.agent, choice.model).map((effort, i) => chip(i + 1, effort, effort === choice.effort)))
+      .child(hint("Press a number · Enter keeps it"));
+    return row
+      .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(t.raised).text_color(t.foreground)
+        .child(`${choice.model.name} · ${choice.effort}`).on_click((_e, cx) => this.toggleModelPicker(cx)))
+      .child(hint(mac() ? "⌘⇧M change model" : "Ctrl+Shift+M change model"));
+  }
+
   render() {
     const t = theme();
     const p = props() ?? {};
@@ -232,7 +334,10 @@ export default class SessionLauncher extends View {
     const choosing = !this.route && (this.routing || this.busy) && Boolean(this.text.trim() || this.busy);
     return v_flex().id("session-launcher").track_focus(this.handle).w_full().h_full().overflow_hidden().p(18).gap(12).bg(t.popover)
       .on_key_down((e, cx) => {
+        if (this.picking && !e.modifiers.platform && !e.modifiers.control && /^[1-9]$/.test(e.key)) { if (this.pickNumber(Number(e.key), cx)) cx.stop_propagation(); return; }
+        if (this.picking && (e.key === "escape" || e.key === "enter")) { this.closeModelPicker(cx); cx.stop_propagation(); return; }
         if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
+        if (e.key.toLowerCase() === "m" && e.modifiers.platform && e.modifiers.shift) { this.toggleModelPicker(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
         // Ctrl+V pastes an image, as in Claude Code. ⌘V reaches pasteImage through the textarea's paste_other.
@@ -248,6 +353,7 @@ export default class SessionLauncher extends View {
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "codex") this.toggleAgent(cx); }))
         .child(div().text_size(11).text_color(t.dim).child(mac() ? "⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image" : "Ctrl+Shift+A switch agent · Ctrl+Shift+S start · Ctrl+V pastes an image")))
+      .child(this.modelRow(t))
       .child(v_flex().flex_shrink_0().gap(4)
         .child(h_flex().items_center().gap(8)
           .child(div().flex_1().text_size(12).text_color(t.foreground).child(choosing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : `Destination · ${this.defaultName ?? "the default folder"} by default`))

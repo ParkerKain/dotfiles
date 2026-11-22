@@ -81,6 +81,7 @@
   },
   "mod:session-launcher": {
     "ctrl-shift-a": "session-launcher.toggle-agent",
+    "ctrl-shift-m": "session-launcher.toggle-model",
     "ctrl-shift-s": "session-launcher.start"
   },
   "mod:jobs": {
