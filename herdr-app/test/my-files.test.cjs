@@ -10,7 +10,7 @@ function load(overrides = {}) {
     .replace(/^import .*;\n/gm, '').replace('export default class ', 'globalThis.Mod = class ');
   const store = new Map();
   const context = {View: class {}, localStorage: {getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value)},
-    theme: () => ({}), settings: () => ({theme: 'rose-pine-moon', font_family: 'Mono'}), ...overrides};
+    theme: () => ({}), themes: () => [], settings: () => ({theme: 'rose-pine-moon', font_family: 'Mono'}), ...overrides};
   vm.runInNewContext(code, context);
   return context;
 }
@@ -23,7 +23,7 @@ test('file types the editor has no grammar for use the closest one it has', () =
     'machines/mac.toml': 'properties', '.env.local': 'properties', '.gitignore': 'properties',
     'app/views/resources/index.html.erb': 'erb', 'app/models/resource.rb': 'rb', 'lib/tasks/demo.rake': 'rb',
     'Gemfile': 'rb', 'Gemfile.lock': 'yaml', 'flake.lock': 'json', 'other.lock': 'lock', 'api.dockerfile': 'sh', '.envrc': 'sh', '.env': 'properties',
-    'constructor': 'txt', 'a.constructor': 'constructor', '__proto__': 'txt', 'notes.': 'txt', '.bash_profile': 'sh', 'Rakefile': 'rb', 'Makefile': 'makefile', 'Dockerfile': 'sh', 'docker/Dockerfile.dev': 'sh',
+    'constructor': 'txt', 'a.constructor': 'constructor', '__proto__': 'txt', 'notes.': 'txt', '.bash_profile': 'sh', '.gitignore': 'properties', '.stow-local-ignore': 'properties', '.zshrc.local': 'sh', 'Jenkinsfile': 'groovy', 'nb.ipynb': 'json', '.hidden': 'hidden', 'Rakefile': 'rb', 'Makefile': 'makefile', 'Dockerfile': 'sh', 'docker/Dockerfile.dev': 'sh',
     '.zshrc': 'sh', 'zsh/main.zshrc': 'sh', 'link.py': 'py', 'styles/site.scss': 'css',
     'README.md': 'md', 'docs/guide.markdown': 'md', 'LICENSE': 'txt', 'C:\\repo\\Program.cs': 'c#',
   };
@@ -45,6 +45,7 @@ test('front matter comes off the top and the rest is left alone', () => {
   assert.deepEqual(plain(rendering('---\nname: x\ndescription: y\n---\n\n# Title\n')), {front: ['name: x', 'description: y'], body: '\n# Title\n'});
   assert.deepEqual(plain(rendering('---\r\nname: x\r\n---\r\nBody')), {front: ['name: x'], body: 'Body'});
   assert.deepEqual(plain(rendering('\uFEFF---\ndescription: |\n  ```\n  x\n  ```\n---\nBody')), {front: ['description: |', '  ```', '  x', '  ```'], body: 'Body'});
+  assert.deepEqual(plain(rendering('---\n# note\n"title": x\n---\nBody')), {front: ['# note', '"title": x'], body: 'Body'});
   for (const text of ['# Title\n\n---\n\nText\n\n---\n', '---\nnever closed\n', '', 'Title\n---\nText\n---\n', '---\n\n# Title\n\ntext\n\n---\nmore'])
     assert.deepEqual(plain(rendering(text)), {front: null, body: text}, text);
 });
@@ -68,7 +69,7 @@ test('syntax colors cover every slot and Rosé Pine themes use their own arrange
   }
   assert.equal(syntaxColors(t, 'graphite').keyword, 'a5');
   assert.equal(syntaxColors(t, 'rose-pine-dawn').keyword, 'a2');
-  assert.equal(syntaxColors({...t, foreground: 'fg'}, 'rose-pine').variable, 'fg');
+  assert.equal(syntaxColors(t, 'rose-pine').variable, 'fg');
 });
 
 test('the theme name follows the appearance when a layout names a light and dark pair', () => {
@@ -76,6 +77,9 @@ test('the theme name follows the appearance when a layout names a light and dark
   assert.equal(load({settings: () => ({theme: {light: 'rose-pine-dawn', dark: 'rose-pine'}, dark: true})}).themeName(), 'rose-pine');
   assert.equal(load({settings: () => ({theme: {light: 'rose-pine-dawn', dark: 'rose-pine'}, dark: false})}).themeName(), 'rose-pine-dawn');
   assert.equal(load({settings: () => ({})}).themeName(), '');
+  const picked = load({theme: () => ({ansi1: 'r', ansi2: 'g', ansi3: 'y', ansi4: 'b', ansi5: 'm', ansi6: 'c'}), settings: () => ({theme: 'graphite'}),
+    themes: () => [{name: 'nord', colors: {ansi1: 'x'}}, {name: 'rose-pine-dawn', colors: {ansi1: 'r', ansi2: 'g', ansi3: 'y', ansi4: 'b', ansi5: 'm', ansi6: 'c'}}]});
+  assert.equal(picked.themeName(), 'rose-pine-dawn');
 });
 
 // A panel with a file loaded, and every editor it makes recorded.
@@ -161,6 +165,35 @@ test('an editor that cannot be made shows an error in place of the preview', () 
   mod.setWrap(false);
   assert.equal(mod.fileError, 'Cannot preview this file');
   assert.equal(mod.code, null);
+});
+
+test('a preview recovers after a failed editor', () => {
+  let fail = true;
+  const context = load({EditorState: {new() { if (fail) throw Error('no grammar'); return {release() {}}; }}});
+  const mod = new context.Mod();
+  Object.assign(mod, {wrap: true, rendered: true, file: 'README.md', text: '# Hi', code: null});
+  mod.build();
+  mod.setRendered(false);
+  assert.equal(mod.fileError, 'Cannot preview this file');
+  mod.command('toggle-rendered');
+  assert.equal(mod.fileError, null);
+  assert.equal(mod.markdown.body, '# Hi');
+  fail = false;
+  mod.setRendered(false);
+  assert.equal(mod.fileError, null);
+  assert.notEqual(mod.code, null);
+});
+
+test('picking the view that already shows keeps its editor', () => {
+  const {mod, made} = panel('README.md', '# Hi');
+  mod.rendered = false;
+  mod.build();
+  mod.setRendered(false);
+  mod.setWrap(true);
+  assert.equal(made.length, 1);
+  assert.equal(made[0].released, false);
+  mod.close();
+  assert.equal(made[0].released, true);
 });
 
 const nowhere = {spaces: () => [], panes: () => [], focused: () => null};
