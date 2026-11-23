@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, panes, focused, layout, theme, run, checking, setAgentOrder, openOverlay, nextCommand } from "herdr";
+import { agents, spaces, panes, focused, layout, theme, run, hc, checking, setAgentOrder, openOverlay, nextCommand } from "herdr";
 import { SAMPLE_SPACES, SAMPLE_AGENTS, summary } from "./model.js";
 
 // Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
@@ -38,6 +38,27 @@ export default class SpaceSessions extends View {
       const saved = JSON.parse(localStorage.getItem("collapsed-spaces") ?? "[]");
       this.collapsed = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === "string") : []);
     } catch { this.collapsed = new Set(); }
+    try {
+      const saved = JSON.parse(localStorage.getItem("collapsed-machines") ?? "[]");
+      this.collapsedMachines = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === "string") : []);
+    } catch { this.collapsedMachines = new Set(); }
+    // A remote machine's name is its address; `hc machine ls` knows its host name (omarchy).
+    this.hosts = {};
+    if (!this.sample) cx.spawn(async cx => {
+      try {
+        const out = await hc(["machine", "ls", "--json"]);
+        for (const m of JSON.parse(out.stdout).machines ?? []) if (m.name && m.host) this.hosts[m.name] = m.host;
+        cx.notify();
+      } catch {}
+    });
+  }
+  machineKey(space) { return space.machine ?? ""; }
+  machineLabel(key) { return key ? (this.hosts[key] ?? key) : "This machine"; }
+  toggleMachine(key, cx) {
+    if (this.collapsedMachines.has(key)) this.collapsedMachines.delete(key);
+    else this.collapsedMachines.add(key);
+    try { localStorage.setItem("collapsed-machines", JSON.stringify([...this.collapsedMachines])); } catch {}
+    cx.notify();
   }
   allSpaces() { return this.sample ? SAMPLE_SPACES : spaces(); }
   allAgents() { return this.sample ? SAMPLE_AGENTS : agents(); }
@@ -105,7 +126,11 @@ export default class SpaceSessions extends View {
   }
 
   renderSpaces(t) {
-    const all = this.allSpaces(), allAgents = this.allAgents();
+    const allAgents = this.allAgents();
+    const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
+    const multi = keys.length > 1;
+    const all = keys.flatMap(k => this.allSpaces().filter(s => this.machineKey(s) === k));
+    const shown = all.filter(s => !multi || !this.collapsedMachines.has(this.machineKey(s)));
     const grouped = true;
     // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them.
     const tabOrder = all.flatMap(space => (space.tabs ?? []).map(tab => tab.id));
@@ -116,12 +141,12 @@ export default class SpaceSessions extends View {
       if (this.handle.is_focused()) this.hadFocus = true;
       else if (this.hadFocus) this.endHints(false);
     } else this.hadFocus = false;
-    const targets = all.flatMap(space => this.collapsed.has(space.id) ? [{kind:"space", id:space.id}]
+    const targets = shown.flatMap(space => this.collapsed.has(space.id) ? [{kind:"space", id:space.id}]
       : (space.tabs ?? []).map(tab => ({kind:"tab", id:tab.id})));
     const names = labels(targets.length);
     this.hintMap = targets.map((target, i) => [names[i], target]);
     const labelFor = (kind, id) => this.hinting ? this.hintMap.find(([, x]) => x.kind === kind && x.id === id)?.[0] : null;
-    const cards = all.map(space => {
+    const cardFor = space => {
       const expanded = !this.collapsed.has(space.id);
       const details = summary(space, allAgents);
       const count = space.tabs?.length ?? 0;
@@ -164,6 +189,24 @@ export default class SpaceSessions extends View {
         .border_1().border_color(space.active ? t.input : t.border).bg(tint(t.surface,"20"))
         .child(heading)
         .when(grouped && expanded, el => el.child(v_flex().id(`sessions-${space.id}`).pl(14).pr(2).gap(2).children(sessions)));
+    };
+    const cards = !multi ? all.map(cardFor) : keys.flatMap(key => {
+      const own = all.filter(s => this.machineKey(s) === key);
+      const open = !this.collapsedMachines.has(key);
+      const counts = own.map(s => summary(s, allAgents).counts);
+      const blocked = counts.reduce((n, c) => n + c.blocked, 0), working = counts.reduce((n, c) => n + c.working, 0);
+      const busy = blocked ? `${blocked} needs you` : working ? `${working} working` : "";
+      const label = this.machineLabel(key);
+      const header = h_flex().id(`machine-${key || "local"}`).gap(5).items_center().px(12).pt(6).pb(2)
+        .cursor_pointer().text_color(t.dim).hover(s => s.text_color(t.foreground))
+        .tooltip(`${open ? "Collapse" : "Expand"} ${label}`)
+        .accessibility_label(`${open ? "Collapse" : "Expand"} ${label}`)
+        .on_click((_e, cx) => this.toggleMachine(key, cx))
+        .child(div().w(10).flex_none().text_size(10).child(open ? "▾" : "▸"))
+        .child(div().flex_1().min_w(0).truncate().text_size(10.5).font_semibold().child(label.toUpperCase()))
+        .when(!open && Boolean(busy), el => el.child(div().text_size(10).text_color(blocked ? t.blocked : t.dim).child(busy)))
+        .child(div().text_size(10).child(String(own.length)));
+      return [header, ...(open ? own.map(cardFor) : [])];
     });
     return v_flex().id("space-sessions").track_focus(this.handle).size_full().min_h(0).text_size(12.5).bg(t.chrome)
       .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key); cx.stop_propagation(); cx.notify(); })
