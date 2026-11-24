@@ -1,7 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, panes, focused, layout, theme, run, hc, checking, setAgentOrder, openOverlay, nextCommand } from "herdr";
-import { SAMPLE_SPACES, SAMPLE_AGENTS, summary } from "./model.js";
+import { agents, spaces, panes, focused, layout, theme, run, hc, checking, setAgentOrder, openOverlay, nextCommand, terminals } from "herdr";
+import { SAMPLE_SPACES, SAMPLE_AGENTS, summary, ownerTabs } from "./model.js";
 
 // Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
 const KEYS = "asdfghjklqwertyuiopzxcvbnm";
@@ -167,7 +167,11 @@ export default class SpaceSessions extends View {
           .text_color(space.active ? t.foreground : t.muted).child(space.name))
         .when(Boolean(busy), el => el.child(div().text_size(10).text_color(details.counts.blocked ? t.blocked : t.dim).child(busy)))
         .child(div().px(5).py(1).rounded(4).text_size(10).text_color(t.dim).child(String(count)));
-      const sessions = (space.tabs ?? []).map((tab,index) => {
+      // A tab whose agent another agent's session started (herdr-delegate, hc run) sits under that session's tab.
+      const owners = ownerTabs(space.tabs ?? [], allAgents, this.sample ? [] : terminals());
+      const childTabs = id => (space.tabs ?? []).filter(x => owners.get(x.id) === id);
+      const topTabs = (space.tabs ?? []).filter(x => !owners.has(x.id));
+      const renderTab = (tab, index, depth) => {
         const selected = space.active && tab.active;
         const tabAgents = allAgents.filter(a => a.tab === tab.id);
         const program = tabAgents[0]?.program;
@@ -183,8 +187,11 @@ export default class SpaceSessions extends View {
         const paneRows = tabAgents.length > 1 ? tabAgents.map(agent => this.renderAgentRow(t, agent, space, tab)) : [];
         return v_flex().id(`row-${tab.id}`).child(row)
           .when(paneRows.length > 0, el => el.child(v_flex().id(`panes-${tab.id}`).pl(20).pb(2).children(paneRows)))
-          .when(index < count - 1 && !selected, el => el.child(div().h(1).ml(28).mr(8).bg(tint(t.foreground,"1b"))));
-      });
+          .when(childTabs(tab.id).length > 0 && depth < 4, el => el.child(v_flex().id(`owned-${tab.id}`).pl(14).children(
+            childTabs(tab.id).map((child, i) => renderTab(child, i, depth + 1)))))
+          .when(depth === 0 && index < topTabs.length - 1 && !selected, el => el.child(div().h(1).ml(28).mr(8).bg(tint(t.foreground,"1b"))));
+      };
+      const sessions = topTabs.map((tab, index) => renderTab(tab, index, 0));
       return v_flex().id(`space-${space.id}`).gap(0).mx(7).my(3).px(4).py(3).rounded(8)
         .border_1().border_color(space.active ? t.input : t.border).bg(tint(t.surface,"20"))
         .child(heading)

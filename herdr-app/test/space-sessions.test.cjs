@@ -52,3 +52,13 @@ test('typing a label selects that tab and ends jump mode, Esc returns focus',()=
  mod.hintKey('s');assert.equal(mod.hinting,false);assert.equal(mod.picked,undefined);
  mod.startHints();mod.hintKey('escape');assert.equal(mod.hinting,false);
 });
+test('a tab started by another tab\'s agent nests under that tab, chains nest and cycles stay visible',()=>{
+ const ctx={};vm.runInNewContext(fs.readFileSync(path.join(folder,'model.js'),'utf8').replace(/^export /gm,'')+'\nthis.ownerTabs=ownerTabs;',ctx);
+ const tabs=[{id:'main'},{id:'w1'},{id:'w2'},{id:'other'}];
+ const agents=[{address:'t1',tab:'main'},{address:'t2',tab:'main'},{address:'t3',tab:'w1'},{address:'t4',tab:'w2'},{address:'t9',tab:'other'}];
+ const owners=ctx.ownerTabs(tabs,agents,[{address:'t2',parent:'t1'},{address:'t3',parent:'t1'},{address:'t4',parent:'t3'},{address:'t9',parent:'gone'}]);
+ assert.equal(owners.get('w1'),'main');assert.equal(owners.get('w2'),'w1');
+ assert.equal(owners.has('main'),false);assert.equal(owners.has('other'),false);
+ const cyc=ctx.ownerTabs([{id:'a'},{id:'b'}],[{address:'x',tab:'a'},{address:'y',tab:'b'}],[{address:'x',parent:'y'},{address:'y',parent:'x'}]);
+ assert.ok(cyc.size<2);
+});
