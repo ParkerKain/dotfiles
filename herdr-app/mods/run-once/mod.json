@@ -1,1 +1,13 @@
-{ "place": "none", "title": "Run command", "overlay": { "width": 460, "height": 112 } }
+{
+  "place": "none",
+  "title": "Run command",
+  "overlay": { "width": 460, "height": 112 },
+  "palette": [
+    {
+      "title": "Run command",
+      "command": "mod.open",
+      "args": { "name": "run-once" },
+      "words": "shell zsh run once"
+    }
+  ]
+}
