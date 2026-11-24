@@ -114,7 +114,7 @@ export default class SpaceSessions extends View {
   renderAgentRow(t, agent, space, tab) {
     const program = agent.program;
     const selected = space.active && tab.active && agent.focused;
-    const label = agent.title || program?.name || agent.address;
+    const label = agent.pane_name || agent.title || program?.name || agent.address;
     return h_flex().id(`agent-${agent.address}`).gap(6).items_center().px(8).py(3)
       .cursor_pointer().hover(s => s.bg(t.hover))
       .on_click(() => { this.act("tab.select", {id:tab.id}); this.act("pane.focus", {pane:agent.pane}); })
