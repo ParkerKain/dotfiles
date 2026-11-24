@@ -18,6 +18,7 @@
     "cmd-shift-n": "mod.open:session-launcher",
     "cmd-shift-e": "mod.open:run-once",
     "cmd-shift-r": "mod.open:revive",
+    "cmd-alt-d": "mod.open:diagnose-session",
     "cmd-p": "mod.open:picker",
     "cmd-shift-p": "app.palette",
     "cmd-,": "app.settings",
