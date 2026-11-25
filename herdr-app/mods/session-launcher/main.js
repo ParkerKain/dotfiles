@@ -398,9 +398,11 @@ export default class SessionLauncher extends View {
         // On Linux Ctrl+V is the textarea's own paste, which already reaches paste_other.
         if (mac() && e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
       })
-      .child(div().flex_shrink_0().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
+      // One line: a long Tasks Play title wrapped in the fixed-height dialog and squeezed the prompt to nothing.
+      .child(div().flex_shrink_0().min_w(0).truncate().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
       // Keep padding outside the native editor so its scroll viewport matches its visible height.
-      .child(v_flex().flex_1().min_h(0).p(10).rounded(8).border_1().border_color(t.input).bg(t.background)
+      // The minimum keeps the prompt clickable however much the rows below wrap.
+      .child(v_flex().flex_1().min_h(72).p(10).rounded(8).border_1().border_color(t.input).bg(t.background)
         .child(Textarea.new(this.input).flex_1().min_h(0).w_full().text_color(t.foreground)))
       .child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
@@ -413,7 +415,7 @@ export default class SessionLauncher extends View {
           .child(div().flex_1().text_size(12).text_color(t.foreground).child(choosing ? "Choosing destination…" : this.route ? `Destination · ${this.route.project_name}` : `Destination · ${this.defaultName ?? "the default folder"} by default`))
           .child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Change folder").on_click((_e, cx) => this.changeFolder(cx)))
           .when(Boolean(this.override), el => el.child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Auto").on_click((_e, cx) => { if (!this.busy) { this.override = null; this.scheduleRoute(cx); } }))))
-        .when(Boolean(this.route), el => el.child(div().text_size(11).text_color(t.muted).child(this.route.reason))))
+        .when(Boolean(this.route), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(this.route.reason))))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
       .child(h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
