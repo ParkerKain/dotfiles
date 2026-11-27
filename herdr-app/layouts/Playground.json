@@ -89,7 +89,7 @@
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "pg-diagnose"
                     },
                     "reveal": "always",
                     "height": 30,

@@ -16,7 +16,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
-import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, theme } from "herdr";
+import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, settings, theme } from "herdr";
 import { lastLine } from "./lib/lastline.js";
 
 const PANEL_H = 132;
@@ -162,7 +162,9 @@ export default class DiagnoseHeader extends View {
       .opacity(this.grown ? 1 : 0)
       .transition("opacity", { duration: GROW_MS, easing: "ease-out" })
       .overflow_hidden()
-      .bg(t.background)
+      .ml(this.originX ?? 0)
+      // Opaque: Frosted's theme background is translucent, which made the panel unreadable.
+      .bg(/^#[0-9a-f]{6}/i.test(t.background ?? "") ? t.background.slice(0, 7) + "f5" : t.background)
       .border_color(t.border)
       .border_l(1).border_r(1)
       .when(bottom, el => el.border_t(1).rounded_t(8))
@@ -211,7 +213,11 @@ export default class DiagnoseHeader extends View {
       .when(!bottom, el => el.border_b(1))
       .border_color(this.open ? alpha(t.accent, 0.6) : t.border)
       .text_size(12)
-      .on_size_change((size) => { this.width = size.width; })
+      // on_size_change reports window px; the panel is laid out in layout px.
+      .on_size_change((size) => { this.width = size.width / (Number(settings()?.zoom) || 1); })
+      // A popup in a header mod is placed from the header's local origin, so it lands at the
+      // window's left edge. Learn the header's window origin from any mouse move and shift by it.
+      .on_window_mouse_move((e) => { if (e.local_position) { this.originX = e.position.x - e.local_position.x; } })
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
