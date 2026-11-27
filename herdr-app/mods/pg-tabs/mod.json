@@ -1,0 +1,15 @@
+{
+  "place": "none",
+  "title": "Tabs (playground)",
+  "palette": [
+    { "title": "Tasks", "command": "pg-tabs.panel-ops-tasks", "group": "Panels (playground)", "words": "todo ops tasks" },
+    { "title": "Jobs", "command": "pg-tabs.panel-jobs", "group": "Panels (playground)", "words": "scheduled jobs hooks" },
+    { "title": "Calendar", "command": "pg-tabs.panel-day-view", "group": "Panels (playground)", "words": "day view agenda" },
+    { "title": "Artifacts", "command": "pg-tabs.panel-artifacts", "group": "Panels (playground)" },
+    { "title": "Call", "command": "pg-tabs.panel-call-sheet", "group": "Panels (playground)", "words": "call sheet" },
+    { "title": "Factory", "command": "pg-tabs.panel-factory", "group": "Panels (playground)" },
+    { "title": "Claude usage", "command": "pg-tabs.panel-claude-usage", "group": "Panels (playground)", "words": "claude code limits team usage tokens" },
+    { "title": "Files", "command": "pg-tabs.panel-files", "group": "Panels (playground)", "words": "file browser source" },
+    { "title": "Changes", "command": "pg-tabs.panel-changes", "group": "Panels (playground)", "words": "git diff uncommitted" }
+  ]
+}

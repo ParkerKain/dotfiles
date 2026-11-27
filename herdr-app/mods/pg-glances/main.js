@@ -1,14 +1,18 @@
 // Playground prototype: panel glances in the status bar. Instead of a drawer or icons, the
 // bottom row carries one short glance per panel (tasks due, next call, the reddest Lock-in
 // session, Factory, artifacts). Nothing sits over a terminal. Clicking a glance opens its
-// panel in the side column; the Lock-in glance drops the pin line (pg-pins).
+// panel in the side column and clicking it again closes it; the Lock-in glance drops the pin
+// line (pg-pins). Opening and closing go through the shared "pg-panel.motion" handshake
+// (as pg-tabs does), so panels that honor it fade and slide in and out.
 // A glance that changes after the first read flashes once; one that needs you breathes.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { checking, exec, layout, run, theme, window as appWindow } from "herdr";
+import { checking, exec, layout, run, setShared, shared, theme, window as appWindow } from "herdr";
 import { POLL_MS, SOURCES, alpha, find, isoToday } from "./lib/sources.js";
 
 const SHOWN = ["ops-tasks", "day-view", "lock-in", "factory", "artifacts"];
+const MOTION = "pg-panel.motion", OUT_MS = 170;
+const motion = (id, phase) => { const at = Date.now(); setShared(MOTION, { id, phase, at }); return at; };
 const MAX_W = { "ops-tasks": 120, "day-view": 170, "lock-in": 170, factory: 150, artifacts: 140 };
 
 // The status bar has room for a few words, so each glance gets a shorter label.
@@ -67,12 +71,26 @@ export default class Glances extends View {
     this.seen[s.id] = label;
   }
 
-  open(s) {
+  // Opens the glance's panel, or closes it when it is already open on that panel.
+  open(s, cx) {
     // Lock-in drops the pin line under the day strip (pg-pins), where letters pick a session.
     if (s.id === "lock-in") { run("pg-pins.pick"); return; }
-    if (!find(layout(), s.id)) return;
+    const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+    if (!find(root, s.id)) return;
+    const showing = panel && !panel.hidden && body?.active === s.id;
+    // A close already fading out counts as closed, so a second click reopens it.
+    const m = shared(MOTION), closing = m?.id === s.id && m.phase === "out" && Date.now() - m.at < OUT_MS + 50;
+    if (showing && !closing) {
+      const at = motion(s.id, "out");
+      cx.timer.after(OUT_MS, () => {
+        const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+        if (shared(MOTION)?.at === at && panel && !panel.hidden && body?.active === s.id) run("layout.hide", { id: "panel" });
+      });
+      return;
+    }
     run("layout.select", { stack: "panel-body", child: s.id });
     run("layout.show", { id: "panel" });
+    motion(s.id, "in");
   }
 
   render() {
@@ -94,9 +112,9 @@ export default class Glances extends View {
     const flags = s.id === "lock-in" ? (this.raw[s.id]?.flags ?? []) : [];
     const tip = err ? `${s.name}: last read failed (${err})`
       : s.id === "lock-in" && flags.length ? flags.slice(0, 8).map(f => `${f.urgency === "red" ? "●" : "○"} ${f.name} · ${f.relative_label ?? ""}`).join("\n") + "\nClick shows the pins"
-      : `${s.name}${g?.sub ? `: ${g.sub}` : ""}\nClick to open`;
+      : `${s.name}${g?.sub ? `: ${g.sub}` : ""}\nClick to open or close`;
     return h_flex().id(`gl-${s.id}`).relative().flex_none().max_w(MAX_W[s.id]).h(22).px(6).gap(5).items_center().rounded(6)
-      .cursor_pointer().hover(st => st.bg(t.hover)).tooltip(tip).on_click(() => this.open(s))
+      .cursor_pointer().hover(st => st.bg(t.hover)).tooltip(tip).on_click((_e, cx) => this.open(s, cx))
       // The flash: drawn at full strength for one frame, then faded out.
       .child(div().id(`fl-${s.id}`).absolute().inset_0().rounded(6).bg(alpha(t.accent, 0.45))
         .opacity(this.flash[s.id] ? 1 : 0).transition("opacity", { duration: 1100, easing: "ease-out" }))

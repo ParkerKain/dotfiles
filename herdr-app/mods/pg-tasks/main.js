@@ -21,6 +21,35 @@ const alpha = (hex, a) => {
   return m ? "#" + m[1] + Math.round(a * (m[2] ? parseInt(m[2], 16) / 255 : 1) * 255).toString(16).padStart(2, "0") : hex;
 };
 
+// Panel motion: pg-tabs and pg-glances set shared "pg-panel.motion" to {id, phase, at} when
+// they open or close a side panel. On "in" this panel starts transparent and 24px right,
+// then fades and slides into place; on "out" it fades and slides away before the column
+// hides. Herdr shows and hides panels instantly, so the content moves instead of the column.
+const MOTION = "pg-panel.motion";
+function trackMotion(view, id, cx) {
+  const m = shared(MOTION);
+  if (!m?.at || m.at === view.motionAt) return;
+  view.motionAt = m.at;
+  // Another panel's event, or one from before this copy started, leaves this one as it is.
+  if (m.id !== id || Date.now() - m.at > 1000) return;
+  if (m.phase === "in") {
+    // Mount at the start position, then flip a frame later so the transition runs.
+    view.motion = "pre";
+    cx.timer.after(30, cx => { if (view.motionAt === m.at) { view.motion = "in"; cx.notify(); } });
+  } else if (m.phase === "out") {
+    view.motion = "out";
+    // Back at rest once hidden, so a panel shown some other way is not left invisible.
+    cx.timer.after(400, cx => { if (view.motionAt === m.at) { view.motion = null; cx.notify(); } });
+  }
+}
+function withMotion(view, el) {
+  const away = view.motion === "pre" || view.motion === "out";
+  el = el.relative().left(away ? 24 : 0).opacity(away ? 0 : 1);
+  if (view.motion === "in") return el.transition("opacity", { duration: 220, easing: "ease-out" }).transition("left", { duration: 220, easing: "ease-out" });
+  if (view.motion === "out") return el.transition("opacity", { duration: 160, easing: "ease-in" }).transition("left", { duration: 160, easing: "ease-in" });
+  return el;
+}
+
 // Matches the terminal panes' backing over a wallpaper. A terminal paints its
 // background at terminal_opacity twice (surface, then cells), so it shows
 // 1 - (1 - o)^2. Without terminal_opacity the layout's own color stands.
@@ -774,7 +803,8 @@ export default class OpsTasks extends View {
         cx.timer.after(120, cx => { this.flashOnce(`row:${key}`, cx); cx.notify(); });
       } else if ((this.loadedOnce || this.sample) && Date.now() - this.pendingReveal.at > 10000) this.pendingReveal = null;
     }
-    return v_flex().id("pg-tasks").track_focus(this.handle).size_full().min_h(0).bg(paneBacking(t, props()?.glass ? t.chrome : t.background)).text_size(12)
+    trackMotion(this, "ops-tasks", cx);
+    return withMotion(this, v_flex().id("pg-tasks").track_focus(this.handle).size_full().min_h(0).bg(paneBacking(t, props()?.glass ? t.chrome : t.background)).text_size(12)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => { if (!this.searching) this.handle.focus(); })
       .on_mouse_up("left", (_e, cx) => this.endDrag(cx))
@@ -793,7 +823,7 @@ export default class OpsTasks extends View {
       .when(this.query.length && (noteSearch?.loading || noteSearch?.incomplete), el => el.child(div().px(12).pt(6).text_color(t.dim)
         .child(noteSearch.loading ? "Searching project task notes…" : "Some project task notes could not be searched.")))
       .when(this.query.length && !ordered.length && !this.loading && !noteSearch?.loading, el => el.child(div().p(12).text_color(t.dim).child("No matching tasks.")))
-      .child(v_flex().id("tasks-list").track_scroll(this.scroll).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(items));
+      .child(v_flex().id("tasks-list").track_scroll(this.scroll).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(items)));
   }
 
   // One task row, as the kit's, plus a tag per agent working it under the title.

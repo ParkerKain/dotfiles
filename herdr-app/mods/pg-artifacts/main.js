@@ -5,6 +5,35 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { exec, home, theme, run, spaces, knownAgents, shared, focused, props, nextCommand, layout, settings } from "herdr";
 
+// Panel motion: pg-tabs and pg-glances set shared "pg-panel.motion" to {id, phase, at} when
+// they open or close a side panel. On "in" this panel starts transparent and 24px right,
+// then fades and slides into place; on "out" it fades and slides away before the column
+// hides. Herdr shows and hides panels instantly, so the content moves instead of the column.
+const MOTION = "pg-panel.motion";
+function trackMotion(view, id, cx) {
+  const m = shared(MOTION);
+  if (!m?.at || m.at === view.motionAt) return;
+  view.motionAt = m.at;
+  // Another panel's event, or one from before this copy started, leaves this one as it is.
+  if (m.id !== id || Date.now() - m.at > 1000) return;
+  if (m.phase === "in") {
+    // Mount at the start position, then flip a frame later so the transition runs.
+    view.motion = "pre";
+    cx.timer.after(30, cx => { if (view.motionAt === m.at) { view.motion = "in"; cx.notify(); } });
+  } else if (m.phase === "out") {
+    view.motion = "out";
+    // Back at rest once hidden, so a panel shown some other way is not left invisible.
+    cx.timer.after(400, cx => { if (view.motionAt === m.at) { view.motion = null; cx.notify(); } });
+  }
+}
+function withMotion(view, el) {
+  const away = view.motion === "pre" || view.motion === "out";
+  el = el.relative().left(away ? 24 : 0).opacity(away ? 0 : 1);
+  if (view.motion === "in") return el.transition("opacity", { duration: 220, easing: "ease-out" }).transition("left", { duration: 220, easing: "ease-out" });
+  if (view.motion === "out") return el.transition("opacity", { duration: 160, easing: "ease-in" }).transition("left", { duration: 160, easing: "ease-in" });
+  return el;
+}
+
 // Matches the terminal panes' backing over a wallpaper. A terminal paints its
 // background at terminal_opacity twice (surface, then cells), so it shows
 // 1 - (1 - o)^2. Without terminal_opacity the layout's own color stands.
@@ -192,7 +221,8 @@ export default class Artifacts extends View {
       return div().flex_none().px(4).rounded(3).font_semibold().bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(names[i]);
     };
     const legend = this.picked ? this.actions(this.picked).map(([k, label]) => `${k} ${label}`).join(" · ") + " · Esc" : `Pick an artifact${this.typed ? ` · ${this.typed}` : ""} · Esc`;
-    return v_flex().id("artifacts").track_focus(this.handle).size_full().min_h(0).bg(paneBacking(t, props()?.glass ? t.chrome : t.background)).text_size(12)
+    trackMotion(this, "artifacts", cx);
+    return withMotion(this, v_flex().id("artifacts").track_focus(this.handle).size_full().min_h(0).bg(paneBacking(t, props()?.glass ? t.chrome : t.background)).text_size(12)
       .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key, cx); cx.stop_propagation(); cx.notify(); })
       .child(h_flex().h(40).px(12).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(this.hinting ? legend : `Artifacts · ${this.items.length}`))
@@ -204,7 +234,7 @@ export default class Artifacts extends View {
       .when(!this.items.length && !this.error, el => el.child(div().p(12).text_color(t.dim).child("Nothing yet. Artifacts and Docs you publish from Claude Code show up here.")))
       .child(div().id("shelf").flex_1().min_h(0).overflow_y_scrollbar().p(8)
         .on_size_change((size, cx) => { const w = Math.round(size.width / (Number(settings()?.zoom) || 1)); if (w !== this.width) { this.width = w; cx.notify(); } })
-        .child(h_flex().flex_wrap().gap(6).children(this.items.map((item, i) => this.card(item, i, t, badge)))));
+        .child(h_flex().flex_wrap().gap(6).children(this.items.map((item, i) => this.card(item, i, t, badge))))));
   }
 
   card(item, i, t, badge) {
