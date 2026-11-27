@@ -16,7 +16,7 @@ mods = [
 ]
 # Mods another repo links here (parker-agent-kit's scripts/link.sh). Listed so
 # layouts keep their panels on this machine.
-external_mods = ["artifacts", "call-sheet", "claude-usage", "day-strip", "day-view", "diagnose-session", "draft-review", "factory", "glances", "lock-in", "ops-tasks", "report-review"]
+external_mods = ["artifacts", "call-sheet", "claude-usage", "day-strip", "day-view", "draft-review", "factory", "glances", "lock-in", "ops-tasks", "report-review"]
 # Layouts from herdr-app/layouts/ that this machine links.
 layouts = ["Parker", "Meeting", "Demo"]
 # Display size the frosted wallpaper is rendered at (frost.py).
