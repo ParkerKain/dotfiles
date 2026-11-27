@@ -109,17 +109,26 @@ export default class Pins extends View {
     const tick = (d, label) => div().absolute().left(PAD + ((W - 2 * PAD) * d) / SPAN_DAYS - 20).w(40).top(axisY + 5)
       .flex().justify_center().text_size(9.5).text_color(t.dim).child(label);
 
+    // Hover: the pin's label gets a soft pill and the session's details fade in along the
+    // top of the line, instead of a tooltip popping up next to the pointer.
     const pins = placed.map(({ flag: f, x, row }) => {
-      const color = tone(f), hint = hintOf.get(f.id);
-      const top = axisY - 18 - row * 17;
-      return div().id(`pin-${f.id}`).absolute().left(Math.round(x) - 60).w(120).top(top).h(16)
-        .flex().flex_col().items_center()
+      const color = tone(f), hint = hintOf.get(f.id), on = this.hover === f.id;
+      const top = axisY - 20 - row * 18;
+      return div().id(`pin-${f.id}`).absolute().left(Math.round(x) - 60).w(120).top(top).h(18)
+        .flex().items_center().justify_center()
         .cursor_pointer().on_click((_e, cx) => this.fix(f, cx))
-        .tooltip([f.name, `${f.when_label ?? ""} · ${f.relative_label ?? ""}`, f.short_reason || f.reason, "Click or letter: fix · Shift+letter: open in Ops"].filter(Boolean).join("\n"))
-        .child(h_flex().gap(4).items_center().text_size(10.5)
-          .when(Boolean(hint), el => el.child(div().px(3).rounded(3).bg(t.accent).text_color(t.background).font_semibold().text_size(9.5).child(hint)))
-          .child(div().whitespace_nowrap().text_color(color).font_semibold().child(code(f.name))));
+        .on_hover((h, cx) => { if (h) this.hover = f.id; else if (this.hover === f.id) this.hover = null; cx.notify(); })
+        .child(h_flex().id(`pill-${f.id}`).relative().gap(4).items_center().h(18).px(5).rounded(9).text_size(10.5)
+          .child(div().id(`pillbg-${f.id}`).absolute().inset_0().rounded(9).bg(alpha(color, 0.22))
+            .opacity(on ? 1 : 0).transition("opacity", { duration: 140, easing: "ease-out" }))
+          .when(Boolean(hint), el => el.child(div().relative().px(3).rounded(3).bg(t.accent).text_color(t.background).font_semibold().text_size(9.5).child(hint)))
+          .child(div().relative().whitespace_nowrap().text_color(color).font_semibold().child(code(f.name))));
     });
+    const hovered = flags.find(f => f.id === this.hover) ?? this.lastHover;
+    if (this.hover) this.lastHover = hovered;
+    const detail = div().id("detail").absolute().left(PAD).right(130).top(4).h(14).truncate().text_size(10.5)
+      .text_color(t.foreground).opacity(this.hover ? 1 : 0).transition("opacity", { duration: 160, easing: "ease-out" })
+      .child(hovered ? `${hovered.name} · ${hovered.when_label ?? ""} · ${hovered.short_reason || hovered.reason || ""}` : "");
     const dots = placed.filter(p => p.row === 0).map(({ flag: f, x }) =>
       div().absolute().left(Math.round(x) - 5).top(axisY - 4).w(10).h(10).rounded(5).bg(tone(f)).border_2().border_color(t.background)
         .when(f.urgency === "red", el => el.loop("opacity", { from: 0.35, to: 1, period: 1200 })));
@@ -129,7 +138,7 @@ export default class Pins extends View {
       .on_key_down((e, cx) => this.key(e, cx))
       .child(div().absolute().left(PAD).right(PAD).top(axisY).h(2).rounded(1).bg(alpha(t.foreground, 0.25)))
       .child(tick(0, "today")).child(tick(7, "+7d")).child(tick(14, "+14d"))
-      .children(dots).children(pins)
+      .child(detail).children(dots).children(pins)
       .child(div().absolute().right(8).top(4).text_size(9.5).text_color(t.dim)
         .child(this.error ? "Lock-in offline" : later > 0 ? `+${later} later · esc` : "letter fixes · esc"));
   }

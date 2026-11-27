@@ -1,13 +1,14 @@
 // Playground prototype: the day as a strip under the tab bar. Today's Outlook events sit
 // on a 7am to 6pm line with a red now-line that moves each minute. The next meeting glows
-// gold from 15 minutes out, and the chip on the right counts down to it (click joins its
-// Zoom link). When today has nothing left, the strip shows the next day that has events.
+// gold from 15 minutes out, and the ring at the strip's start counts down to it (click joins
+// its Zoom link). The strip always opens on today; ‹ and › at its right end step through
+// days and Today comes back. When today is clear, the ring says when the next call is.
 // Clicking an event opens the Calendar panel on that day. Data comes from the kit's
 // `day-view` CLI, which reads the Outlook calendar.
 import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { checking, exec, home, settings, theme, window as appWindow } from "herdr";
-import { addDays, allDay, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, stack, timed, windowOf } from "./lib/model.js";
+import { addDays, allDay, busy, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, stack, timed, windowOf } from "./lib/model.js";
 
 const POLL_MS = 5 * 60 * 1000;
 const LOOKAHEAD_DAYS = 7;
@@ -50,6 +51,7 @@ export default class DayStrip extends View {
     // Read again only when the day turns over or today's last event has just ended, so a
     // quiet week doesn't re-scan Outlook every minute. After an error, wait for the next poll.
     const dayTurned = iso(new Date()) !== this.today;
+    if (dayTurned) this.offset = 0;
     const justEnded = this.date === this.today && hasRest(this.events, before) && !hasRest(this.events, this.now);
     if ((dayTurned || justEnded) && Date.now() >= this.retryAt) this.load(cx);
     cx.notify();
@@ -61,14 +63,17 @@ export default class DayStrip extends View {
     cx.spawn(async cx => {
       try {
         const today = iso(new Date());
-        let date = today, events = await readDay(today);
-        if (!hasRest(events, nowMinutes())) {
-          for (let i = 1; i <= LOOKAHEAD_DAYS; i++) {
-            const d = addDays(today, i), ev = await readDay(d);
-            if (timed(ev).length) { date = d; events = ev; break; }
+        const date = addDays(today, this.offset ?? 0), events = await readDay(date);
+        // Today with nothing left: look ahead once for the next call, for the ring's hint.
+        let next = null;
+        if (date === today && !hasRest(events, nowMinutes())) {
+          for (let i = 1; i <= LOOKAHEAD_DAYS && !next; i++) {
+            const d = addDays(today, i), first = timed(await readDay(d)).filter(busy).sort((a, b) => a.start_min - b.start_min)[0];
+            if (first) next = { date: d, first };
           }
         }
-        this.today = today; this.date = date; this.events = events;
+        if (date !== addDays(today, this.offset ?? 0)) return; // stepped again meanwhile
+        this.today = today; this.date = date; this.events = events; this.next = next;
         this.allDay = allDay(events);
         this.error = null; this.loaded = true; this.retryAt = 0;
       } catch (e) { this.error = String(e?.message ?? e); this.retryAt = Date.now() + POLL_MS; }
@@ -131,7 +136,30 @@ export default class DayStrip extends View {
           .transition("left", { duration: 1000, easing: "linear" })));
 
     // The countdown ring sits at the strip's start (round 2 pick C); the old right-hand chip is gone.
-    return frame.child(inner.child(this.lead(t, c, cd, isToday)).child(line));
+    return frame.child(inner.child(this.lead(t, c, cd, isToday)).child(line.opacity(this.stepping ? 0.25 : 1).transition("opacity", { duration: 180, easing: "ease-out" })).child(this.nav(t)));
+  }
+
+  // ‹ Today › at the strip's end. Stepping fades the line while the day is read.
+  nav(t) {
+    const btn = (id, label, tip, on) => div().id(id).flex_none().h(22).px(label.length > 1 ? 7 : 6).flex().items_center().justify_center()
+      .rounded(6).text_color(t.muted).cursor_pointer().hover(s => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_click((_e, cx) => on(cx)).child(label);
+    const off = this.offset ?? 0;
+    return h_flex().id("nav").flex_none().h_full().items_center().gap(2).px(6).border_l(1).border_color(t.border)
+      .child(btn("prev", "‹", "Previous day", cx => this.step(-1, cx)))
+      .when(off !== 0, el => el.child(btn("today", "Today", "Back to today", cx => this.step(-off, cx))))
+      .child(btn("next", "›", "Next day", cx => this.step(1, cx)));
+  }
+
+  step(by, cx) {
+    if (!by) return;
+    this.offset = (this.offset ?? 0) + by;
+    this.stepping = true;
+    cx.notify();
+    this.loading = false; // a newer day wins over a read still running
+    this.load(cx);
+    const wait = (cx) => { if (this.date === addDays(this.today, this.offset)) { this.stepping = false; cx.notify(); } else cx.timer.after(60, wait); };
+    cx.timer.after(60, wait);
   }
 
   // The strip's start: a ring that fills over the last hour before the next call, with the
@@ -143,8 +171,8 @@ export default class DayStrip extends View {
     if (!isToday || !cd) {
       const first = timed(this.events).sort((a, b) => a.start_min - b.start_min)[0];
       return base.child(this.ring(t, 0, t.dim, "–"))
-        .child(v_flex().min_w(0).child(div().truncate().font_semibold().text_color(t.foreground).child(isToday ? "Today" : `Next · ${dayLabel(this.date)}`))
-          .child(div().truncate().text_size(10).text_color(t.dim).child(note ?? (first ? `First ${clockOf(first.start_min)} ${first.title}` : ""))));
+        .child(v_flex().min_w(0).child(div().truncate().font_semibold().text_color(t.foreground).child(isToday ? "Today" : dayLabel(this.date)))
+          .child(div().truncate().text_size(10).text_color(t.dim).child(note ?? (first ? `First ${clockOf(first.start_min)} ${first.title}` : "No calls"))));
     }
     const e = cd.event;
     const mins = e ? e.start_min - this.now : null;
@@ -156,11 +184,13 @@ export default class DayStrip extends View {
     const name = cd.tone === "clear" ? "Clear" : String(e?.title ?? "").replace(/^\[[^\]]+\]\s*/, "");
     return base.cursor_pointer().hover(s => s.bg(t.hover))
       .tooltip(e ? `${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}\n${url ? "Click to join the call" : "Click to open Calendar"}` + (this.allDay.length ? `\n\nAll day: ${this.allDay.map(a => a.title).join(", ")}` : "") : "Nothing else today")
-      .on_click(() => (url ? open(url) : exec(cli(), ["show", this.date])))
+      .on_click((_e, cx) => (url ? open(url) : cd.tone === "clear" && this.next ? this.step(Math.round((Date.parse(this.next.date) - Date.parse(this.today)) / 86400000), cx) : exec(cli(), ["show", this.date])))
       .child(this.ring(t, value, color, big, cd.tone === "soon" || cd.tone === "live"))
       .child(v_flex().min_w(0)
         .child(div().truncate().font_semibold().text_color(t.foreground).child(name))
-        .child(div().truncate().text_size(10).text_color(note ? (t.working ?? t.dim) : t.dim).child(note ?? [cd.sub, url ? "click joins" : ""].filter(Boolean).join(" · "))));
+        .child(div().truncate().text_size(10).text_color(note ? (t.working ?? t.dim) : t.dim).child(note ?? (cd.tone === "clear"
+          ? (this.next ? `Next ${dayLabel(this.next.date)} ${clockOf(this.next.first.start_min)}` : "Nothing else today")
+          : [cd.sub, url ? "click joins" : ""].filter(Boolean).join(" · ")))));
   }
 
   ring(t, value, color, big, breathe) {
