@@ -25,7 +25,7 @@
               "id": "space-sessions",
               "type": "block",
               "content": {
-                "mod": "space-sessions"
+                "mod": "pg-sessions"
               }
             }
           ]

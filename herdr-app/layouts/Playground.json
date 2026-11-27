@@ -25,7 +25,7 @@
               "id": "space-sessions",
               "type": "block",
               "content": {
-                "mod": "space-sessions"
+                "mod": "pg-sessions"
               }
             }
           ]
@@ -136,7 +136,7 @@
                       "id": "ops-tasks",
                       "type": "block",
                       "content": {
-                        "mod": "ops-tasks",
+                        "mod": "pg-tasks",
                         "props": {
                           "glass": true
                         }
