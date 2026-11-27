@@ -62,8 +62,16 @@ const jobs = mod => {
   mod.hooks = [{name: 'mail-inbox', title: 'Mail inbox', interval: 300, loaded: true, last_check: null, last_trigger: null, error: 'boom'}];
 };
 
-test('the Mac tab bar keeps every work panel with its usual shortcut', () => {
+test('the Mac tab bar leaves the glanced panels to the status bar and keeps the rest with their shortcuts', () => {
   assert.deepEqual(render('my-tabs', MAC).filter(t => /  /.test(t)),
+    ['Files  ⌘E', 'Changes  ⇧⌘G', 'Jobs  ⇧⌘J', 'Usage  ⇧⌘U']);
+});
+
+test('without a glances block the Mac tab bar keeps every work panel', () => {
+  const layout = JSON.parse(JSON.stringify(MAC.layout));
+  const walk = node => { node.children = (node.children ?? []).filter(c => c.id !== 'glances'); node.children.forEach(walk); };
+  walk(layout);
+  assert.deepEqual(render('my-tabs', {...MAC, layout}).filter(t => /  /.test(t)),
     ['Files  ⌘E', 'Changes  ⇧⌘G', 'Tasks  ⇧⌘T', 'Jobs  ⇧⌘J', 'Calendar  ⇧⌘C', 'Artifacts  ⇧⌘A', 'Factory  ⇧⌘F', 'Usage  ⇧⌘U']);
 });
 

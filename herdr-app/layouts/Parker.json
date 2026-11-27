@@ -72,13 +72,13 @@
           "window_drag": true
         },
         {
-          "id": "lock-in",
+          "id": "day-strip",
           "type": "block",
           "content": {
-            "mod": "lock-in"
+            "mod": "day-strip"
           },
           "size": {
-            "px": 72
+            "px": 46
           },
           "resizable": false
         },
@@ -94,7 +94,7 @@
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "pane-header"
                     },
                     "reveal": "always",
                     "height": 30,
@@ -166,13 +166,6 @@
                       }
                     },
                     {
-                      "id": "call-sheet",
-                      "type": "block",
-                      "content": {
-                        "mod": "call-sheet"
-                      }
-                    },
-                    {
                       "id": "factory",
                       "type": "block",
                       "content": {
@@ -210,12 +203,33 @@
             }
           ],
           "padding": 8,
-          "gap": 8
+          "gap": 8,
+          "floating": [
+            {
+              "id": "lock-in",
+              "content": {
+                "mod": "lock-in"
+              },
+              "edge": "top",
+              "align": "center"
+            }
+          ]
         },
         {
           "id": "status-row",
           "type": "row",
           "children": [
+            {
+              "id": "glances",
+              "type": "block",
+              "content": {
+                "mod": "glances"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 200
+            },
             {
               "id": "usage-limits",
               "type": "block",
@@ -250,5 +264,6 @@
   "traffic_lights": [
     12,
     16
-  ]
+  ],
+  "toast": "parker-toast"
 }

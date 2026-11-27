@@ -25,7 +25,7 @@
               "id": "space-sessions",
               "type": "block",
               "content": {
-                "mod": "pg-sessions"
+                "mod": "space-sessions"
               }
             }
           ]
@@ -45,11 +45,11 @@
         }
       ],
       "size": {
-        "px": 238
+        "px": 268
       },
       "min": 44,
       "max": 480,
-      "background": "#19172480",
+      "background": "chrome",
       "resizable": false
     },
     {
@@ -60,7 +60,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "pg-tabs"
+            "mod": "my-tabs"
           },
           "size": {
             "px": 42
@@ -68,14 +68,15 @@
           "window_drag": true
         },
         {
-          "id": "pg-daystrip",
+          "id": "day-strip",
           "type": "block",
+          "content": {
+            "mod": "day-strip"
+          },
           "size": {
             "px": 46
           },
-          "content": {
-            "mod": "pg-daystrip"
-          }
+          "resizable": false
         },
         {
           "id": "work-body",
@@ -85,7 +86,7 @@
               "id": "meeting",
               "type": "block",
               "content": {
-                "mod": "pg-meeting"
+                "mod": "call-sheet"
               },
               "size": {
                 "weight": 7
@@ -111,13 +112,13 @@
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pg-diagnose"
+                      "mod": "pane-header"
                     },
                     "reveal": "always",
                     "height": 30,
                     "position": "top"
                   },
-                  "background": "#2321362e",
+                  "background": "background",
                   "border": {
                     "width": 1,
                     "color": "border"
@@ -138,7 +139,17 @@
             }
           ],
           "padding": 8,
-          "gap": 8
+          "gap": 8,
+          "floating": [
+            {
+              "id": "lock-in",
+              "content": {
+                "mod": "lock-in"
+              },
+              "edge": "top",
+              "align": "center"
+            }
+          ]
         },
         {
           "id": "status-row",
@@ -148,7 +159,7 @@
               "id": "glances",
               "type": "block",
               "content": {
-                "mod": "pg-glances"
+                "mod": "glances"
               },
               "size": {
                 "weight": 1
@@ -176,23 +187,11 @@
       "resizable": false
     }
   ],
-  "background": {
-    "image": "backgrounds/frosted-a-silhouette-of-trees-on-a-hill-90a7570d51c4.jpg",
-    "fit": "cover"
-  },
-  "colors": {
-    "background": "#2321368c",
-    "border": "#e0def426",
-    "chrome": "#1917248c",
-    "dim": "#a29bb7",
-    "muted": "#b5afc9",
-    "surface": "#2321368c"
-  },
+  "background": "canvas",
   "terminal_padding": [
     14,
     12
   ],
-  "terminal_opacity": 0.5,
   "divider": {
     "width": 1,
     "color": "border"
@@ -202,5 +201,5 @@
     12,
     16
   ],
-  "toast": "pg-toast"
+  "toast": "parker-toast"
 }

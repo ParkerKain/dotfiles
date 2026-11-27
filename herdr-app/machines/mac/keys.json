@@ -18,7 +18,7 @@
     "cmd-shift-n": "mod.open:session-launcher",
     "cmd-shift-e": "mod.open:run-once",
     "cmd-shift-r": "mod.open:revive",
-    "cmd-shift-i": "mod.open:diagnose-session",
+    "cmd-shift-i": "pane-header.diagnose",
     "cmd-p": "mod.open:picker",
     "cmd-shift-p": "app.palette",
     "cmd-,": "app.settings",
@@ -45,11 +45,10 @@
     "cmd-shift-j": "my-tabs.panel-jobs",
     "cmd-shift-c": "my-tabs.panel-day-view",
     "cmd-shift-a": "my-tabs.panel-artifacts",
-    "cmd-shift-k": "my-tabs.panel-call-sheet",
+    "cmd-shift-k": "mod.open:call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
     "cmd-shift-u": "my-tabs.panel-claude-usage",
-    "cmd-shift-s": "layout.toggle:lock-in",
-    "cmd-alt-s": "my-tabs.lock-in-pick",
+    "cmd-shift-s": "lock-in.pick",
     "cmd-e": "my-tabs.panel-files",
     "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
@@ -110,8 +109,7 @@
     "cmd-shift-b": "terminal",
     "cmd-shift-u": "terminal",
     "cmd-shift-o": "terminal",
-    "cmd-shift-s": "terminal",
-    "cmd-alt-s": "terminal"
+    "cmd-shift-s": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
@@ -140,9 +138,6 @@
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:artifacts": {
-    "cmd-shift-enter": "my-tabs.zoom-panel"
-  },
-  "mod:call-sheet": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:factory": {

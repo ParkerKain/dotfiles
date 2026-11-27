@@ -9,8 +9,9 @@ What it does, from herdr-app/machines/<machine>.toml:
 - keys.json: links machines/<machine>/keys.json.
 - settings.json: merges settings.base.json and machines/<machine>/settings.json into
   Herdr's settings, keeping what Herdr writes itself (zoom, sizes you never set here).
-- layouts: links each listed layout. Where a layout has panels whose mod this machine
-  doesn't have (Tasks on Omarchy), it writes a copy without them instead.
+- layouts: links each listed layout. Where a layout has blocks whose mod this machine
+  doesn't have (Tasks, the day strip, glances and the floating Lock-in on Omarchy), it
+  writes a copy without them instead.
 - themes: links every theme.
 - mods: links each listed mod, and removes links to dotfiles mods the machine no longer lists.
 - ~/.local/bin/job: links the job engine, then rewrites the schedules of jobs and hooks
@@ -230,14 +231,31 @@ def dropped_mods(manifest):
 
 
 def drop_panels(node, drop):
-    """A copy of a layout tree without blocks whose mod is in drop."""
+    """A copy of a layout tree without the mods in drop.
+
+    Blocks whose mod is in drop go, whether they are children (side panels, bands, status
+    blocks) or floating blocks. A dropped pane header mod becomes Herdr's shipped `pane`,
+    and a dropped root toast mod is removed so Herdr's own toast draws.
+    """
     node = dict(node)
+    dropped = lambda c: isinstance(c.get("content"), dict) and c["content"].get("mod") in drop
     if "children" in node:
-        kept = [drop_panels(c, drop) for c in node["children"]
-                if not (isinstance(c.get("content"), dict) and c["content"].get("mod") in drop)]
+        kept = [drop_panels(c, drop) for c in node["children"] if not dropped(c)]
         node["children"] = kept
         if node.get("type") == "stack" and kept and node.get("active") not in {c.get("id") for c in kept}:
             node["active"] = kept[0].get("id")
+    if "floating" in node:
+        kept = [f for f in node["floating"] if not dropped(f)]
+        if kept:
+            node["floating"] = kept
+        else:
+            del node["floating"]
+    header = (node.get("content") or {}).get("pane", {}).get("header") if isinstance(node.get("content"), dict) else None
+    if isinstance(header, dict) and isinstance(header.get("content"), dict) and header["content"].get("mod") in drop:
+        node["content"] = json.loads(json.dumps(node["content"]))
+        node["content"]["pane"]["header"]["content"] = {"mod": "pane"}
+    if node.get("toast") in drop:
+        del node["toast"]
     return node
 
 

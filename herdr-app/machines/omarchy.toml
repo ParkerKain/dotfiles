@@ -12,11 +12,12 @@ platform = "linux"
 # and run-once are Mac-only (Apple Music, client demos, zsh demo helpers).
 mods = [
   "my-files", "my-changes", "my-tabs", "space-sessions", "keybind-help", "usage-limits",
-  "session-launcher", "revive", "wallpaper", "jobs",
+  "session-launcher", "revive", "wallpaper", "jobs", "pane-header", "parker-toast",
 ]
 external_mods = []
-# Layouts from herdr-app/layouts/ that this machine links. Panels whose mod this
-# machine doesn't have are dropped from its copy.
+# Layouts from herdr-app/layouts/ that this machine links. Blocks whose mod this
+# machine doesn't have (the side panels, day strip, glances and floating Lock-in from
+# parker-agent-kit) are dropped from its copy.
 layouts = ["Parker"]
 # Display size the frosted wallpaper is rendered at (frost.py).
 screen = [3440, 1440]  # ultrawide monitor, px
