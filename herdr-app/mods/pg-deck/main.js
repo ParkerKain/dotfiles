@@ -209,13 +209,13 @@ export default class Deck extends View {
 
 // A ring around the tile that closes as `value` goes from 0 to 1, drawn from the top clockwise.
 function ring(t, value, color, zoom) {
-  const size = 30, c = (size / 2) * zoom, r = (size / 2 - 1.5) * zoom;
+  const size = 30, c = size / 2, r = size / 2 - 1.5;  // layout px: Herdr applies zoom to paint_path (seen at zoom 1.6)
   const full = (b) => b.move_to(c, c - r).arc_to(r, r, 0, false, true, c, c + r).arc_to(r, r, 0, false, true, c, c - r);
   const a = 2 * Math.PI * Math.min(value, 1);
-  const arc = value >= 0.999 ? full(PathBuilder.stroke(2 * zoom))
-    : PathBuilder.stroke(2 * zoom).move_to(c, c - r).arc_to(r, r, 0, value > 0.5, true, c + r * Math.sin(a), c - r * Math.cos(a));
+  const arc = value >= 0.999 ? full(PathBuilder.stroke(2))
+    : PathBuilder.stroke(2).move_to(c, c - r).arc_to(r, r, 0, value > 0.5, true, c + r * Math.sin(a), c - r * Math.cos(a));
   return div().absolute().top(0).left(0).size_full()
-    .child(window.paint_path(full(PathBuilder.stroke(2 * zoom)).build(), alpha(t.border, 0.8)).absolute().top(0).left(0).size_full())
+    .child(window.paint_path(full(PathBuilder.stroke(2)).build(), alpha(t.border, 0.8)).absolute().top(0).left(0).size_full())
     .child(window.paint_path(arc.build(), color).absolute().top(0).left(0).size_full());
 }
 

@@ -246,6 +246,14 @@
               "edge": "right",
               "align": "center",
               "peek": 44
+            },
+            {
+              "id": "clock",
+              "content": {
+                "mod": "pg-clock"
+              },
+              "edge": "bottom",
+              "align": "end"
             }
           ]
         },
