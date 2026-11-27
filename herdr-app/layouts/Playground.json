@@ -166,7 +166,7 @@
                       "id": "artifacts",
                       "type": "block",
                       "content": {
-                        "mod": "artifacts",
+                        "mod": "pg-artifacts",
                         "props": {
                           "glass": true
                         }
