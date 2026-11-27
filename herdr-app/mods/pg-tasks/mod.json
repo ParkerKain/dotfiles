@@ -1,9 +1,0 @@
-{
-  "place": "none",
-  "title": "Tasks pointing at agents (playground)",
-  "overlay": {
-    "width": 390,
-    "height": 180
-  },
-  "focusable": true
-}

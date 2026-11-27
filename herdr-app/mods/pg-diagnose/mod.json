@@ -1,1 +1,0 @@
-{ "place": "none", "title": "Pane header with Diagnose (playground)", "palette": [{ "title": "Diagnose in header", "command": "pg-diagnose.diagnose", "words": "debug troubleshoot inspect agent fork playground" }] }

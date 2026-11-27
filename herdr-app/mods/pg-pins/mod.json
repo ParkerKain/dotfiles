@@ -1,1 +1,0 @@
-{ "place": "none", "title": "Lock-in pins (playground)", "focusable": true, "palette": [{ "title": "Lock-in pins", "command": "pg-pins.pick", "words": "lock in ops sessions playground" }] }

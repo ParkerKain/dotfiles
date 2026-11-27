@@ -1,9 +1,0 @@
-{
-  "place": "none",
-  "title": "Meeting mode (playground)",
-  "focusable": true,
-  "overlay": { "width": 260, "height": 56 },
-  "palette": [
-    { "title": "Meeting mode (playground)", "command": "mod.open", "args": { "name": "pg-meeting" }, "words": "call sheet meeting agenda points notes toggle playground" }
-  ]
-}
