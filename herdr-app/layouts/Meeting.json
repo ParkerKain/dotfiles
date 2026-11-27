@@ -1,0 +1,206 @@
+{
+  "id": "root",
+  "type": "row",
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "column",
+      "children": [
+        {
+          "id": "brand",
+          "type": "block",
+          "content": {
+            "mod": "workspace-chrome"
+          },
+          "size": {
+            "px": 46
+          },
+          "window_drag": true
+        },
+        {
+          "id": "sidebar-lists",
+          "type": "column",
+          "children": [
+            {
+              "id": "space-sessions",
+              "type": "block",
+              "content": {
+                "mod": "space-sessions"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sidebar-footer",
+          "type": "block",
+          "content": {
+            "mod": "workspace-chrome",
+            "props": {
+              "footer": true
+            }
+          },
+          "size": {
+            "px": 69
+          }
+        }
+      ],
+      "size": {
+        "px": 238
+      },
+      "min": 44,
+      "max": 480,
+      "background": "#19172480",
+      "resizable": false
+    },
+    {
+      "id": "work",
+      "type": "column",
+      "children": [
+        {
+          "id": "tabs",
+          "type": "block",
+          "content": {
+            "mod": "my-tabs"
+          },
+          "size": {
+            "px": 42
+          },
+          "window_drag": true
+        },
+        {
+          "id": "pg-daystrip",
+          "type": "block",
+          "size": {
+            "px": 46
+          },
+          "content": {
+            "mod": "pg-daystrip"
+          }
+        },
+        {
+          "id": "work-body",
+          "type": "column",
+          "children": [
+            {
+              "id": "meeting",
+              "type": "block",
+              "content": {
+                "mod": "pg-meeting"
+              },
+              "size": {
+                "weight": 7
+              },
+              "min": 260,
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "radius": 10,
+              "focus": {
+                "border": {
+                  "width": 1,
+                  "color": "accent"
+                }
+              }
+            },
+            {
+              "id": "main",
+              "type": "block",
+              "content": {
+                "tab": "active",
+                "pane": {
+                  "header": {
+                    "content": {
+                      "mod": "pg-diagnose"
+                    },
+                    "reveal": "always",
+                    "height": 30,
+                    "position": "top"
+                  },
+                  "background": "#2321362e",
+                  "border": {
+                    "width": 1,
+                    "color": "border"
+                  },
+                  "focus": {
+                    "width": 1,
+                    "color": "accent"
+                  },
+                  "radius": 10,
+                  "gap": 8,
+                  "lone": true
+                }
+              },
+              "size": {
+                "weight": 3
+              },
+              "min": 120
+            }
+          ],
+          "padding": 8,
+          "gap": 8
+        },
+        {
+          "id": "status-row",
+          "type": "row",
+          "children": [
+            {
+              "id": "glances",
+              "type": "block",
+              "content": {
+                "mod": "pg-glances"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 200
+            },
+            {
+              "id": "usage-limits",
+              "type": "block",
+              "content": {
+                "mod": "usage-limits"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 130
+            }
+          ],
+          "size": {
+            "px": 28
+          },
+          "resizable": false
+        }
+      ],
+      "resizable": false
+    }
+  ],
+  "background": {
+    "image": "backgrounds/frosted-a-silhouette-of-trees-on-a-hill-90a7570d51c4.jpg",
+    "fit": "cover"
+  },
+  "colors": {
+    "background": "#2321368c",
+    "border": "#e0def426",
+    "chrome": "#1917248c",
+    "dim": "#a29bb7",
+    "muted": "#b5afc9",
+    "surface": "#2321368c"
+  },
+  "terminal_padding": [
+    14,
+    12
+  ],
+  "terminal_opacity": 0.5,
+  "divider": {
+    "width": 1,
+    "color": "border"
+  },
+  "titlebar": "none",
+  "traffic_lights": [
+    12,
+    16
+  ],
+  "toast": "pg-toast"
+}
