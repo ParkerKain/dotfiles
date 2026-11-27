@@ -72,6 +72,17 @@
           "window_drag": true
         },
         {
+          "id": "lock-in",
+          "type": "block",
+          "content": {
+            "mod": "lock-in"
+          },
+          "size": {
+            "px": 72
+          },
+          "resizable": false
+        },
+        {
           "id": "work-body",
           "type": "row",
           "children": [

@@ -48,6 +48,8 @@
     "cmd-shift-k": "my-tabs.panel-call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
     "cmd-shift-u": "my-tabs.panel-claude-usage",
+    "cmd-shift-s": "lock-in.pick",
+    "cmd-alt-s": "layout.toggle:lock-in",
     "cmd-e": "my-tabs.panel-files",
     "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
@@ -107,7 +109,9 @@
     "cmd-shift-k": "terminal",
     "cmd-shift-b": "terminal",
     "cmd-shift-u": "terminal",
-    "cmd-shift-o": "terminal"
+    "cmd-shift-o": "terminal",
+    "cmd-shift-s": "terminal",
+    "cmd-alt-s": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
