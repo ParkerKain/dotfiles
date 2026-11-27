@@ -60,7 +60,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "my-tabs"
+            "mod": "pg-tabs"
           },
           "size": {
             "px": 42
