@@ -97,8 +97,4 @@ test('the session launcher draws its own backdrop and unroll, with or without a 
   render('session-launcher', {...MAC, ids: task, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
   assert.ok(own.includes('backdrop') && own.includes('clip'));
   assert.ok(task.includes('backdrop') && task.includes('clip'));
-});  render('session-launcher', {...MAC, ids: framed, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
-  assert.ok(own.includes('backdrop') && own.includes('clip'));
-  assert.ok(!framed.includes('backdrop') && !framed.includes('clip'));
-  assert.ok(framed.includes('session-launcher'));
 });
