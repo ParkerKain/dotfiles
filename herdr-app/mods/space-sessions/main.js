@@ -1,6 +1,12 @@
+// Spaces sidebar: collapsible space groups with their sessions. A session launched for a
+// task gets a second line, "▸ <task title>" in the accent color. The match is ops-tasks':
+// the terminal's ops-task=<key> label, else the Play prompt's "Task:" line. Titles come
+// from `ops-tasks list --json` (~/go/bin/ops-tasks), read every 5 minutes. Without the CLI
+// (Omarchy) or after a failed read the lines stay off. Clicking the line opens the Tasks
+// panel and asks it (shared "ops-tasks.reveal") to scroll to that task and flash it.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, panes, focused, layout, theme, run, hc, checking, setAgentOrder, openOverlay, nextCommand, terminals } from "herdr";
+import { agents, spaces, panes, focused, layout, theme, run, hc, exec, home, setShared, checking, setAgentOrder, openOverlay, nextCommand, terminals } from "herdr";
 import { SAMPLE_SPACES, SAMPLE_AGENTS, summary, ownerTabs, sidebarTabOrder } from "./model.js";
 
 // Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
@@ -17,6 +23,23 @@ function find(node, id) {
   for (const child of node?.children ?? []) { const found = find(child, id); if (found) return found; }
   return null;
 }
+
+// Task lines: the same task-to-session match as the ops-tasks panel.
+const TASK_LABEL = "ops-task";
+const REVEAL = "ops-tasks.reveal";
+// The panel motion handshake (my-tabs, glances): "in" lets the Tasks panel slide in.
+const MOTION = "panel.motion";
+const TASK_EVERY = 5 * 60 * 1000;
+const keyOf = task => `${task.source}:${task.kind}:${task.id}`;
+function promptKey(argv, tasks) {
+  const prompt = argv?.[argv.length - 1];
+  if (typeof prompt !== "string" || !prompt.startsWith("You are helping me work a DevClarity task.")) return null;
+  const task = tasks.find(task => prompt.includes(`\nTask: ${task.title}\n`) && (!task.project_name || prompt.includes(`\nProject: ${task.project_name}\n`)));
+  return task ? keyOf(task) : null;
+}
+// Sample tasks for herdr-app check, on the sample spaces' tabs.
+const SAMPLE_TASK_TABS = { design: { key: "personal:task:1", title: "Draft the day one recap email for the Acme Level Up cohort" },
+  builder: { key: "personal:task:2", title: "Review the sidebar icons pull request" } };
 
 const tint = (color, alpha) => /^#[0-9a-f]{6,8}$/i.test(color ?? "") ? color.slice(0,7) + alpha : "#00000000";
 
@@ -46,6 +69,12 @@ export default class SpaceSessions extends View {
     } catch { this.collapsedMachines = new Set(); }
     // A remote machine's name is its address; `hc machine ls` knows its host name (omarchy).
     this.hosts = {};
+    // Task titles by key, from ops-tasks. Failures keep the last good read; none at all shows no lines.
+    this.tasks = [];
+    if (!this.sample) {
+      this.loadTasks(cx);
+      cx.timer.every(TASK_EVERY, cx => this.loadTasks(cx));
+    }
     if (!this.sample) cx.spawn(async cx => {
       try {
         const out = await hc(["machine", "ls", "--json"]);
@@ -54,6 +83,44 @@ export default class SpaceSessions extends View {
       } catch {}
     });
   }
+  loadTasks(cx) {
+    cx.spawn(async cx => {
+      try {
+        const result = await exec(`${home()}/go/bin/ops-tasks`, ["list", "--json"]);
+        const value = JSON.parse(result.stdout);
+        if (result.code !== 0 || !value.ok) return;
+        this.tasks = value.data?.tasks ?? [];
+        cx.notify();
+      } catch {}
+    });
+  }
+
+  // The task a tab's agents were launched for: the first agent whose terminal matches one.
+  taskOfTab(tab, tabAgents, cores) {
+    if (this.sample) return SAMPLE_TASK_TABS[tab.id] ?? null;
+    if (!this.tasks.length) return null;
+    for (const agent of tabAgents) {
+      const core = cores.get(agent.address);
+      if (!core || (core.state && core.state !== "live")) continue;
+      const key = core.labels?.[TASK_LABEL] || promptKey(core.argv, this.tasks);
+      const task = key && this.tasks.find(task => keyOf(task) === key);
+      if (task) return { key, title: task.title };
+    }
+    return null;
+  }
+
+  // Open the Tasks panel and ask ops-tasks to scroll to the task and flash it.
+  revealTask(key) {
+    if (this.sample) return;
+    const root = layout(), body = find(root, "panel-body"), panel = find(root, "panel");
+    if (!body?.children?.some(child => child.id === "ops-tasks")) return;
+    const opening = !panel || panel.hidden || body.active !== "ops-tasks";
+    run("layout.select", { stack: "panel-body", child: "ops-tasks" });
+    if (panel) run("layout.show", { id: "panel" });
+    if (opening) setShared(MOTION, { id: "ops-tasks", phase: "in", at: Date.now() });
+    setShared(REVEAL, { key, at: Date.now() });
+  }
+
   machineKey(space) { return space.machine ?? ""; }
   machineLabel(key) { return key ? (this.hosts[key] ?? key) : "This machine"; }
   toggleMachine(key, cx) {
@@ -163,6 +230,7 @@ export default class SpaceSessions extends View {
     const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
     const multi = keys.length > 1;
     const {all, ownersOf, ordered} = this.orderedAgents();
+    const cores = new Map((this.sample ? [] : terminals()).map(c => [c.address, c]));
     const shown = all.filter(s => !multi || !this.collapsedMachines.has(this.machineKey(s)));
     const grouped = true;
     // agent.select and other built-in navigation use the sidebar order too.
@@ -204,15 +272,27 @@ export default class SpaceSessions extends View {
         const selected = space.active && tab.active;
         const tabAgents = allAgents.filter(a => a.tab === tab.id);
         const program = tabAgents[0]?.program;
-        const row = h_flex().id(`session-${tab.id}`).gap(7).items_center().px(8).py(4).rounded(0)
-          .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
-          .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
-          .bg(selected ? t.selected : "#00000000")
+        const task = this.taskOfTab(tab, tabAgents, cores);
+        const line = h_flex().gap(7).items_center()
           .when(Boolean(labelFor("tab", tab.id)), el => el.child(this.badge(t, labelFor("tab", tab.id))))
           .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(13).text_color(t.muted) : image(program.icon).size(13)))
           .when(!program?.icon, el => el.child(div().w(13).flex_none().text_size(11).text_color(t.dim).child("›_")))
           .child(div().flex_1().min_w(0).truncate().text_color(selected ? t.foreground : t.muted).child(tab.name))
           .when(["working","blocked","done"].includes(tab.status), el => el.child(div().size(5).rounded(3).flex_none().bg(t[tab.status])));
+        // The task line sits under the name, past the icon, and opens the task in the Tasks panel.
+        const taskLine = task && h_flex().id(`task-${tab.id}`).ml(20).min_w(0).rounded(3).cursor_pointer()
+          .tooltip(`Show in Tasks: ${task.title}`)
+          .hover(s => s.text_color(t.foreground))
+          .text_size(11).text_color(t.accent)
+          .on_mouse_down("left", (_e,cx) => cx.stop_propagation())
+          .on_click((_e,cx) => {cx.stop_propagation();this.revealTask(task.key);})
+          .child(div().flex_1().min_w(0).truncate().child(`▸ ${task.title}`));
+        const row = v_flex().id(`session-${tab.id}`).gap(1).px(8).py(4).rounded(0)
+          .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
+          .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
+          .bg(selected ? t.selected : "#00000000")
+          .child(line)
+          .when(Boolean(taskLine), el => el.child(taskLine));
         const paneRows = tabAgents.length > 1 ? tabAgents.map(agent => this.renderAgentRow(t, agent, space, tab)) : [];
         return v_flex().id(`row-${tab.id}`).child(row)
           .when(paneRows.length > 0, el => el.child(v_flex().id(`panes-${tab.id}`).pl(20).pb(2).children(paneRows)))
