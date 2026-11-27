@@ -49,7 +49,7 @@
     "cmd-shift-f": "my-tabs.panel-factory",
     "cmd-shift-u": "my-tabs.panel-claude-usage",
     "cmd-shift-s": "lock-in.pick",
-    "cmd-alt-s": "layout.toggle:lock-in",
+    "cmd-alt-s": "lock-in.toggle",
     "cmd-e": "my-tabs.panel-files",
     "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
