@@ -16,6 +16,13 @@ const mac = () => appWindow()?.platform !== "linux";
 const ROUTE_DEBOUNCE = 400;
 // How long the card takes to lift and fade before the overlay closes.
 const LIFT_MS = 350;
+// The card rises and fades in on open, and drops and fades out on Cancel, Esc or a click outside.
+const RISE_MS = 220;
+const DROP_MS = 160;
+// The card's size. The overlay itself covers the window (mod.json), frameless, so the card draws
+// its own border, corners and shadow and the space around it catches a click outside.
+const CARD_W = 560;
+const CARD_H = 470;
 // Most candidate chips shown at once (the router's pick, an override and the default always show).
 const MAX_CHIPS = 6;
 // Words too common to say anything about which repo owns a request.
@@ -166,6 +173,10 @@ export default class SessionLauncher extends View {
     this.autoRoute = null;
     this.defaultFolder = null;
     this.leaving = false;
+    // Phase flag: the card mounts hidden and shows a frame later so its transition runs.
+    this.shown = checking();
+    this.closing = false;
+    if (!checking()) cx.timer.after(30, cx => { this.shown = true; cx.notify(); });
     this.lastValue = this.input.value();
     this.lastContent = this.input.content();
     this.input.on("change", (_e, cx) => {
@@ -221,6 +232,15 @@ export default class SessionLauncher extends View {
         if (command === "toggle-model") this.toggleModelPicker(cx);
       }
     });
+  }
+
+  // Cancel, Esc and a click outside: the card drops and fades, then the overlay closes.
+  dismiss(cx) {
+    if (this.busy || this.closing) return;
+    this.closing = true;
+    this.picking = null;
+    cx.notify();
+    cx.timer.after(DROP_MS, () => closeOverlay(props()?.overlay));
   }
 
   pasteImage(cx) {
@@ -580,9 +600,15 @@ export default class SessionLauncher extends View {
 
   render() {
     const t = theme();
-    const p = props() ?? {};
     const canStart = !this.busy && Boolean(this.text.trim());
-    return v_flex().id("pg-launcher").track_focus(this.handle).w_full().h_full().overflow_hidden().bg(t.popover)
+    const top = this.leaving ? -18 : this.closing ? 10 : this.shown ? 0 : 14;
+    const visible = this.shown && !this.leaving && !this.closing;
+    const motion = this.leaving ? { duration: LIFT_MS, easing: "ease-in" }
+      : this.closing ? { duration: DROP_MS, easing: "ease-in" }
+      : { duration: RISE_MS, easing: "ease-out" };
+    // The whole window: the space around the card is a click outside.
+    return v_flex().id("pg-launcher").track_focus(this.handle).size_full().items_center().justify_center()
+      .on_click((_e, cx) => this.dismiss(cx))
       .on_key_down((e, cx) => {
         if (this.picking && !e.modifiers.platform && !e.modifiers.control && /^[1-9]$/.test(e.key)) { if (this.pickNumber(Number(e.key), cx)) cx.stop_propagation(); return; }
         if (this.picking && (e.key === "escape" || e.key === "enter")) { this.closeModelPicker(cx); cx.stop_propagation(); return; }
@@ -592,7 +618,7 @@ export default class SessionLauncher extends View {
           cx.stop_propagation();
           return;
         }
-        if (e.key === "escape" && !this.busy) { closeOverlay(p.overlay); cx.stop_propagation(); }
+        if (e.key === "escape") { this.dismiss(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "m" && e.modifiers.platform && e.modifiers.shift) { this.toggleModelPicker(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "a" && e.modifiers.platform && e.modifiers.shift) { this.toggleAgent(cx); cx.stop_propagation(); }
         if (e.key.toLowerCase() === "s" && e.modifiers.platform && e.modifiers.shift) { this.start(cx); cx.stop_propagation(); }
@@ -600,10 +626,13 @@ export default class SessionLauncher extends View {
         // On Linux Ctrl+V is the textarea's own paste, which already reaches paste_other.
         if (mac() && e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
       })
-      // The card: everything inside lifts and fades on Start, then the overlay closes.
-      .child(v_flex().id("card").relative().size_full().p(18).gap(12)
-        .top(this.leaving ? -18 : 0).transition("top", { duration: LIFT_MS, easing: "ease-in" })
-        .opacity(this.leaving ? 0 : 1).transition("opacity", { duration: LIFT_MS, easing: "ease-in" })
+      // The card rises in on open, drops out on Cancel, and lifts and fades on Start before the overlay closes.
+      .child(v_flex().id("card").relative().flex_shrink_0().w(CARD_W).h(CARD_H).overflow_hidden().p(18).gap(12)
+        .bg(t.popover).border_1().border_color(t.border).rounded(12).shadow_xl()
+        // A press inside the card is not a click outside.
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .top(top).transition("top", motion)
+        .opacity(visible ? 1 : 0).transition("opacity", motion)
         // One line: a long Tasks Play title wrapped in the fixed-height dialog and squeezed the prompt to nothing.
         .child(div().flex_shrink_0().min_w(0).truncate().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
         // Keep padding outside the native editor so its scroll viewport matches its visible height.
@@ -625,7 +654,7 @@ export default class SessionLauncher extends View {
           .when(Boolean(this.route), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(this.route.reason))))
         .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
         .child(h_flex().flex_shrink_0().justify_end().gap(10)
-          .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click(() => { if (!this.busy) closeOverlay(p.overlay); }))
+          .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click((_e, cx) => this.dismiss(cx)))
           .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx)))));
   }
 }
