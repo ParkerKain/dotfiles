@@ -1,0 +1,9 @@
+{
+  "place": "none",
+  "title": "Tasks with crew (playground)",
+  "overlay": {
+    "width": 390,
+    "height": 180
+  },
+  "focusable": true
+}
