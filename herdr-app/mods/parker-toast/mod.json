@@ -1,0 +1,7 @@
+{
+  "place": "none",
+  "title": "Toast",
+  "palette": [
+    { "title": "Toast demo", "command": "mod.open", "args": { "name": "parker-toast" }, "words": "notification toast calendar factory artifacts sample" }
+  ]
+}
