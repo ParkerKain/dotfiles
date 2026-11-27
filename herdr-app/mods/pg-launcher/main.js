@@ -16,6 +16,8 @@ const mac = () => appWindow()?.platform !== "linux";
 const ROUTE_DEBOUNCE = 400;
 // How long the card takes to lift and fade before the overlay closes.
 const LIFT_MS = 350;
+const UNROLL_MS = 340;   // line to full card
+const ROLL_UP_MS = 200;  // card back to a line on Cancel
 // The card rises and fades in on open, and drops and fades out on Cancel, Esc or a click outside.
 const RISE_MS = 220;
 const DROP_MS = 160;
@@ -234,13 +236,15 @@ export default class SessionLauncher extends View {
     });
   }
 
-  // Cancel, Esc and a click outside: the card drops and fades, then the overlay closes.
+  rolledOpen() { return this.shown && !this.closing; }
+
+  // Cancel, Esc and a click outside: the card rolls up to a line and fades, then the overlay closes.
   dismiss(cx) {
     if (this.busy || this.closing) return;
     this.closing = true;
     this.picking = null;
     cx.notify();
-    cx.timer.after(DROP_MS, () => closeOverlay(props()?.overlay));
+    cx.timer.after(ROLL_UP_MS + 130, () => closeOverlay(props()?.overlay));
   }
 
   pasteImage(cx) {
@@ -601,8 +605,6 @@ export default class SessionLauncher extends View {
   render() {
     const t = theme();
     const canStart = !this.busy && Boolean(this.text.trim());
-    const top = this.leaving ? -18 : this.closing ? 10 : this.shown ? 0 : 14;
-    const visible = this.shown && !this.leaving && !this.closing;
     const motion = this.leaving ? { duration: LIFT_MS, easing: "ease-in" }
       : this.closing ? { duration: DROP_MS, easing: "ease-in" }
       : { duration: RISE_MS, easing: "ease-out" };
@@ -626,13 +628,21 @@ export default class SessionLauncher extends View {
         // On Linux Ctrl+V is the textarea's own paste, which already reaches paste_other.
         if (mac() && e.key.toLowerCase() === "v" && e.modifiers.control && !e.modifiers.platform) { this.pasteImage(cx); cx.stop_propagation(); }
       })
-      // The card rises in on open, drops out on Cancel, and lifts and fades on Start before the overlay closes.
-      .child(v_flex().id("card").relative().flex_shrink_0().w(CARD_W).h(CARD_H).overflow_hidden().p(18).gap(12)
+      // The card unrolls like a scroll: it opens as a thin line and its height grows downward,
+      // revealing the content top first. Cancel rolls it back up to the line and fades it;
+      // Start lifts and fades it as before. The fixed-height box keeps the top edge still.
+      .child(v_flex().id("roll").flex_shrink_0().w(CARD_W).h(CARD_H).items_start()
+      // The clip grows; the card inside keeps its full height, so the content is revealed
+      // top first instead of squeezing.
+      .child(div().id("clip").relative().flex_shrink_0().w(CARD_W).h(this.rolledOpen() ? CARD_H : 3).overflow_hidden()
+        .transition("height", this.closing ? { duration: ROLL_UP_MS, easing: "ease-in" } : { duration: UNROLL_MS, easing: "ease-out" })
         .bg(t.popover).border_1().border_color(t.border).rounded(12).shadow_xl()
         // A press inside the card is not a click outside.
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .top(top).transition("top", motion)
-        .opacity(visible ? 1 : 0).transition("opacity", motion)
+        .top(this.leaving ? -18 : 0).transition("top", motion)
+        .opacity(this.leaving ? 0 : this.closing ? 0 : 1)
+        .transition("opacity", this.closing ? { duration: 120, delay: ROLL_UP_MS, easing: "ease-in" } : motion)
+      .child(v_flex().id("card").relative().flex_shrink_0().w(CARD_W - 2).h(CARD_H - 2).p(18).gap(12)
         // One line: a long Tasks Play title wrapped in the fixed-height dialog and squeezed the prompt to nothing.
         .child(div().flex_shrink_0().min_w(0).truncate().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
         // Keep padding outside the native editor so its scroll viewport matches its visible height.
@@ -655,6 +665,6 @@ export default class SessionLauncher extends View {
         .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
         .child(h_flex().flex_shrink_0().justify_end().gap(10)
           .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click((_e, cx) => this.dismiss(cx)))
-          .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx)))));
+          .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx)))))));
   }
 }
