@@ -1,14 +1,15 @@
-// Playground prototype: the kit's Tasks panel with "Crew on top, list below". Above the
-// groups, a Crew section lists every live agent session launched for a task (the
-// ops-task=<key> label, or the Play prompt): one row per agent with its state, the task
-// and the session (tab) name. Needs-you rows breathe red, ready rows flash once and offer
-// the done check, and the section re-sorts needs-you, ready, working with rows gliding
-// to their new place. Tasks in the crew are left out of the groups. The rest (groups,
-// letters, keys, redate, drafts) is the kit's ops-tasks mod. props().sample (or SAMPLE
-// below) shows made-up tasks and agents that change state, and never runs a write.
+// Playground prototype: the kit's Tasks panel where tasks point at their agents. Agents
+// live only in the left sidebar. Each task row with a live agent (the ops-task=<key>
+// label, or the Play prompt) gets a tag under its title per agent: the state dot, the
+// session (tab) name and a plain state ("asks you" breathing red, "ready to check ✓",
+// "working Nm"). Clicking a tag jumps to that session, as ↗ does, and a tag flashes once
+// when its state changes. Everything else (Active group, letters, keys, redate, drafts)
+// is the kit's ops-tasks mod. Another mod can reveal a task here by setting shared
+// "pg-tasks.reveal" to {key, at}: the row scrolls into view and flashes. props().sample
+// (or SAMPLE below) shows made-up tasks and agents that change state, and never writes.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState, ScrollHandle } from "gpui-base";
-import { exec, home, appHome, readTextFile, writeTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused, terminals, agents, layout, checking, window as appWindow } from "herdr";
+import { exec, home, appHome, readTextFile, writeTextFile, props, theme, run, openOverlay, closeOverlay, shared, setShared, nextCommand, focused, terminals, agents, spaces, layout, checking, window as appWindow } from "herdr";
 
 // Forces sample data in a scratch copy (herdr-app check has no props).
 const SAMPLE = false;
@@ -31,6 +32,7 @@ function paneBacking(t, fallback) {
 
 const REFRESH = "ops-tasks.refresh";
 const HINTS = "ops-tasks.hints";
+const REVEAL = "pg-tasks.reveal";
 const cli = () => `${home()}/go/bin/ops-tasks`;
 const contextCli = () => `${home()}/.local/bin/session-context`;
 const draftFile = () => `${home()}/.local/share/parker-prep/drafts.json`;
@@ -197,9 +199,9 @@ function promptKey(argv, tasks) {
   const task = tasks.find(task => prompt.includes(`\nTask: ${task.title}\n`) && (!task.project_name || prompt.includes(`\nProject: ${task.project_name}\n`)));
   return task ? keyOf(task) : null;
 }
-function sessions(tasks) {
+function sessions(tasks, terms) {
   const out = new Map();
-  for (const t of terminals()) {
+  for (const t of terms) {
     if (t.state && t.state !== "live") continue;
     const key = t.labels?.[TASK_LABEL] || promptKey(t.argv, tasks);
     if (!key) continue;
@@ -209,14 +211,12 @@ function sessions(tasks) {
   return out;
 }
 
-// The crew: one row per live agent launched for a task, in three plain states.
-const CREW_RANK = { ask: 0, ready: 1, working: 2 };
-const crewState = status => status === "blocked" ? "ask" : status === "done" || status === "idle" ? "ready" : "working";
-const CREW_ROW = 44, CREW_SLOT = 48;
-function crewMembers(tasks, terms, agentList) {
-  const byKey = new Map(tasks.map(task => [keyOf(task), task]));
+// Task tags: one per live agent launched for a task, in three plain states, keyed by task.
+const TAG_RANK = { ask: 0, ready: 1, working: 2 };
+const tagState = status => status === "blocked" ? "ask" : status === "done" || status === "idle" ? "ready" : "working";
+function taskTags(tasks, terms, agentList, tabWorking) {
   const agentOf = new Map(agentList.map(a => [a.address, a]));
-  const out = [];
+  const out = new Map();
   for (const t of terms) {
     if (t.state && t.state !== "live") continue;
     const key = t.labels?.[TASK_LABEL] || promptKey(t.argv, tasks);
@@ -224,9 +224,12 @@ function crewMembers(tasks, terms, agentList) {
     const status = typeof t.status === "string" ? t.status : t.status?.state ?? null, a = agentOf.get(t.address);
     // An unnamed tab is called by its number, so the space name carries it then.
     const tabName = a?.tab_name && !/^\d+$/.test(a.tab_name) ? a.tab_name : [a?.space_name, a?.tab_name].filter(Boolean).join(" ");
-    out.push({ address: t.address, key, status, state: crewState(status), task: byKey.get(key) ?? null,
-      tab: tabName || a?.pane_name || t.name || t.address, started: t.started ?? null });
+    const tag = { address: t.address, key, status, state: tagState(status),
+      tab: tabName || a?.pane_name || t.name || t.address, started: tabWorking.get(a?.tab) ?? t.started ?? null };
+    if (!out.has(key)) out.set(key, []);
+    out.get(key).push(tag);
   }
+  for (const list of out.values()) list.sort((a, b) => TAG_RANK[a.state] - TAG_RANK[b.state] || a.tab.localeCompare(b.tab));
   return out;
 }
 function elapsed(ms) {
@@ -263,7 +266,7 @@ function sampleCrew(tick) {
   };
 }
 
-const TONE = { Crew: "accent", Active: "working", Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
+const TONE = { Active: "working", Overdue: "blocked", Today: "accent", Tomorrow: "working", Upcoming: "muted", Later: "dim", "No date": "dim" };
 
 export default class OpsTasks extends View {
   init(_props, cx) {
@@ -282,8 +285,12 @@ export default class OpsTasks extends View {
     }
     this.sample = Boolean(props()?.sample ?? SAMPLE);
     this.tasks = []; this.drafts = {}; this.error = null; this.loading = false; this.workDir = null;
-    // Crew bookkeeping: each agent's last state and since when, and rows flashing now.
-    this.crewSeen = new Map(); this.crewReady = false; this.flash = {}; this.sampleTick = 0;
+    // Tag bookkeeping: each agent's last state and since when, and tags or rows flashing now.
+    this.tagSeen = new Map(); this.tagsReady = false; this.flash = {}; this.sampleTick = 0;
+    // A reveal stamped just before this copy started (the click that opened the panel) still counts.
+    const reveal = shared(REVEAL);
+    this.seenReveal = reveal?.at ?? null;
+    this.pendingReveal = reveal?.key && Date.now() - reveal.at < 3000 ? { key: reveal.key, at: Date.now() } : null;
     this.searching = false; this.query = []; this.noteSearch = null;
     this.scroll = ScrollHandle.new();
     this.searchInput = InputState.new({ placeholder: "Search tasks…" });
@@ -316,7 +323,7 @@ export default class OpsTasks extends View {
       cx.notify();
     });
     // Redraw "working Nm" once a minute while someone is working.
-    if (!checking()) cx.timer.every(30000, cx => { if (this.crewWorking && appWindow()?.visible !== false) cx.notify(); });
+    if (!checking()) cx.timer.every(30000, cx => { if (this.anyWorking && appWindow()?.visible !== false) cx.notify(); });
     if (this.sample) {
       this.tasks = sampleTasks();
       this.drafts = { "personal:task:4": { state: "ready", available: true, draft_path: "/tmp/sample.draft.md" } };
@@ -417,11 +424,11 @@ export default class OpsTasks extends View {
     return this.workDir;
   }
 
-  // From a crew row, `address` is that row's agent; elsewhere the task's most urgent one.
+  // From a tag, `address` is that tag's agent; elsewhere the task's most urgent one.
   start(task, cx, address = null) {
     if (this.sample) return;
     const ref = keyOf(task);
-    const live = address ? { address } : sessions(this.tasks ?? []).get(ref);
+    const live = address ? { address } : sessions(this.tasks ?? [], terminals()).get(ref);
     if (live) run("agent.focus", { terminal: live.address });
     cx.spawn(async cx => {
       try {
@@ -612,78 +619,46 @@ export default class OpsTasks extends View {
         .child(div().cursor_pointer().text_color(t.accent).child(this.saving ? "Saving…" : "Save").on_click((_e, cx) => this.reschedule(cx))));
   }
 
-  // Notes each agent's state and since when. A row flashes when its state changes or it
-  // joins the crew, never on the panel's first read.
-  trackCrew(members, cx) {
-    const now = Date.now(), quiet = !this.crewReady;
-    for (const m of members) {
-      const prev = this.crewSeen.get(m.address);
+  // Notes each agent's state and since when. A tag flashes when its state changes or its
+  // agent starts, never on the panel's first read.
+  trackTags(tags, cx) {
+    const now = Date.now(), quiet = !this.tagsReady;
+    for (const m of tags) {
+      const prev = this.tagSeen.get(m.address);
       if (!prev || prev.state !== m.state) {
-        this.crewSeen.set(m.address, { state: m.state, since: prev ? now : (m.started ?? now) });
-        if (!quiet) this.flashRow(m.address, cx);
+        this.tagSeen.set(m.address, { state: m.state, since: prev ? now : (m.started ?? now) });
+        if (!quiet) this.flashOnce(m.address, cx);
       }
-      m.since = this.crewSeen.get(m.address).since;
+      // A working tab's own working_since wins over when this panel noticed it.
+      m.since = m.state === "working" && m.started ? m.started : this.tagSeen.get(m.address).since;
     }
-    const live = new Set(members.map(m => m.address));
-    for (const address of [...this.crewSeen.keys()]) if (!live.has(address)) this.crewSeen.delete(address);
-    if (this.loadedOnce || this.sample) this.crewReady = true;
+    const live = new Set(tags.map(m => m.address));
+    for (const address of [...this.tagSeen.keys()]) if (!live.has(address)) this.tagSeen.delete(address);
+    if (this.loadedOnce || this.sample) this.tagsReady = true;
   }
 
   // Drawn at full strength for one frame, then faded out by the opacity transition.
-  flashRow(address, cx) {
-    this.flash[address] = true;
-    cx.timer.after(60, cx => { this.flash[address] = false; cx.notify(); });
+  flashOnce(id, cx) {
+    this.flash[id] = true;
+    cx.timer.after(60, cx => { this.flash[id] = false; cx.notify(); });
   }
 
-  jump(m, cx) {
-    if (m.task) this.start(m.task, cx, m.address);
-    else if (!this.sample) run("agent.focus", { terminal: m.address });
-  }
-
-  // Rows sit at fixed slots in a box of known height, so a re-sort only changes each row's
-  // top and the transition glides it there. Ids are the agents' addresses, stable across sorts.
-  crewSection(t, crew, now, hint) {
-    if (!crew.length) return null;
-    const asks = crew.filter(m => m.state === "ask").length, ready = crew.filter(m => m.state === "ready").length;
-    const tone = { ask: t.blocked, ready: t.done, working: t.working };
-    const summary = [asks && [`${asks} need${asks === 1 ? "s" : ""} you`, t.blocked], ready && [`${ready} ready`, t.done]].filter(Boolean);
-    const heading = h_flex().id("heading-crew").px(5).gap(7).items_center()
-      .child(div().w(3).h(13).rounded(2).bg(t.accent))
-      .child(div().font_semibold().text_color(t.accent).child("Crew"))
-      .child(div().text_color(t.dim).child(String(crew.length)))
-      .children(summary.map(([text, color]) => div().flex_none().whitespace_nowrap().text_color(color).child(text)))
-      .child(div().flex_1().h(1).bg(t.border));
-    const row = (m, i) => {
-      const color = tone[m.state] ?? t.working, ask = m.state === "ask";
-      const text = ask ? "asks a question" : m.state === "ready" ? "ready to check" : `working ${elapsed(now - m.since)}`;
-      const dot = div().flex_none().size(7).rounded(4).bg(color);
-      const label = m.task ? hint(m.task) : null;
-      return div().id(`crew-${m.address}`).absolute().left(0).right(0).top(i * CREW_SLOT).h(CREW_ROW)
-        .transition("top", { duration: 320, easing: "ease-out" })
-        .child(h_flex().id(`crew-card-${m.address}`).relative().size_full().items_center().rounded(6).border_1()
-          .border_color(this.picked && this.picked === m.task ? t.accent : ask ? t.blocked : alpha(t.border, 0.8))
-          .bg(ask ? alpha(t.blocked, 0.08) : alpha(t.selected ?? t.hover, 0.6))
-          .child(div().id(`crew-flash-${m.address}`).absolute().inset_0().rounded(6).bg(alpha(color, 0.4))
-            .opacity(this.flash[m.address] ? 1 : 0).transition("opacity", { duration: 1100, easing: "ease-out" }))
-          .child(v_flex().id(`crew-open-${m.address}`).flex_1().min_w(0).h_full().justify_center().gap(2).pl(8).cursor_pointer()
-            .on_click((_e, cx) => this.jump(m, cx))
-            .child(h_flex().gap(6).items_center().min_w(0)
-              .when(label, el => el.child(label))
-              .child(ask ? dot.loop("opacity", { from: 0.3, to: 1, period: 1200 }) : dot)
-              .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(m.task?.title ?? m.key)))
-            .child(h_flex().gap(6).items_center().min_w(0).pl(13)
-              .child(div().flex_none().whitespace_nowrap().text_color(color).child(text))
-              .child(div().flex_none().text_color(t.dim).child("·"))
-              .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m.tab))))
-          .child(h_flex().flex_none().gap(10).px(8).items_center()
-            .child(div().id(`crew-jump-${m.address}`).cursor_pointer().text_color(t.accent).child("↗").on_click((_e, cx) => this.jump(m, cx)))
-            .when(m.state === "ready" && m.task, el => el.child(div().id(`crew-done-${m.address}`).cursor_pointer().text_color(t.done).child("✓")
-              .on_click(() => this.openComplete(m.task))))));
-    };
-    return v_flex().id("crew").flex_none().gap(6).mb(4)
-      .child(heading)
-      .child(div().id("crew-rows").relative().flex_none().w_full().h(crew.length * CREW_SLOT - (CREW_SLOT - CREW_ROW))
-        .children(crew.map(row)));
+  // One agent on a task: state dot, session (tab) name and plain state. Clicking jumps there.
+  tag(t, task, m, now) {
+    const color = { ask: t.blocked, ready: t.done, working: t.working }[m.state] ?? t.working, ask = m.state === "ask";
+    const text = ask ? "asks you" : m.state === "ready" ? "ready to check ✓" : `working ${elapsed(now - m.since)}`;
+    const dot = div().flex_none().size(6).rounded(3).bg(color);
+    return h_flex().id(`tag-${m.address}`).relative().flex_none().max_w_full().min_w(0).gap(5).items_center()
+      .px(7).h(18).rounded(9).border_1().cursor_pointer()
+      .border_color(ask ? t.blocked : alpha(color, 0.45)).bg(alpha(color, ask ? 0.14 : 0.08))
+      .hover(s => s.bg(alpha(color, 0.2)))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); this.start(task, cx, m.address); })
+      .child(ask ? dot.loop("opacity", { from: 0.3, to: 1, period: 1200 }) : dot)
+      .child(div().flex_shrink_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(m.tab))
+      .child(div().flex_none().whitespace_nowrap().text_size(11).text_color(color).child(text))
+      .child(div().id(`tag-flash-${m.address}`).absolute().inset_0().rounded(9).bg(alpha(color, 0.45))
+        .opacity(this.flash[m.address] ? 1 : 0).transition("opacity", { duration: 1100, easing: "ease-out" }));
   }
 
   render(cx) {
@@ -735,18 +710,16 @@ export default class OpsTasks extends View {
     if (hints !== this.seenHints) { this.seenHints = hints; cx.timer.after(0, cx => { this.startHints(); cx.notify(); }); }
     const now = new Date(), inDays = n => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n));
     const today = inDays(0), tomorrow = inDays(1), end = inDays(7);
-    // The crew replaces the Active group: a task with a live agent shows only up there.
-    const groups = ["Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
+    const groups = ["Active", "Overdue", "Today", "Tomorrow", "Upcoming", "Later", "No date"];
     const rows = Object.fromEntries(groups.map(g => [g, []]));
-    const live = sessions(this.tasks);
     const source = this.sample ? sampleCrew(this.sampleTick) : { terms: terminals(), agents: agents() };
-    let crew = crewMembers(this.tasks, source.terms, source.agents);
-    this.trackCrew(crew, cx);
-    crew.sort((a, b) => CREW_RANK[a.state] - CREW_RANK[b.state] || (a.task?.title ?? a.key).localeCompare(b.task?.title ?? b.key) || a.address.localeCompare(b.address));
-    this.crewWorking = crew.some(m => m.state === "working");
-    const crewKeys = new Set(crew.map(m => m.key));
-    const crewTasks = [...new Set(crew.map(m => m.task).filter(Boolean))];
-    for (const task of this.tasks) if (!crewKeys.has(keyOf(task))) rows[group(task, today, tomorrow, end)].push(task);
+    const live = sessions(this.tasks, source.terms);
+    const tabWorking = new Map(this.sample ? [] : spaces().flatMap(s => s.tabs ?? []).filter(tab => tab.working_since).map(tab => [tab.id, tab.working_since]));
+    const tagsOf = taskTags(this.tasks, source.terms, source.agents, tabWorking);
+    const allTags = [...tagsOf.values()].flat();
+    this.trackTags(allTags, cx);
+    this.anyWorking = allTags.some(m => m.state === "working");
+    for (const task of this.tasks) rows[live.has(keyOf(task)) ? "Active" : group(task, today, tomorrow, end)].push(task);
     // Upcoming sorts by due date first. Ties and other sections use saved order, then CLI order.
     const rank = new Map(this.order.map((k, i) => [k, i]));
     const savedRank = task => rank.get(keyOf(task)) ?? this.order.length;
@@ -768,20 +741,15 @@ export default class OpsTasks extends View {
       else if (this.hadFocus) { this.hinting = false; this.picked = null; this.typed = ""; }
     } else this.hadFocus = false;
     // Labels follow display order, so the nearest tasks get single letters.
-    this.ordered = [...crewTasks, ...groups.flatMap(g => rows[g])];
+    this.ordered = groups.flatMap(g => rows[g]);
     const noteSearch = this.noteSearch?.tasks === this.tasks ? this.noteSearch : null;
     if (this.query.length) {
-      crew = crew.filter(m => {
-        const text = [m.task?.display_title, m.task?.title, m.task?.project_name, m.tab, m.key].join(" ").toLowerCase();
-        return this.query.every(word => text.includes(word));
-      });
       for (const g of groups) rows[g] = rows[g].filter(task => {
         const text = [task.display_title, task.title, task.context, task.project_name, task.customer_name, noteSearch?.notes.get(keyOf(task))].join(" ").toLowerCase();
         return this.query.every(word => text.includes(word));
       });
     }
-    const shownCrewTasks = [...new Set(crew.map(m => m.task).filter(Boolean))];
-    const ordered = [...shownCrewTasks, ...groups.flatMap(g => rows[g])], names = labels(ordered.length);
+    const ordered = groups.flatMap(g => rows[g]), names = labels(ordered.length);
     this.hintMap = ordered.map((task, i) => [names[i], task]);
     const labelOf = new Map(this.hintMap.map(([label, task]) => [task, label]));
     const badge = (task) => {
@@ -789,7 +757,23 @@ export default class OpsTasks extends View {
       return div().flex_none().px(4).rounded(3).font_semibold()
         .bg(live ? t.accent : t.border).text_color(live ? t.background : t.dim).child(label);
     };
-    const crewSection = this.crewSection(t, crew, now, task => this.hinting && !this.picked && labelOf.has(task) ? badge(task) : null);
+    // Another mod asked to show a task (pg-sessions' task line): scroll to its row and flash it.
+    const reveal = shared(REVEAL);
+    if (reveal?.at && reveal.at !== this.seenReveal) { this.seenReveal = reveal.at; this.pendingReveal = { key: reveal.key, at: Date.now() }; }
+    const items = [], itemKeys = [];
+    for (const g of groups.filter(g => rows[g].length)) {
+      items.push(heading(g, !items.length)); itemKeys.push(null);
+      for (const task of rows[g]) { items.push(this.taskRow(t, task, g, live, tagsOf, now, badge)); itemKeys.push(keyOf(task)); }
+    }
+    if (this.pendingReveal) {
+      const at = itemKeys.indexOf(this.pendingReveal.key);
+      if (at >= 0) {
+        const key = this.pendingReveal.key;
+        this.pendingReveal = null;
+        this.scroll.scroll_to_item(at);
+        cx.timer.after(120, cx => { this.flashOnce(`row:${key}`, cx); cx.notify(); });
+      } else if ((this.loadedOnce || this.sample) && Date.now() - this.pendingReveal.at > 10000) this.pendingReveal = null;
+    }
     return v_flex().id("pg-tasks").track_focus(this.handle).size_full().min_h(0).bg(paneBacking(t, props()?.glass ? t.chrome : t.background)).text_size(12)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", () => { if (!this.searching) this.handle.focus(); })
@@ -809,39 +793,42 @@ export default class OpsTasks extends View {
       .when(this.query.length && (noteSearch?.loading || noteSearch?.incomplete), el => el.child(div().px(12).pt(6).text_color(t.dim)
         .child(noteSearch.loading ? "Searching project task notes…" : "Some project task notes could not be searched.")))
       .when(this.query.length && !ordered.length && !this.loading && !noteSearch?.loading, el => el.child(div().p(12).text_color(t.dim).child("No matching tasks.")))
-      .child(v_flex().id("tasks-list").track_scroll(this.scroll).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8)
-        .when(crewSection, el => el.child(crewSection))
-        .children(groups.filter(g => rows[g].length).flatMap((g, i) => [
-        heading(g, i === 0 && !crewSection),
-        ...rows[g].map(task => {
-          const ref = keyOf(task), session = live.get(ref), draft = this.drafts[ref], details = this.taskDates?.[ref];
-          const marker = draftMarker(draft, details), waiting = waitingLabel(draft, details, now);
-          const dates = rowDates(task, details), detailLines = rowDetails(task, draft, details);
-          const unread = unreadNotes(draft), notes = unread === 1 ? "1 note" : `${unread} notes`;
-          return v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
-          .when(session, el => el.bg(t.selected ?? t.hover))
-          .border_t(2).border_b(2).border_color(CLEAR)
-          .when(this.dropAt?.key === keyOf(task), el => this.dropAt.after ? el.border_b(2).border_color(t.accent) : el.border_t(2).border_color(t.accent))
-          .when(this.drag?.active && this.drag.key === keyOf(task), el => el.opacity(0.4))
-          .on_mouse_down("left", e => { this.drag = { key: keyOf(task), group: g, due: task.due_date, y: e.position.y, active: false }; })
-          .on_mouse_move((e, cx) => this.dragOver(task, g, e, cx))
-          .when(this.picked === task, el => el.bg(t.hover).border_1().border_color(t.accent))
-          .child(h_flex().gap(5).items_center().when(this.hinting && !this.picked, el => el.child(badge(task))).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
-            .child(div().cursor_pointer().text_color(t.accent).child(session ? "↗" : "▶").on_click((_e, cx) => this.start(task, cx)))
-            .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => this.openRedate(task)))
-            .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => this.openComplete(task))))
-          .child(h_flex().gap(8).text_color(t.dim)
-            .when(marker, el => el.child(div().flex_none().whitespace_nowrap().text_color(t[marker[1]]).child(marker[0])))
-            .when(unread, el => el.child(div().flex_none().whitespace_nowrap().text_color(t.accent).child(notes)))
-            .when(session, el => el.child(h_flex().flex_none().gap(4).items_center()
-              .child(div().size(6).rounded(3).bg(t[session.status] ?? t.accent))
-              .child(div().whitespace_nowrap().text_color(t[session.status] ?? t.accent).child(session.status || "running"))))
-            .child(div().flex_1().min_w(0).truncate().child(rowMeta(task))))
-          .when(dates, el => el.child(div().min_w(0).truncate().text_color(t.dim).child(dates)))
-          .when(waiting, el => el.child(div().min_w(0).truncate().text_color(t.working).child(waiting)))
-          .when(this.picked === task, el => el.child(v_flex().id(`details-${ref}`).min_w(0).overflow_x_scrollbar().text_color(t.muted)
-            .children(detailLines.map(line => div().whitespace_nowrap().child(line)))));
-        })
-      ])));
+      .child(v_flex().id("tasks-list").track_scroll(this.scroll).flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(8).children(items));
+  }
+
+  // One task row, as the kit's, plus a tag per agent working it under the title.
+  taskRow(t, task, g, live, tagsOf, now, badge) {
+    const ref = keyOf(task), session = live.get(ref), draft = this.drafts[ref], details = this.taskDates?.[ref];
+    const marker = draftMarker(draft, details), waiting = waitingLabel(draft, details, now);
+    const dates = rowDates(task, details), detailLines = rowDetails(task, draft, details);
+    const unread = unreadNotes(draft), notes = unread === 1 ? "1 note" : `${unread} notes`;
+    const tags = tagsOf.get(ref) ?? [];
+    return v_flex().id(`task-${task.source}-${task.kind}-${task.id}`).relative().p(7).gap(3).rounded(6).hover(s => s.bg(t.hover))
+      .when(session, el => el.bg(t.selected ?? t.hover))
+      .border_t(2).border_b(2).border_color(CLEAR)
+      .when(this.dropAt?.key === ref, el => this.dropAt.after ? el.border_b(2).border_color(t.accent) : el.border_t(2).border_color(t.accent))
+      .when(this.drag?.active && this.drag.key === ref, el => el.opacity(0.4))
+      .on_mouse_down("left", e => { this.drag = { key: ref, group: g, due: task.due_date, y: e.position.y, active: false }; })
+      .on_mouse_move((e, cx) => this.dragOver(task, g, e, cx))
+      .when(this.picked === task, el => el.bg(t.hover).border_1().border_color(t.accent))
+      .child(h_flex().gap(5).items_center().when(this.hinting && !this.picked, el => el.child(badge(task))).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${task.status === "In progress" ? "▶ " : ""}${task.title}`))
+        .child(div().cursor_pointer().text_color(t.accent).child(session ? "↗" : "▶").on_click((_e, cx) => this.start(task, cx)))
+        .child(div().id(`redate-${task.source}-${task.kind}-${task.id}`).cursor_pointer().child(svg("mods/workspace-chrome/clock.svg").size(12).text_color(t.muted)).on_click(() => this.openRedate(task)))
+        .child(div().cursor_pointer().text_color(t.muted).child("✓").on_click(() => this.openComplete(task))))
+      .when(tags.length, el => el.child(h_flex().flex_wrap().gap(4).min_w(0).children(tags.map(m => this.tag(t, task, m, now)))))
+      .child(h_flex().gap(8).text_color(t.dim)
+        .when(marker, el => el.child(div().flex_none().whitespace_nowrap().text_color(t[marker[1]]).child(marker[0])))
+        .when(unread, el => el.child(div().flex_none().whitespace_nowrap().text_color(t.accent).child(notes)))
+        // The tags carry each agent's state, so the kit's status dot only shows without them.
+        .when(session && !tags.length, el => el.child(h_flex().flex_none().gap(4).items_center()
+          .child(div().size(6).rounded(3).bg(t[session.status] ?? t.accent))
+          .child(div().whitespace_nowrap().text_color(t[session.status] ?? t.accent).child(session.status || "running"))))
+        .child(div().flex_1().min_w(0).truncate().child(rowMeta(task))))
+      .when(dates, el => el.child(div().min_w(0).truncate().text_color(t.dim).child(dates)))
+      .when(waiting, el => el.child(div().min_w(0).truncate().text_color(t.working).child(waiting)))
+      .when(this.picked === task, el => el.child(v_flex().id(`details-${ref}`).min_w(0).overflow_x_scrollbar().text_color(t.muted)
+        .children(detailLines.map(line => div().whitespace_nowrap().child(line)))))
+      .child(div().id(`row-flash-${ref}`).absolute().inset_0().rounded(6).bg(alpha(t.accent, 0.3))
+        .opacity(this.flash[`row:${ref}`] ? 1 : 0).transition("opacity", { duration: 1100, easing: "ease-out" }));
   }
 }
