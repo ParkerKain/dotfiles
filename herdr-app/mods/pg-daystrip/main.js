@@ -4,7 +4,7 @@
 // Zoom link). When today has nothing left, the strip shows the next day that has events.
 // Clicking an event opens the Calendar panel on that day. Data comes from the kit's
 // `day-view` CLI, which reads the Outlook calendar.
-import { View, div } from "gpui-kit";
+import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { checking, exec, home, settings, theme, window as appWindow } from "herdr";
 import { addDays, allDay, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, stack, timed, windowOf } from "./lib/model.js";
@@ -89,19 +89,8 @@ export default class DayStrip extends View {
     const x = (min) => Math.round(((Math.min(Math.max(min, win.start), win.end) - win.start) / span) * W);
     const cd = isToday ? countdown(this.events, this.now) : null;
 
-    const frame = h_flex().id("pg-daystrip").size_full().min_w(0).px(8).pt(6).pb(2).text_size(11);
+    const frame = h_flex().id("pg-daystrip").size_full().min_w(0).px(8).pt(4).pb(2).text_size(11);
     const inner = h_flex().flex_1().min_w(0).h_full().rounded(10).border(1).border_color(t.border).bg(t.chrome).overflow_hidden();
-
-    const label = v_flex().flex_none().w(92).h_full().justify_center().px(10).border_r(1).border_color(t.border)
-      .child(div().font_semibold().text_color(t.foreground).child(isToday ? "Today" : dayLabel(this.date)))
-      // Your own out-of-office (kind "ooo") replaces the date. Teammates' all-day entries
-      // arrive as "free" and only show in the tooltip.
-      .child(div().id("day-sub").text_size(10).truncate()
-        .text_color(this.allDay.some(e => e.kind === "ooo") ? (t.working ?? t.dim) : t.dim)
-        .when(this.allDay.length > 0, el => el.tooltip(this.allDay.map(e => e.title).join("\n")))
-        .child(this.error ? "Calendar offline" : !this.loaded ? "Reading…"
-          : this.allDay.some(e => e.kind === "ooo") ? "Out of office"
-          : isToday ? dayLabel(this.date) : "Next workday"));
 
     const ticks = [];
     for (let m = win.start; m <= win.end; m += 60) {
@@ -116,7 +105,7 @@ export default class DayStrip extends View {
       const color = live ? c.live : soon ? c.soon : free ? c.free : c.event;
       const left = x(e.start_min), w = Math.max(6, x(e.end_min) - left - 2);
       // Two overlapping events split the row: the first on top, the second below.
-      const rowTop = 17, rowH = 30, h = lanes === 2 ? rowH / 2 - 1 : rowH;
+      const rowTop = 13, rowH = 21, h = lanes === 2 ? rowH / 2 - 1 : rowH;
       return div().id(`ev-${i}`).absolute().left(left).w(w).top(rowTop + (lane ? rowH / 2 + 1 : 0)).h(h).rounded(5).overflow_hidden()
         .bg(alpha(color, free ? 0.12 : soon ? 0.32 : 0.26)).border_l(3).border_color(color)
         .cursor_pointer().hover(s => s.bg(alpha(color, 0.42)))
@@ -141,28 +130,50 @@ export default class DayStrip extends View {
         .child(div().id("now-dot").absolute().left(x(this.now) - 4).top(9).w(8).h(8).rounded(4).bg(c.live)
           .transition("left", { duration: 1000, easing: "linear" })));
 
-    const chip = this.chip(t, c, cd, isToday);
-    return frame.child(inner.child(label).child(line).child(chip));
+    // The countdown ring sits at the strip's start (round 2 pick C); the old right-hand chip is gone.
+    return frame.child(inner.child(this.lead(t, c, cd, isToday)).child(line));
   }
 
-  chip(t, c, cd, isToday) {
-    const base = h_flex().id("chip").flex_none().w(210).h_full().items_center().gap(10).px(12).border_l(1).border_color(t.border);
-    if (!isToday) {
+  // The strip's start: a ring that fills over the last hour before the next call, with the
+  // minutes inside, and the call's name beside it. Live, the ring shows the call's time left.
+  lead(t, c, cd, isToday) {
+    const base = h_flex().id("lead").flex_none().w(190).h_full().items_center().gap(8).pl(8).pr(10).border_r(1).border_color(t.border);
+    const ooo = this.allDay.some(e => e.kind === "ooo");
+    const note = this.error ? "Calendar offline" : !this.loaded ? "Reading…" : ooo ? "Out of office" : null;
+    if (!isToday || !cd) {
       const first = timed(this.events).sort((a, b) => a.start_min - b.start_min)[0];
-      return base.child(div().text_size(16).font_semibold().text_color(t.muted).child("Done"))
-        .child(v_flex().min_w(0).child(div().truncate().text_color(t.foreground).child("Nothing left today"))
-          .child(div().truncate().text_size(10).text_color(t.dim).child(first ? `First: ${clockOf(first.start_min)} ${first.title}` : "")));
+      return base.child(this.ring(t, 0, t.dim, "–"))
+        .child(v_flex().min_w(0).child(div().truncate().font_semibold().text_color(t.foreground).child(isToday ? "Today" : `Next · ${dayLabel(this.date)}`))
+          .child(div().truncate().text_size(10).text_color(t.dim).child(note ?? (first ? `First ${clockOf(first.start_min)} ${first.title}` : ""))));
     }
-    const color = cd.tone === "live" ? c.live : cd.tone === "soon" ? c.soon : cd.tone === "clear" ? (t.done ?? t.ansi2) : t.foreground;
-    const url = joinUrl(cd.event);
+    const e = cd.event;
+    const mins = e ? e.start_min - this.now : null;
+    let value = 0, color = c.event, big = "";
+    if (cd.tone === "live") { value = (this.now - e.start_min) / Math.max(1, e.end_min - e.start_min); color = c.live; big = "on"; }
+    else if (cd.tone === "clear") { value = 1; color = t.done ?? t.ansi2; big = "✓"; }
+    else { value = Math.max(0, 1 - mins / 60); color = cd.tone === "soon" ? c.soon : c.event; big = mins < 60 ? String(mins) : `${Math.floor(mins / 60)}h`; }
+    const url = joinUrl(e);
+    const name = cd.tone === "clear" ? "Clear" : String(e?.title ?? "").replace(/^\[[^\]]+\]\s*/, "");
     return base.cursor_pointer().hover(s => s.bg(t.hover))
-      .tooltip(url ? "Click to join the call" : "Click to open Calendar")
+      .tooltip(e ? `${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}\n${url ? "Click to join the call" : "Click to open Calendar"}` + (this.allDay.length ? `\n\nAll day: ${this.allDay.map(a => a.title).join(", ")}` : "") : "Nothing else today")
       .on_click(() => (url ? open(url) : exec(cli(), ["show", this.date])))
-      .child(div().flex_none().text_size(17).font_semibold().text_color(color)
-        .when(cd.tone === "soon" || cd.tone === "live", el => el.loop("opacity", { from: 0.55, to: 1, period: 1400 }))
-        .child(cd.big))
+      .child(this.ring(t, value, color, big, cd.tone === "soon" || cd.tone === "live"))
       .child(v_flex().min_w(0)
-        .child(div().truncate().text_color(t.foreground).child(cd.title))
-        .child(div().truncate().text_size(10).text_color(t.dim).child([cd.sub, url ? "click joins" : ""].filter(Boolean).join(" · "))));
+        .child(div().truncate().font_semibold().text_color(t.foreground).child(name))
+        .child(div().truncate().text_size(10).text_color(note ? (t.working ?? t.dim) : t.dim).child(note ?? [cd.sub, url ? "click joins" : ""].filter(Boolean).join(" · "))));
+  }
+
+  ring(t, value, color, big, breathe) {
+    const S = 30, cx0 = S / 2, r = S / 2 - 3, w = 3.5;
+    const full = (b) => b.move_to(cx0, cx0 - r).arc_to(r, r, 0, false, true, cx0, cx0 + r).arc_to(r, r, 0, false, true, cx0, cx0 - r);
+    const v = Math.max(0, Math.min(1, value)), a = 2 * Math.PI * v;
+    const arc = v >= 0.999 ? full(PathBuilder.stroke(w))
+      : PathBuilder.stroke(w).move_to(cx0, cx0 - r).arc_to(r, r, 0, v > 0.5, true, cx0 + r * Math.sin(a), cx0 - r * Math.cos(a));
+    return div().id("ring").relative().flex_none().w(S).h(S)
+      .child(window.paint_path(full(PathBuilder.stroke(w)).build(), alpha(t.border, 0.9)).absolute().top(0).left(0).size_full())
+      .when(v > 0.01, el => el.child(div().absolute().inset_0().when(breathe, b => b.loop("opacity", { from: 0.5, to: 1, period: 1400 }))
+        .child(window.paint_path(arc.build(), color).absolute().top(0).left(0).size_full())))
+      .child(div().absolute().inset_0().flex().items_center().justify_center()
+        .text_size(big.length > 2 ? 9 : 11).font_semibold().text_color(t.foreground).child(big));
   }
 }

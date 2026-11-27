@@ -71,20 +71,10 @@
           "id": "pg-daystrip",
           "type": "block",
           "size": {
-            "px": 60
+            "px": 46
           },
           "content": {
             "mod": "pg-daystrip"
-          }
-        },
-        {
-          "id": "pg-radar",
-          "type": "block",
-          "size": {
-            "px": 122
-          },
-          "content": {
-            "mod": "pg-radar"
           }
         },
         {
@@ -236,31 +226,23 @@
             }
           ],
           "padding": 8,
-          "gap": 8,
-          "floating": [
-            {
-              "id": "deck",
-              "content": {
-                "mod": "pg-deck"
-              },
-              "edge": "right",
-              "align": "center",
-              "peek": 44
-            },
-            {
-              "id": "clock",
-              "content": {
-                "mod": "pg-clock"
-              },
-              "edge": "bottom",
-              "align": "end"
-            }
-          ]
+          "gap": 8
         },
         {
           "id": "status-row",
           "type": "row",
           "children": [
+            {
+              "id": "glances",
+              "type": "block",
+              "content": {
+                "mod": "pg-glances"
+              },
+              "size": {
+                "weight": 1
+              },
+              "min": 200
+            },
             {
               "id": "usage-limits",
               "type": "block",
