@@ -1,25 +1,24 @@
 // Playground prototype: the Diagnose question asked in the pane header.
 // A copy of the `pane` header mod (icon, name, folder, status, hover buttons) that also
 // answers `pg-diagnose.diagnose`. Every shown header copy gets the command, and only the
-// copy for the focused pane acts on it. That copy grows a panel down from the header: the
-// agent's last line quoted, then "What went wrong in <session>?" with an input. Enter
+// copy for the focused pane acts on it. That copy's header turns into the question:
+// "What went wrong in <session>?", an input, and the agent's last line quoted. Enter
 // forks the pane exactly the way the diagnose-session mod does (herdr-delegate fork
 // --pane <pane> -- <text>). Esc, or clicking away, collapses it.
 //
-// The header block itself can't grow: its height is the layout's pane.header.height,
-// shared by every pane, and a mod can't resize one pane's header. So the "growth" is a
-// gpui-base Popup anchored under the header row, the same width, drawn in the layer above
-// the terminal, with its height transitioning from 0. It reads as the header extending.
+// The question stays inside the header row itself. An earlier version drew a gpui-base Popup
+// under the header, but a popup in a header mod has no reliable position (it landed at the
+// window's edge or across two panes), so the row swaps its contents instead: a tinted row
+// with the question, an input, and the agent's last line on the right.
 //
 // Wire it with pane.header.content.mod = "pg-diagnose" and a key such as
 // "cmd-shift-i": "pg-diagnose.diagnose". It's also in the palette as "Diagnose in header".
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
+import { h_flex, InputState, Input } from "gpui-base";
 import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, settings, theme } from "herdr";
 import { lastLine } from "./lib/lastline.js";
 
-const PANEL_H = 132;
 const GROW_MS = 180;
 const alpha = (hex, a) => {
   const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
@@ -53,12 +52,20 @@ function folder(cwd) {
   return cwd === h ? "~" : cwd.startsWith(h + "/") ? "~" + cwd.slice(h.length) : cwd;
 }
 
+// The pane to ask about: the focused pane, or (when focus is in a palette or a fresh tab that
+// hasn't reported a pane yet) the pane marked focused in the focused tab, else its only pane.
+function targetPane() {
+  const f = focused();
+  if (f?.pane) return f.pane;
+  const inTab = panes().filter(p => p.tab === f?.tab && p.terminal);
+  return (inTab.find(p => p.focused) ?? (inTab.length === 1 ? inTab[0] : null))?.pane ?? null;
+}
+
 const nameOf = (p) => p.name || ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
 
 export default class DiagnoseHeader extends View {
   init(_props, cx) {
     this.hovered = false;
-    this.width = 0;
     this.open = false;      // panel mounted
     this.grown = false;     // panel at full height (a frame after mounting, so it animates)
     this.busy = false;
@@ -74,7 +81,7 @@ export default class DiagnoseHeader extends View {
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
-        if (command === "diagnose" && focused()?.pane === props()?.pane) this.expand(cx);
+        if (command === "diagnose" && targetPane() === props()?.pane) this.expand(cx);
         cx.notify();
       }
     });
@@ -152,47 +159,6 @@ export default class DiagnoseHeader extends View {
       .child(svg(`mods/pg-diagnose/${icon}.svg`).size(14));
   }
 
-  panel(t, name, bottom) {
-    const hint = this.error || (this.busy ? "Opening diagnostic fork…" : "Enter forks a diagnostic agent · Esc cancels");
-    const body = v_flex()
-      .id(`pg-diag-panel-${props()?.pane}`)
-      .w(Math.max(this.width, 240))
-      .h(this.grown ? PANEL_H : 0)
-      .transition("height", { duration: GROW_MS, easing: "ease-out" })
-      .opacity(this.grown ? 1 : 0)
-      .transition("opacity", { duration: GROW_MS, easing: "ease-out" })
-      .overflow_hidden()
-      .ml(this.originX ?? 0)
-      // Opaque: Frosted's theme background is translucent, which made the panel unreadable.
-      .bg(/^#[0-9a-f]{6}/i.test(t.background ?? "") ? t.background.slice(0, 7) + "f5" : t.background)
-      .border_color(t.border)
-      .border_l(1).border_r(1)
-      .when(bottom, el => el.border_t(1).rounded_t(8))
-      .when(!bottom, el => el.border_b(1).rounded_b(8))
-      .shadow_md()
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_key_down((e, cx) => {
-        if (e.key === "escape" && !this.busy) {
-          this.collapse(cx);
-          cx.stop_propagation();
-        }
-      })
-      .child(v_flex().px(12).pt(8).pb(10).gap(7)
-        .child(h_flex().gap(8).items_start().min_w(0)
-          .child(div().w(2).h(30).flex_none().rounded(1).bg(alpha(t.accent, 0.7)))
-          .child(div().flex_1().min_w(0).h(30).overflow_hidden().text_size(11.5).italic().text_color(t.dim)
-            .child(this.quote ? `“${this.quote}”` : "Reading the last line…")))
-        .child(div().text_size(13).font_medium().text_color(t.foreground).truncate()
-          .child(`What went wrong in ${name}?`))
-        .child(div().px(8).py(4).rounded(6).border_1()
-          .border_color(this.error ? t.blocked : t.input).bg(alpha(t.surface ?? t.background, 0.6))
-          .child(Input.new(this.input)))
-        .child(div().text_size(11).truncate().text_color(this.error ? t.blocked : t.muted)
-          .when(this.busy, el => el.loop("opacity", { from: 0.5, to: 1, period: 1200 }))
-          .child(hint)));
-    return body;
-  }
-
   render(cx) {
     const t = theme();
     const p = this.me();
@@ -202,7 +168,8 @@ export default class DiagnoseHeader extends View {
     const st = p.status;
     const pane = p.pane;
     const bottom = paneFrame(layout())?.header?.position === "bottom";
-    const row = h_flex()
+    if (this.open) return this.asking(t, p, name, pic, bottom);
+    return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
       .px(10)
@@ -211,13 +178,8 @@ export default class DiagnoseHeader extends View {
       .bg(t.background)
       .when(bottom, el => el.border_t(1))
       .when(!bottom, el => el.border_b(1))
-      .border_color(this.open ? alpha(t.accent, 0.6) : t.border)
+      .border_color(t.border)
       .text_size(12)
-      // on_size_change reports window px; the panel is laid out in layout px.
-      .on_size_change((size) => { this.width = size.width / (Number(settings()?.zoom) || 1); })
-      // A popup in a header mod is placed from the header's local origin, so it lands at the
-      // window's left edge. Learn the header's window origin from any mouse move and shift by it.
-      .on_window_mouse_move((e) => { if (e.local_position) { this.originX = e.position.x - e.local_position.x; } })
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
@@ -226,15 +188,42 @@ export default class DiagnoseHeader extends View {
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
-      .when(this.hovered && !this.open, el => el
+      .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
-    // The popup's content is pinned under the row (above it for a bottom header).
-    return Popup.new(`pg-diag-${pane}`, row)
+  }
+
+  // The header while asking: tinted, with the question, the input and the agent's last line.
+  // It fades in over the normal header (opacity, a frame after it mounts).
+  asking(t, p, name, pic, bottom) {
+    const hint = this.error || (this.busy ? "Opening diagnostic fork…" : "↵ fork · esc");
+    return h_flex()
+      .id(`pane-ask-${p.pane}`)
       .size_full()
-      .anchor(bottom ? "bottom_left" : "top_left")
-      .when(this.open, el => el.content(this.panel(t, name, bottom)));
+      .px(10)
+      .gap(8)
+      .items_center()
+      .bg(alpha(t.accent, 0.16))
+      .when(bottom, el => el.border_t(1))
+      .when(!bottom, el => el.border_b(1))
+      .border_color(t.accent)
+      .text_size(12)
+      .opacity(this.grown ? 1 : 0)
+      .transition("opacity", { duration: GROW_MS, easing: "ease-out" })
+      .on_key_down((e, cx) => {
+        if (e.key === "escape" && !this.busy) { this.collapse(cx); cx.stop_propagation(); }
+      })
+      .when(Boolean(pic), (el) => el.child(pic))
+      .child(div().flex_none().font_semibold().text_color(t.foreground).child(`What went wrong in ${name}?`))
+      .child(div().flex_1().min_w(120).h(22).px(8).flex().items_center().rounded(6).border_1()
+        .border_color(this.error ? t.blocked : alpha(t.accent, 0.7)).bg(t.background)
+        .child(Input.new(this.input)))
+      .when(Boolean(this.quote), el => el.child(div().flex_shrink_1().min_w(0).max_w(320).truncate().italic().text_size(11).text_color(t.dim)
+        .tooltip(this.quote).child(`last: “${this.quote}”`)))
+      .child(div().flex_none().text_size(11).text_color(this.error ? t.blocked : t.muted)
+        .when(this.busy, el => el.loop("opacity", { from: 0.5, to: 1, period: 1200 }))
+        .child(hint));
   }
 }
