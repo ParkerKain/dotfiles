@@ -235,6 +235,14 @@
               },
               "edge": "top",
               "align": "center"
+            },
+            {
+              "id": "diagnose-ask",
+              "content": {
+                "mod": "pg-diagnose-ask"
+              },
+              "edge": "top",
+              "align": "center"
             }
           ]
         },

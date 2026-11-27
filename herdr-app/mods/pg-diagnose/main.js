@@ -6,23 +6,18 @@
 // forks the pane exactly the way the diagnose-session mod does (herdr-delegate fork
 // --pane <pane> -- <text>). Esc, or clicking away, collapses it.
 //
-// The question grows down out of the header: a dark panel in a gpui-base Popup under the
-// row, its height transitioning from 0. A popup in a header mod is placed from the header's
-// own origin, not the window's, so each copy learns its window bounds from mouse moves
-// (any move anywhere in the window reaches every copy) and shifts the panel by them. A
-// copy that hasn't seen a move yet (a brand-new pane, mouse untouched) asks inline in the
-// header row instead, so the question always opens on the right pane.
+// The question itself is asked by pg-diagnose-ask, a panel that drops down from the top of
+// the work area (a floating block, so its position is reliable). A popup under the header
+// could not learn where the pane sits. This header marks the pane being asked about: an
+// accent edge, a tint and a "Diagnosing" chip, until the panel closes (pg-diagnose.clear).
 //
 // Wire it with pane.header.content.mod = "pg-diagnose" and a key such as
 // "cmd-shift-i": "pg-diagnose.diagnose". It's also in the palette as "Diagnose in header".
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
-import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, settings, theme } from "herdr";
-import { lastLine } from "./lib/lastline.js";
+import { h_flex } from "gpui-base";
+import { checking, focused, home, layout, nextCommand, panes, props, run, setShared, theme } from "herdr";
 
-const PANEL_H = 132;
-const GROW_MS = 240;
 const alpha = (hex, a) => {
   const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
   return m ? "#" + m[1] + Math.round(a * (m[2] ? parseInt(m[2], 16) / 255 : 1) * 255).toString(16).padStart(2, "0") : hex;
@@ -69,22 +64,13 @@ const nameOf = (p) => p.name || ((p.program?.agent || p.program?.shell) && p.pro
 export default class DiagnoseHeader extends View {
   init(_props, cx) {
     this.hovered = false;
-    this.open = false;      // panel mounted
-    this.grown = false;     // panel at full height (a frame after mounting, so it animates)
-    this.busy = false;
-    this.error = "";
-    this.quote = "";
-    this.openedAt = 0;
-    this.input = InputState.new({ placeholder: "Describe the behavior you expected in one sentence" });
-    this.input.on("submit", (_e, cx) => this.submit(cx));
-    this.input.on("blur", (_e, cx) => {
-      if (this.open && !this.busy && Date.now() - this.openedAt > 400) this.collapse(cx);
-    });
+    this.asking = false;
     if (checking()) return;
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
-        if (command === "diagnose" && targetPane() === props()?.pane) this.expand(cx);
+        if (command === "diagnose" && targetPane() === props()?.pane) this.ask();
+        else if (command === "clear") this.asking = false;
         cx.notify();
       }
     });
@@ -94,58 +80,13 @@ export default class DiagnoseHeader extends View {
     return panes().find((p) => p.pane === props()?.pane);
   }
 
-  expand(cx) {
-    if (this.open) { this.input.focus(); return; }
-    this.open = true; this.grown = false; this.busy = false; this.error = "";
-    this.quote = ""; this.openedAt = Date.now();
-    this.input.set_value("");
-    this.input.focus();
-    cx.timer.after(16, cx => { if (this.open) { this.grown = true; cx.notify(); } });
-    this.readQuote(cx);
-  }
-
-  collapse(cx) {
-    if (!this.open) return;
-    this.grown = false;
-    this.input.blur();
-    cx.notify();
-    cx.timer.after(GROW_MS + 20, cx => { if (!this.grown) { this.open = false; cx.notify(); } });
-  }
-
-  readQuote(cx) {
-    const terminal = props()?.terminal;
-    if (!terminal) return;
-    cx.spawn(async cx => {
-      const r = await hc(["read", terminal, "--lines", "40"]).catch(() => null);
-      if (!this.open) return;
-      this.quote = r?.code === 0 ? lastLine(r.stdout) : "";
-      cx.notify();
-    });
-  }
-
-  submit(cx) {
-    const feedback = this.input.value().trim();
-    const pane = props()?.pane;
-    if (!feedback || !pane || this.busy) return;
-    this.busy = true;
-    this.error = "";
-    cx.notify();
-    cx.spawn(async cx => {
-      try {
-        const result = await exec(`${home()}/.local/bin/herdr-delegate`,
-          ["fork", "--pane", pane, "--", feedback], { timeout: 90000 });
-        if (result.code === 0) {
-          this.busy = false;
-          this.collapse(cx);
-          return;
-        }
-        this.error = result.stderr.trim() || "Herdr could not launch the diagnostic fork.";
-      } catch (error) {
-        this.error = String(error?.message ?? error);
-      }
-      this.busy = false;
-      cx.notify();
-    });
+  // Marks this pane and hands the question to the drop-down panel.
+  ask() {
+    const p = this.me();
+    if (!p?.terminal) return;
+    this.asking = true;
+    setShared("pg-diagnose.ask", { pane: p.pane, terminal: p.terminal, name: nameOf(p), at: Date.now() });
+    run("pg-diagnose-ask.open");
   }
 
   button(t, id, icon, command, args) {
@@ -171,7 +112,6 @@ export default class DiagnoseHeader extends View {
     const st = p.status;
     const pane = p.pane;
     const bottom = paneFrame(layout())?.header?.position === "bottom";
-    if (this.open && !this.box) return this.asking(t, p, name, pic, bottom);
     const row = h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -181,7 +121,8 @@ export default class DiagnoseHeader extends View {
       .bg(t.background)
       .when(bottom, el => el.border_t(1))
       .when(!bottom, el => el.border_b(1))
-      .border_color(t.border)
+      .border_color(this.asking ? t.accent : t.border)
+      .when(this.asking, el => el.bg(alpha(t.accent, 0.14)))
       .text_size(12)
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
@@ -191,92 +132,13 @@ export default class DiagnoseHeader extends View {
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
+      .when(this.asking, el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.accent).text_size(10.5).font_semibold().text_color(t.background).child("Diagnosing ↑")))
       .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
-    // A resize means the header moved or changed width (sidebar or panel toggled, a split,
-    // a new zoom), so the learned spot is forgotten until the next mouse move.
-    row.on_size_change((size) => { const w = Math.round(size.width); if (w !== this.lastW) { this.lastW = w; this.box = null; } });
-    return Popup.new(`pg-diag-${pane}`, row.on_window_mouse_move((e) => this.learn(e)))
-      .size_full()
-      .anchor(bottom ? "bottom_left" : "top_left")
-      .when(this.open, el => el.content(this.panel(t, name, bottom)));
+    return row;
   }
 
-  // The header's window origin, from any mouse move: position minus local_position, both in
-  // layout px. (Event `bounds` gave a wrong x in a split window, so it isn't used.) The width
-  // comes from on_size_change, which reports window px.
-  learn(e) {
-    const p = e.position, l = e.local_position;
-    if (!p || !l || !(this.lastW > 0)) return;
-    const z = Number(settings()?.zoom) || 1;
-    this.box = { x: p.x - l.x, w: this.lastW / z };
-  }
-
-  // The panel that grows out of the header: darker than the terminal, the agent's last line
-  // quoted, the question and the input.
-  panel(t, name, bottom) {
-    const hint = this.error || (this.busy ? "Opening diagnostic fork…" : "↵ fork a diagnostic agent · esc cancel");
-    const dark = /^#[0-9a-f]{6}/i.test(t.chrome ?? "") ? t.chrome.slice(0, 7) + "fa" : t.chrome;
-    return v_flex()
-      .id(`pg-diag-panel-${props()?.pane}`)
-      .ml(this.box.x).w(this.box.w)
-      .h(this.grown ? PANEL_H : 0)
-      .transition("height", { duration: GROW_MS, easing: "ease-out" })
-      .overflow_hidden()
-      .bg(dark)
-      .border_color(t.accent).border_l(1).border_r(1)
-      .when(bottom, el => el.border_t(1).rounded_t(10))
-      .when(!bottom, el => el.border_b(1).rounded_b(10))
-      .shadow_lg()
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_key_down((e, cx) => { if (e.key === "escape" && !this.busy) { this.collapse(cx); cx.stop_propagation(); } })
-      .child(v_flex().px(14).pt(10).pb(12).gap(8)
-        .opacity(this.grown ? 1 : 0).transition("opacity", { duration: GROW_MS + 60, easing: "ease-out" })
-        .child(h_flex().gap(8).items_start().min_w(0)
-          .child(div().w(2).h(30).flex_none().rounded(1).bg(alpha(t.accent, 0.8)))
-          .child(div().flex_1().min_w(0).h(30).overflow_hidden().text_size(11.5).italic().text_color(t.dim)
-            .child(this.quote ? `“${this.quote}”` : "Reading the last line…")))
-        .child(div().text_size(13).font_semibold().text_color(t.foreground).truncate().child(`What went wrong in ${name}?`))
-        .child(div().px(8).py(5).rounded(7).border_1()
-          .border_color(this.error ? t.blocked : alpha(t.accent, 0.7)).bg(t.background)
-          .child(Input.new(this.input)))
-        .child(div().text_size(11).truncate().text_color(this.error ? t.blocked : t.muted)
-          .when(this.busy, el => el.loop("opacity", { from: 0.5, to: 1, period: 1200 }))
-          .child(hint)));
-  }
-
-  // The header while asking: tinted, with the question, the input and the agent's last line.
-  // It fades in over the normal header (opacity, a frame after it mounts).
-  asking(t, p, name, pic, bottom) {
-    const hint = this.error || (this.busy ? "Opening diagnostic fork…" : "↵ fork · esc");
-    return h_flex()
-      .id(`pane-ask-${p.pane}`)
-      .size_full()
-      .px(10)
-      .gap(8)
-      .items_center()
-      .bg(/^#[0-9a-f]{6}/i.test(t.chrome ?? "") ? t.chrome.slice(0, 7) + "fa" : t.chrome)
-      .when(bottom, el => el.border_t(1))
-      .when(!bottom, el => el.border_b(1))
-      .border_color(t.accent)
-      .text_size(12)
-      .opacity(this.grown ? 1 : 0)
-      .transition("opacity", { duration: GROW_MS, easing: "ease-out" })
-      .on_key_down((e, cx) => {
-        if (e.key === "escape" && !this.busy) { this.collapse(cx); cx.stop_propagation(); }
-      })
-      .when(Boolean(pic), (el) => el.child(pic))
-      .child(div().flex_none().font_semibold().text_color(t.foreground).child(`What went wrong in ${name}?`))
-      .child(div().flex_1().min_w(120).h(22).px(8).flex().items_center().rounded(6).border_1()
-        .border_color(this.error ? t.blocked : alpha(t.accent, 0.7)).bg(t.background)
-        .child(Input.new(this.input)))
-      .when(Boolean(this.quote), el => el.child(div().flex_shrink_1().min_w(0).max_w(320).truncate().italic().text_size(11).text_color(t.dim)
-        .tooltip(this.quote).child(`last: “${this.quote}”`)))
-      .child(div().flex_none().text_size(11).text_color(this.error ? t.blocked : t.muted)
-        .when(this.busy, el => el.loop("opacity", { from: 0.5, to: 1, period: 1200 }))
-        .child(hint));
-  }
 }

@@ -609,7 +609,14 @@ export default class SessionLauncher extends View {
       : this.closing ? { duration: DROP_MS, easing: "ease-in" }
       : { duration: RISE_MS, easing: "ease-out" };
     // The whole window: the space around the card is a click outside.
+    // A window overlay (not a dialog), so Esc reaches the mod and the card can roll back up.
+    // Windows have no dim, so the mod draws its own backdrop and fades it with the card.
+    // A press anywhere is stopped so the window can't be dragged; a click outside the card cancels.
     return v_flex().id("pg-launcher").track_focus(this.handle).size_full().items_center().justify_center()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(div().id("backdrop").absolute().inset_0().bg("#0b0a1499")
+        .opacity(this.shown && !this.closing && !this.leaving ? 1 : 0)
+        .transition("opacity", { duration: this.closing ? ROLL_UP_MS + 120 : UNROLL_MS, easing: "ease-out" }))
       .on_click((_e, cx) => this.dismiss(cx))
       .on_key_down((e, cx) => {
         if (this.picking && !e.modifiers.platform && !e.modifiers.control && /^[1-9]$/.test(e.key)) { if (this.pickNumber(Number(e.key), cx)) cx.stop_propagation(); return; }
