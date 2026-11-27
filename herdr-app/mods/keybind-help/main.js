@@ -30,7 +30,9 @@ const GROUPS = [
     ["layout.toggle:sidebar", "Toggle left sidebar"],
   ]],
   ["Navigation", [
+    ["space-sessions.next-agent", "Next agent"],
     ["agent.next", "Next agent"],
+    ["space-sessions.prev-agent", "Previous agent"],
     ["agent.prev", "Previous agent"],
     ["space.next", "Next space"],
     ["space.prev", "Previous space"],

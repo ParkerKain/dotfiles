@@ -68,3 +68,11 @@ test('Cmd+[ ] tab order follows the sidebar, with owned tabs right after their o
  const owners=new Map([['w1','main'],['w2','w1'],['w3','main']]);
  assert.deepEqual([...ctx.sidebarTabOrder(tabs,owners)],['main','w1','w2','w3','other']);
 });
+test('next and prev agent step through sidebar order from the focused pane and wrap',()=>{
+ const {mod}=setup();const acts=[];mod.act=(n,a)=>acts.push([n,a]);
+ mod.allSpaces=()=>[{id:'s',active:true,tabs:[{id:'main',active:true},{id:'other'},{id:'child'}]}];
+ mod.allAgents=()=>[{address:'p',tab:'main',pane:'pp'},{address:'o',tab:'other',pane:'po'},{address:'c',tab:'child',pane:'pc'}];
+ mod.orderedAgents=function(){const a=this.allAgents();return {ordered:[a[0],a[2],a[1]]};};
+ mod.stepAgent(1);assert.equal(JSON.stringify(acts.at(-1)),'["pane.focus",{"pane":"pc"}]');
+ mod.stepAgent(-1);assert.equal(JSON.stringify(acts.at(-1)),'["pane.focus",{"pane":"po"}]');
+});

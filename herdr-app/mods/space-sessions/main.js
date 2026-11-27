@@ -31,6 +31,8 @@ export default class SpaceSessions extends View {
         const command = await nextCommand();
         if (command === "hints") this.startHints();
         if (command === "focus") this.handle.focus();
+        if (command === "next-agent") this.stepAgent(1);
+        if (command === "prev-agent") this.stepAgent(-1);
         cx.notify();
       }
     });
@@ -63,6 +65,37 @@ export default class SpaceSessions extends View {
   allSpaces() { return this.sample ? SAMPLE_SPACES : spaces(); }
   allAgents() { return this.sample ? SAMPLE_AGENTS : agents(); }
   act(name,args) { if(!this.sample)run(name,args); }
+
+  // Agents in the order the sidebar shows them: spaces by machine, tabs depth-first with owned tabs
+  // under their owner, panes in model order within a tab.
+  orderedAgents() {
+    const allAgents = this.allAgents();
+    const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
+    const all = keys.flatMap(k => this.allSpaces().filter(s => this.machineKey(s) === k));
+    const cores = this.sample ? [] : terminals();
+    const ownersOf = new Map(all.map(space => [space.id, ownerTabs(space.tabs ?? [], allAgents, cores)]));
+    const tabOrder = all.flatMap(space => sidebarTabOrder(space.tabs ?? [], ownersOf.get(space.id)));
+    const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
+    const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
+    return {all, ownersOf, ordered};
+  }
+
+  // keys.json: Cmd+] and Cmd+[ step through agents in sidebar order. The built-in agent.next folds a
+  // delegated child into its parent when it works out the current agent, so it stalls on the child.
+  stepAgent(dir) {
+    const ordered = this.orderedAgents().ordered;
+    if (!ordered.length) return;
+    const pane = focused()?.pane;
+    let at = ordered.findIndex(a => a.pane === pane);
+    if (at < 0) {
+      const space = this.allSpaces().find(s => s.active);
+      const tab = space?.tabs?.find(t => t.active);
+      at = ordered.findIndex(a => a.tab === tab?.id);
+    }
+    const next = ordered[at < 0 ? (dir > 0 ? 0 : ordered.length - 1) : (at + dir + ordered.length) % ordered.length];
+    this.act("tab.select", { id: next.tab });
+    if (next.pane) this.act("pane.focus", { pane: next.pane });
+  }
 
   startHints() {
     if (this.hinting) { this.endHints(); return; }
@@ -129,16 +162,10 @@ export default class SpaceSessions extends View {
     const allAgents = this.allAgents();
     const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
     const multi = keys.length > 1;
-    const all = keys.flatMap(k => this.allSpaces().filter(s => this.machineKey(s) === k));
+    const {all, ownersOf, ordered} = this.orderedAgents();
     const shown = all.filter(s => !multi || !this.collapsedMachines.has(this.machineKey(s)));
     const grouped = true;
-    // A tab whose agent another agent's session started (herdr-delegate, hc run) sits under that session's tab.
-    const cores = this.sample ? [] : terminals();
-    const ownersOf = new Map(all.map(space => [space.id, ownerTabs(space.tabs ?? [], allAgents, cores)]));
-    // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them, nested tabs included.
-    const tabOrder = all.flatMap(space => sidebarTabOrder(space.tabs ?? [], ownersOf.get(space.id)));
-    const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
-    const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
+    // agent.select and other built-in navigation use the sidebar order too.
     if (!this.sample) setAgentOrder(ordered.map(a => a.address));
     if (this.hinting) {
       if (this.handle.is_focused()) this.hadFocus = true;
