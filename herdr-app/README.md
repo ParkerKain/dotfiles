@@ -51,7 +51,7 @@ Run `job --help` for every command.
 
 ## Files
 
-- `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the Lock-in band under the tab bar, the usage limits status bar and the side panels). The band is the kit's Lock-in mod, my Ops sessions not locked in. Cmd+Shift+S picks one and Cmd+Alt+S collapses it to one line.
+- `layouts/Parker.json` - my layout (a clone of Herdr's `main`, with the Lock-in band under the tab bar, the usage limits status bar and the side panels). The band is the kit's Lock-in mod, my Ops sessions not locked in. Cmd+Shift+S shows or hides it. Cmd+Alt+S picks a session, showing the band for the pick when it's hidden (the tab bar's `my-tabs.lock-in-pick` does that, since a hidden band's mod isn't loaded).
 - `layouts/Demo.json` - demo mode's screen (Mac only). It's Parker without the sidebar, with the tab bar showing only Files and Changes and notifications dropped.
 - `themes/` - 67 color themes for Herdr's theme picker (Settings > Look, or `Use a theme` in the command palette). `rose-pine-moon.json` is hand-tuned, the rest are converted from Ghostty's bundled themes by `themes/import-ghostty.py` (edit its list and rerun).
 - `frost` and `frost.py` - frosted-glass look. `./frost <wallpaper>` saves a blurred copy of the image, sized for the machine's display (`screen` in its manifest), to `backgrounds/` (`--blur 0` keeps it sharp) and rebuilds the generated Frosted layout from this machine's Parker layout. `--list` shows wallpapers in `~/Pictures/wallpapers` (Mac) or `~/Wallpapers` (Omarchy), and `--desktop` also sets the macOS wallpaper. `frost` finds a Python with Pillow (Homebrew's, or uv's on Omarchy).

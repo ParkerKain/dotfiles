@@ -58,6 +58,8 @@ export default class Tabs extends View {
     // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button, and
     // my-tabs.open-<id> only opens it (for links from other mods);
     // my-tabs.refresh reloads whichever panel is showing.
+    // my-tabs.lock-in-pick shows the kit's Lock-in band if hidden and stamps "lock-in.pick",
+    // so the pick key works even while the band (and so its mod) isn't loaded.
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
@@ -66,6 +68,7 @@ export default class Tabs extends View {
         if (command === "refresh") this.refreshPanel();
         if (command === "hints") this.hintPanel();
         if (command === "zoom-panel") this.zoomPanel();
+        if (command === "lock-in-pick") this.pickLockIn();
         cx.notify();
       }
     });
@@ -168,6 +171,16 @@ export default class Tabs extends View {
         });
       }
     }
+  }
+
+  // The Lock-in band picks from a fresh stamp, including at start when this key showed it.
+  // reveal: it was hidden, so it hides again once the pick is done.
+  pickLockIn() {
+    const band = find(layout(), "lock-in");
+    if (!band) return;
+    const reveal = Boolean(band.hidden);
+    if (reveal) run("layout.show", { id: "lock-in" });
+    setShared("lock-in.pick", { at: Date.now(), reveal });
   }
 
   // Tasks, Jobs, Calendar and Artifacts reload when their "<id>.refresh" shared key changes.
