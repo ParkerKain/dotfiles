@@ -1,7 +1,7 @@
 // Playground prototype: panel glances in the status bar. Instead of a drawer or icons, the
 // bottom row carries one short glance per panel (tasks due, next call, the reddest Lock-in
 // session, Factory, artifacts). Nothing sits over a terminal. Clicking a glance opens its
-// panel in the side column; the Lock-in glance opens the most urgent session's hub page.
+// panel in the side column; the Lock-in glance drops the pin line (pg-pins).
 // A glance that changes after the first read flashes once; one that needs you breathes.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -68,12 +68,8 @@ export default class Glances extends View {
   }
 
   open(s) {
-    if (s.id === "lock-in") {
-      const flags = this.raw[s.id]?.flags ?? [];
-      const top = flags.find(f => f.urgency === "red") ?? flags[0];
-      if (top?.hub_url) exec("open", [top.hub_url]);
-      return;
-    }
+    // Lock-in drops the pin line under the day strip (pg-pins), where letters pick a session.
+    if (s.id === "lock-in") { run("pg-pins.pick"); return; }
     if (!find(layout(), s.id)) return;
     run("layout.select", { stack: "panel-body", child: s.id });
     run("layout.show", { id: "panel" });
@@ -97,7 +93,7 @@ export default class Glances extends View {
     const color = hot ? (t.blocked ?? t.ansi1) : g?.tone === "working" ? (t.working ?? t.ansi3) : t.foreground;
     const flags = s.id === "lock-in" ? (this.raw[s.id]?.flags ?? []) : [];
     const tip = err ? `${s.name}: last read failed (${err})`
-      : s.id === "lock-in" && flags.length ? flags.slice(0, 8).map(f => `${f.urgency === "red" ? "●" : "○"} ${f.name} · ${f.relative_label ?? ""}`).join("\n") + "\nClick opens the most urgent in Ops"
+      : s.id === "lock-in" && flags.length ? flags.slice(0, 8).map(f => `${f.urgency === "red" ? "●" : "○"} ${f.name} · ${f.relative_label ?? ""}`).join("\n") + "\nClick shows the pins"
       : `${s.name}${g?.sub ? `: ${g.sub}` : ""}\nClick to open`;
     return h_flex().id(`gl-${s.id}`).relative().flex_none().max_w(MAX_W[s.id]).h(22).px(6).gap(5).items_center().rounded(6)
       .cursor_pointer().hover(st => st.bg(t.hover)).tooltip(tip).on_click(() => this.open(s))

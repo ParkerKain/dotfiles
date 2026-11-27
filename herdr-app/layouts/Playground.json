@@ -226,7 +226,17 @@
             }
           ],
           "padding": 8,
-          "gap": 8
+          "gap": 8,
+          "floating": [
+            {
+              "id": "pins",
+              "content": {
+                "mod": "pg-pins"
+              },
+              "edge": "top",
+              "align": "center"
+            }
+          ]
         },
         {
           "id": "status-row",
