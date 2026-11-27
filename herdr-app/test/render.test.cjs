@@ -7,10 +7,11 @@ const {join} = require('node:path');
 const vm = require('node:vm');
 const root = join(__dirname, '..');
 
-function element(log) {
+function element(log, ids = []) {
   const self = new Proxy(function () {}, {get(_t, key) {
     return (...args) => {
       if (key === 'tooltip') log.push(args[0]);
+      if (key === 'id') ids.push(args[0]);
       if (key === 'when' && args[0]) return args[1](self);
       return self;
     };
@@ -29,10 +30,10 @@ function trimmed(keep) {
   return layout;
 }
 
-function render(name, {platform, keysFile, layout, setup}) {
+function render(name, {platform, keysFile, layout, setup, props = {}, ids = []}) {
   const keysJson = JSON.parse(readFileSync(join(root, keysFile)));
   const tooltips = [];
-  const el = () => element(tooltips);
+  const el = () => element(tooltips, ids);
   const theme = new Proxy({}, {get: () => '#000'});
   const code = readFileSync(join(root, 'mods', name, 'main.js'), 'utf8')
     .replace(/^import .*;\n/gm, '').replace('export default class ', 'globalThis.Mod = class ');
@@ -40,9 +41,9 @@ function render(name, {platform, keysFile, layout, setup}) {
     ScrollHandle: {new: el}, TextareaState: {new: el}, Textarea: {new: el}, InputState: {new: el}, Input: {new: el},
     appHome: () => '/c', home: () => '/h', checking: () => false, exec: async () => ({code: 1, stdout: '', stderr: ''}),
     spaces: () => [{id: 's1', active: true, tabs: [{id: 't1', active: true, name: 'a'}]}], panes: () => [], focused: () => null,
-    run: () => {}, openOverlay: () => {}, closeOverlay: () => {}, theme: () => theme, window: () => ({platform, buttons: false}),
+    run: () => {}, openOverlay: () => {}, closeOverlay: () => {}, theme: () => theme, window: () => ({platform, buttons: false}), appWindow: () => ({platform, buttons: false}),
     shared: () => null, setShared: () => {}, layout: () => layout, settings: () => ({}), nextCommand: () => new Promise(() => {}),
-    props: () => ({}), layouts: () => ['Parker'], readTextFile: async () => JSON.stringify(keysJson), knownAgents: async () => [],
+    props: () => props, layouts: () => ['Parker'], readTextFile: async () => JSON.stringify(keysJson), knownAgents: async () => [],
     keys: () => Object.entries(keysJson).flatMap(([section, map]) => Object.entries(map).map(([keys, action]) => ({section, keys, action}))),
     localStorage: {getItem: () => null, setItem() {}}};
   vm.runInNewContext(code, context);
@@ -80,4 +81,13 @@ for (const [machine, setup] of [['Mac', MAC], ['Omarchy', OMARCHY]]) {
 
 test('shortcut help shows a key that ends in minus', () => {
   render('keybind-help', {...OMARCHY, setup: (mod, keys) => { mod.keys = {...keys, global: {...keys.global, 'ctrl--': 'mod.open:revive'}}; }});
+});
+
+test('the session launcher draws its own backdrop as a window, and fills a caller\'s dialog without one', () => {
+  const own = [], framed = [];
+  render('session-launcher', {...MAC, ids: own});
+  render('session-launcher', {...MAC, ids: framed, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
+  assert.ok(own.includes('backdrop') && own.includes('clip'));
+  assert.ok(!framed.includes('backdrop') && !framed.includes('clip'));
+  assert.ok(framed.includes('session-launcher'));
 });

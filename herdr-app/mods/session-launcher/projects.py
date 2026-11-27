@@ -274,7 +274,8 @@ if __name__ == "__main__":
     elif action == "default":
         settings = launcher(HOME)
         label = machine.manifest().get("launcher", {}).get("default_label") or Path(settings["default_folder"]).name
-        print(json.dumps({"name": label, "agent": settings["agent"]}))
+        # The folder too, so the default always shows as a candidate chip.
+        print(json.dumps({"name": label, "agent": settings["agent"], "folder": settings["default_folder"]}))
     elif action == "plan":
         try:
             print(json.dumps(plan(json.loads(sys.argv[2]))))
