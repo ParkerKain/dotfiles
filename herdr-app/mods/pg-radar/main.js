@@ -169,7 +169,8 @@ export default class Radar extends View {
     };
 
     const checked = this.report.checked_label ? (this.report.stale ? `Offline · ${this.report.checked_label}` : this.report.checked_label) : "";
-    const tail = v_flex().flex_none().w(noting ? 150 : 84).h_full().justify_center().items_end().gap(3).px(10).border_l(1).border_color(t.border)
+    // A fixed width, so the note showing doesn't resize the lanes and shift every plane.
+    const tail = v_flex().flex_none().w(150).h_full().justify_center().items_end().gap(3).px(10).border_l(1).border_color(t.border)
       .child(div().id("refresh").cursor_pointer().text_color(t.muted).hover(s => s.text_color(t.foreground))
         .child(this.loading ? svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.muted).spin(900) : "↻")
         .on_click((_e, cx) => this.load(cx)))

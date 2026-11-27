@@ -65,7 +65,7 @@ const SOURCES = [
     async read() { return (await json(bin("day-view"), ["day", isoToday()])).events ?? []; },
     glance(events) {
       const now = nowMinutes();
-      const timed = events.filter(e => !e.all_day && e.kind !== "free" && e.end_min > now).sort((a, b) => a.start_min - b.start_min);
+      const timed = events.filter(e => !e.all_day && !e.starts_before && !e.ends_after && e.kind !== "free" && e.kind !== "ooo" && e.end_min > now).sort((a, b) => a.start_min - b.start_min);
       const live = timed.find(e => e.start_min <= now);
       if (live) return { title: `On now · ${live.end_min - now}m left`, sub: live.title, ring: 1, tone: "blocked", pulse: true };
       const next = timed[0];
@@ -201,7 +201,7 @@ export default class Deck extends View {
 
     const row = h_flex().id(`row-${s.id}`).h(ROW_H).items_center().gap(10).pl(mirror ? 12 : 7).pr(mirror ? 7 : 12)
       .cursor_pointer().hover(st => st.bg(t.hover)).rounded(8)
-      .tooltip(err ? `${s.name}: last read failed (${err})` : `${s.name}: click to open`)
+      .tooltip(err ? `${s.name}: last read failed (${err})` : s.id === "lock-in" ? "Lock-in: click to pick a session in the radar" : `${s.name}: click to open`)
       .on_click(() => this.openPanel(s));
     return mirror ? row.child(text).child(tile) : row.child(tile).child(text);
   }

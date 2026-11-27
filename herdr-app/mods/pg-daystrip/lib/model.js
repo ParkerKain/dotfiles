@@ -19,7 +19,10 @@ export function dayLabel(dateStr) {
 // Timed events only. All-day ones (OOO, holidays) and ones running in from yesterday or on
 // past midnight go in the label instead, so they don't stretch the strip to 24 hours.
 export const timed = (events) => (events ?? []).filter(e => !e.all_day && !e.starts_before && !e.ends_after && e.end_min > e.start_min);
-export const allDay = (events) => (events ?? []).filter(e => e.all_day || e.starts_before || e.ends_after).map(e => e.title);
+export const allDay = (events) => (events ?? []).filter(e => e.all_day || e.starts_before || e.ends_after);
+
+// Events that block the calendar: not free time and not an out-of-office block.
+export const busy = (e) => e.kind !== "free" && e.kind !== "ooo";
 
 // The strip's hours: 7am to 6pm, stretched to fit anything earlier or later.
 export function windowOf(events) {
@@ -35,9 +38,9 @@ export const hasRest = (events, nowMin) => timed(events).some(e => e.end_min > n
 // What the chip at the right says, for today. { tone, big, title, sub, event }
 export function countdown(events, nowMin) {
   const t = timed(events).sort((a, b) => a.start_min - b.start_min);
-  const live = t.find(e => e.start_min <= nowMin && nowMin < e.end_min && e.kind !== "free");
+  const live = t.find(e => e.start_min <= nowMin && nowMin < e.end_min && busy(e));
   if (live) return { tone: "live", big: `${live.end_min - nowMin}m left`, title: live.title, sub: "on now", event: live };
-  const next = t.find(e => e.start_min > nowMin && e.kind !== "free");
+  const next = t.find(e => e.start_min > nowMin && busy(e));
   if (!next) return { tone: "clear", big: "Clear", title: "Nothing else today", sub: "", event: null };
   const mins = next.start_min - nowMin;
   const big = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;

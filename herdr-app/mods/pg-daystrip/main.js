@@ -94,10 +94,13 @@ export default class DayStrip extends View {
 
     const label = v_flex().flex_none().w(92).h_full().justify_center().px(10).border_r(1).border_color(t.border)
       .child(div().font_semibold().text_color(t.foreground).child(isToday ? "Today" : dayLabel(this.date)))
-      .child(div().id("day-sub").text_size(10).text_color(t.dim).truncate()
-        .when(this.allDay.length > 0, el => el.tooltip(this.allDay.join("\n")))
+      // Your own out-of-office (kind "ooo") replaces the date. Teammates' all-day entries
+      // arrive as "free" and only show in the tooltip.
+      .child(div().id("day-sub").text_size(10).truncate()
+        .text_color(this.allDay.some(e => e.kind === "ooo") ? (t.working ?? t.dim) : t.dim)
+        .when(this.allDay.length > 0, el => el.tooltip(this.allDay.map(e => e.title).join("\n")))
         .child(this.error ? "Calendar offline" : !this.loaded ? "Reading…"
-          : this.allDay.length ? `${this.allDay[0]}${this.allDay.length > 1 ? ` +${this.allDay.length - 1}` : ""}`
+          : this.allDay.some(e => e.kind === "ooo") ? "Out of office"
           : isToday ? dayLabel(this.date) : "Next workday"));
 
     const ticks = [];
@@ -109,7 +112,7 @@ export default class DayStrip extends View {
     const block = ({ event: e, lane, lanes }, i) => {
       const live = isToday && e.start_min <= this.now && this.now < e.end_min;
       const soon = isToday && cd?.event === e && cd.tone === "soon";
-      const free = e.kind === "free";
+      const free = e.kind === "free" || e.kind === "ooo";
       const color = live ? c.live : soon ? c.soon : free ? c.free : c.event;
       const left = x(e.start_min), w = Math.max(6, x(e.end_min) - left - 2);
       // Two overlapping events split the row: the first on top, the second below.
@@ -150,7 +153,7 @@ export default class DayStrip extends View {
         .child(v_flex().min_w(0).child(div().truncate().text_color(t.foreground).child("Nothing left today"))
           .child(div().truncate().text_size(10).text_color(t.dim).child(first ? `First: ${clockOf(first.start_min)} ${first.title}` : "")));
     }
-    const color = cd.tone === "live" ? c.live : cd.tone === "soon" ? c.soon : cd.tone === "clear" ? (t.ansi2 ?? t.done) : t.foreground;
+    const color = cd.tone === "live" ? c.live : cd.tone === "soon" ? c.soon : cd.tone === "clear" ? (t.done ?? t.ansi2) : t.foreground;
     const url = joinUrl(cd.event);
     return base.cursor_pointer().hover(s => s.bg(t.hover))
       .tooltip(url ? "Click to join the call" : "Click to open Calendar")
