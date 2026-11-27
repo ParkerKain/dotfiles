@@ -1,7 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, spaces, panes, focused, layout, theme, run, hc, checking, setAgentOrder, openOverlay, nextCommand, terminals } from "herdr";
-import { SAMPLE_SPACES, SAMPLE_AGENTS, summary, ownerTabs } from "./model.js";
+import { SAMPLE_SPACES, SAMPLE_AGENTS, summary, ownerTabs, sidebarTabOrder } from "./model.js";
 
 // Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
 const KEYS = "asdfghjklqwertyuiopzxcvbnm";
@@ -132,8 +132,11 @@ export default class SpaceSessions extends View {
     const all = keys.flatMap(k => this.allSpaces().filter(s => this.machineKey(s) === k));
     const shown = all.filter(s => !multi || !this.collapsedMachines.has(this.machineKey(s)));
     const grouped = true;
-    // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them.
-    const tabOrder = all.flatMap(space => (space.tabs ?? []).map(tab => tab.id));
+    // A tab whose agent another agent's session started (herdr-delegate, hc run) sits under that session's tab.
+    const cores = this.sample ? [] : terminals();
+    const ownersOf = new Map(all.map(space => [space.id, ownerTabs(space.tabs ?? [], allAgents, cores)]));
+    // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them, nested tabs included.
+    const tabOrder = all.flatMap(space => sidebarTabOrder(space.tabs ?? [], ownersOf.get(space.id)));
     const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
     const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
     if (!this.sample) setAgentOrder(ordered.map(a => a.address));
@@ -167,8 +170,7 @@ export default class SpaceSessions extends View {
           .text_color(space.active ? t.foreground : t.muted).child(space.name))
         .when(Boolean(busy), el => el.child(div().text_size(10).text_color(details.counts.blocked ? t.blocked : t.dim).child(busy)))
         .child(div().px(5).py(1).rounded(4).text_size(10).text_color(t.dim).child(String(count)));
-      // A tab whose agent another agent's session started (herdr-delegate, hc run) sits under that session's tab.
-      const owners = ownerTabs(space.tabs ?? [], allAgents, this.sample ? [] : terminals());
+      const owners = ownersOf.get(space.id);
       const childTabs = id => (space.tabs ?? []).filter(x => owners.get(x.id) === id);
       const topTabs = (space.tabs ?? []).filter(x => !owners.has(x.id));
       const renderTab = (tab, index, depth) => {

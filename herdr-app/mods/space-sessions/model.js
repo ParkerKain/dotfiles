@@ -43,3 +43,14 @@ export function ownerTabs(tabs, allAgents, cores) {
   }
   return owners;
 }
+
+// Tab ids in the order the sidebar draws them: each top-level tab, then the tabs it owns beneath it.
+export function sidebarTabOrder(tabs, owners) {
+  const out = [];
+  const visit = tab => {
+    out.push(tab.id);
+    for (const child of tabs) if (owners.get(child.id) === tab.id) visit(child);
+  };
+  for (const tab of tabs) if (!owners.has(tab.id)) visit(tab);
+  return out;
+}

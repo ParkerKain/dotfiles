@@ -62,3 +62,9 @@ test('a tab started by another tab\'s agent nests under that tab, chains nest an
  const cyc=ctx.ownerTabs([{id:'a'},{id:'b'}],[{address:'x',tab:'a'},{address:'y',tab:'b'}],[{address:'x',parent:'y'},{address:'y',parent:'x'}]);
  assert.ok(cyc.size<2);
 });
+test('Cmd+[ ] tab order follows the sidebar, with owned tabs right after their owner',()=>{
+ const ctx={};vm.runInNewContext(fs.readFileSync(path.join(folder,'model.js'),'utf8').replace(/^export /gm,'')+'\nthis.sidebarTabOrder=sidebarTabOrder;',ctx);
+ const tabs=[{id:'main'},{id:'other'},{id:'w1'},{id:'w2'},{id:'w3'}];
+ const owners=new Map([['w1','main'],['w2','w1'],['w3','main']]);
+ assert.deepEqual([...ctx.sidebarTabOrder(tabs,owners)],['main','w1','w2','w3','other']);
+});
