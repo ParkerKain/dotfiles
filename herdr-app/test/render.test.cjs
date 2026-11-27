@@ -63,11 +63,11 @@ const jobs = mod => {
 
 test('the Mac tab bar keeps every work panel with its usual shortcut', () => {
   assert.deepEqual(render('my-tabs', MAC).filter(t => /  /.test(t)),
-    ['Tasks  ⇧⌘T', 'Jobs  ⇧⌘J', 'Calendar  ⇧⌘C', 'Artifacts  ⇧⌘A', 'Call  ⇧⌘K', 'Factory  ⇧⌘F', 'Usage  ⇧⌘U']);
+    ['Files  ⌘E', 'Changes  ⇧⌘G', 'Tasks  ⇧⌘T', 'Jobs  ⇧⌘J', 'Calendar  ⇧⌘C', 'Artifacts  ⇧⌘A', 'Factory  ⇧⌘F', 'Usage  ⇧⌘U']);
 });
 
 test('the Omarchy tab bar shows only the panels its layout has, in Linux notation', () => {
-  assert.deepEqual(render('my-tabs', OMARCHY), ['Files', 'Changes', 'Jobs  Ctrl+Shift+J']);
+  assert.deepEqual(render('my-tabs', OMARCHY), ['Files  Alt+E', 'Changes  Alt+Shift+G', 'Jobs  Ctrl+Shift+J']);
 });
 
 for (const [machine, setup] of [['Mac', MAC], ['Omarchy', OMARCHY]]) {
