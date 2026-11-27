@@ -1,0 +1,7 @@
+{
+  "place": "none",
+  "title": "Toast (playground)",
+  "palette": [
+    { "title": "Toast demo (playground)", "command": "mod.open", "args": { "name": "pg-toast" }, "words": "notification toast calendar factory artifacts playground" }
+  ]
+}
