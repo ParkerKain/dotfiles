@@ -289,5 +289,6 @@
   "traffic_lights": [
     12,
     16
-  ]
+  ],
+  "toast": "pg-toast"
 }
