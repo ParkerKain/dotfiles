@@ -80,6 +80,7 @@ export default class UsageLimits extends View {
     this.teamAt = 0;       // epoch s of the last team fetch
     this.teamBusy = false;
     this.teamCli = null;   // null until checked, then true or false
+    this.teamCliAt = 0;    // epoch s of the last check, so a CLI linked later is found
     this.tick(cx, true);
     cx.timer.every(60 * 1000, (cx) => this.tick(cx, false));
   }
@@ -122,7 +123,9 @@ export default class UsageLimits extends View {
 
   // The team chip, from the kit's claude-usage CLI when this machine has it.
   fetchTeam(cx) {
-    if (this.teamBusy || this.teamCli === false) return;
+    if (this.teamBusy) return;
+    // No CLI here (Omarchy, or before link.sh ran): look again every half hour.
+    if (this.teamCli === false && now() - this.teamCliAt < 30 * 60) return;
     // The panel may have just loaded; its stamp counts as a fetch.
     const chip = shared(KEY_TEAM);
     if (chip?.at && Date.now() - chip.at < TEAM_EVERY * 1000 / 2) { this.teamAt = now(); return; }
@@ -131,7 +134,10 @@ export default class UsageLimits extends View {
     const cli = `${home()}/.local/bin/claude-usage`;
     cx.spawn(async (cx) => {
       try {
-        if (this.teamCli === null) this.teamCli = (await exec("test", ["-x", cli]).catch(() => null))?.code === 0;
+        if (!this.teamCli) {
+          this.teamCliAt = now();
+          this.teamCli = (await exec("test", ["-x", cli]).catch(() => null))?.code === 0;
+        }
         if (!this.teamCli) return;
         const r = await exec(cli, ["report"], { timeout: 45000 });
         const out = JSON.parse(r.stdout);

@@ -20,5 +20,7 @@ test("a stale or old chip dims and says so", () => {
   assert.equal(teamChip({ ...chip, stale: true }, 1000).old, true);
   assert.equal(teamChip(chip, 1000 + TEAM_OLD + 1).old, true);
   assert.equal(teamChip({ ...chip, at: undefined }, 1000).old, true);
-  assert.match(teamChip({ ...chip, stale: true }, 1000).hint, /out of date$/);
+  assert.match(teamChip({ ...chip, stale: true }, 1000).hint, /Couldn't reach Ops, so this is the last report$/);
+  assert.match(teamChip(chip, 1000 + TEAM_OLD + 1).hint, /\nLast updated \d{1,2}:\d{2} (AM|PM), so it may be out of date$/);
+  assert.doesNotMatch(teamChip(chip, 1000 + TEAM_OLD + 1).hint, /reach Ops/);
 });
