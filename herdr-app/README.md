@@ -45,7 +45,9 @@ Herdr picks up a relinked mod right away, because `link.py` replaces links by re
 - A job file has `repo`, `agent` (`claude` or `codex`), `prompt` or `prompt_file`, and an optional `[schedule]` (`times = ["07:00"]`, optional `weekdays` with 1 = Monday). Its session opens in the Herdr space named by `space` (default `Jobs`, created when missing), so any first-run question it asks is visible.
 - A hook file has `check = "<script>"` and `interval = <seconds>`. The script answers `check` and `status` (JSON `{ok, hooks: [{last_check, last_trigger}]}`), and the engine schedules the check.
 - `job install <name>` writes a launchd plist on macOS (`com.parker.job.<name>`, `com.parker.hook.<name>`) or a systemd user timer on Linux (`parker-job-<name>`, `parker-hook-<name>`). The panel's Turn on and Turn off do the same.
-- `job pause` and `job resume` (the panel's Pause button, and demo mode) make scheduled runs and checks skip.
+- `job pause` and `job resume` (the panel's Pause button, and demo mode) make scheduled runs and checks skip. `job pause --until 2h` (or `HH:MM`, or `YYYY-MM-DD HH:MM`) lifts itself at that time.
+- A `close_when_done` run, or any run whose session goes to `error`, always ends with an outcome in `~/.local/state/parker-jobs/<job>.outcome` and a second `runs.jsonl` line (status, turn, duration, outcome, closed). When the agent wrote none, the runner writes one such as `error: session ended with status error after 24s, 1 turn, no outcome reported`.
+- launchd reads the time zone once, at boot. If the Mac's zone changes later (Location Services when traveling), scheduled jobs fire on the old zone's clock until a restart, and reinstalling the plists doesn't help. `job status`, `job list`, `job install` and the Jobs panel warn when that has happened.
 
 Run `job --help` for every command.
 
