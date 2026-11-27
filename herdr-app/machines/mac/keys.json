@@ -47,7 +47,7 @@
     "cmd-shift-a": "my-tabs.panel-artifacts",
     "cmd-shift-k": "my-tabs.panel-call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
-    "cmd-shift-o": "my-tabs.panel-claude-usage",
+    "cmd-shift-u": "my-tabs.panel-claude-usage",
     "cmd-e": "my-tabs.panel-files",
     "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
@@ -79,7 +79,7 @@
     "ctrl-down": "pane.go:down",
     "cmd-shift-m": "mod.open:demo-mode",
     "cmd-shift-b": "mod.open:wallpaper",
-    "cmd-shift-u": "mod.open:music"
+    "cmd-shift-o": "mod.open:music"
   },
   "layout:Demo": {
     "cmd-]": "terminal",

@@ -1,6 +1,6 @@
 # Music controls
 
-Open Music in Herdr's tab bar or press Cmd+Shift+U. Escape closes the controls while Music keeps playing. The button appears in Parker and Frosted. Demo passes the shortcut to the terminal.
+Open Music in Herdr's tab bar or press Cmd+Shift+O. Escape closes the controls while Music keeps playing. The button appears in Parker and Frosted. Demo passes the shortcut to the terminal.
 
 The pill uses the same shape, spacing and theme colors as the other tab-bar controls. While playing, it shows an equalizer icon and the selected background with an accent color. Paused playback uses a pause icon, and stopped playback uses a music-note icon with the regular inactive style.
 
