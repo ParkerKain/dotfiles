@@ -20,6 +20,7 @@ const WORK_PANELS = [
   ["artifacts", "Artifacts", "mods/artifacts/layers.svg"],
   ["call-sheet", "Call", "mods/call-sheet/clipboard.svg"],
   ["factory", "Factory", "mods/factory/factory.svg"],
+  ["claude-usage", "Usage", "mods/claude-usage/gauge.svg"],
 ];
 
 // The key bound to an action in keys.json, written the way this platform writes it:

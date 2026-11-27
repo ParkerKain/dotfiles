@@ -6,7 +6,7 @@
 // this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
-import { checking, exec, focused, spaces, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
+import { checking, exec, focused, spaces, theme, props, readTextFile, run, shared, setShared, appHome } from "herdr";
 import { PROVIDERS, TOKEN_PROVIDERS } from "./providers/index.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
@@ -20,6 +20,8 @@ const KEY_STATE = "usage-limits.state";
 const KEY_PREFS = "usage-limits.prefs";
 const KEY_REFRESH = "usage-limits.refresh";
 const KEY_TOKENS = "usage-limits.tokens";
+// The team's Claude usage from Ops, published by the kit's claude-usage panel (work Mac only).
+const KEY_TEAM = "claude-usage.summary";
 const TOKENS_EVERY = 10 * 60;     // s, the log scan takes a few seconds
 const TOKEN_DAYS = "all";
 const FETCH_EVERY = 5 * 60;       // s, installed providers
@@ -240,7 +242,8 @@ export default class UsageLimits extends View {
     const model = barModel(st, prefs, now());
     const numbers = sessionOnBar(this.session?.data, prefs);
     const numbersWidth = numbers.reduce((w, n) => w + 7 * n.text.length + 14, numbers.length ? 14 : 0);
-    const density = chooseDensity(model, this.width ? this.width - 28 - where.width - numbersWidth : Infinity, prefs.showBars);
+    const team = this.teamChip(t);
+    const density = chooseDensity(model, this.width ? this.width - 28 - where.width - numbersWidth - team.width : Infinity, prefs.showBars);
     const root = h_flex().id("root").size_full().px(14).gap(16).items_center().overflow_hidden()
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
       .on_size_change((size, cx) => { this.width = size.width; cx.notify(); });
@@ -267,9 +270,24 @@ export default class UsageLimits extends View {
     const body = this.panel === "settings" || panel.empty ? this.settings(!panel.empty, t)
       : this.panel === "tokens" ? this.tokensPanel(t)
       : this.limits(panel, t);
-    return root.child(where.el).child(div().flex_1()).child(HoverCard.new("ul-panel").anchor("bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
+    return root.child(where.el).child(div().flex_1()).when(team.el != null, (e) => e.child(team.el)).child(HoverCard.new("ul-panel").anchor("bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
       .trigger(content)
       .content(body));
+  }
+
+  // The team's Claude usage from Ops: "Team 38% · You 22%". Clicking opens the Claude usage
+  // panel. Neutral colors on purpose: the ops page's red means under-using, while this bar's
+  // red means near a limit.
+  teamChip(t) {
+    const team = shared(KEY_TEAM);
+    if (!team?.text) return { el: null, width: 0 };
+    const el = h_flex().id("ul-team").gap(6).items_center().flex_none().whitespace_nowrap().cursor_pointer()
+      .opacity(team.stale ? 0.55 : 1).tooltip(team.hint ?? "Team Claude usage")
+      .hover((s) => s.text_color(t.foreground))
+      .on_click(() => run("my-tabs.panel-claude-usage"))
+      .child(svg("mods/claude-usage/gauge.svg").size(13))
+      .child(team.text);
+    return { el, width: 7 * team.text.length + 36 };
   }
 
   // ---------- panel: limits ----------

@@ -47,6 +47,7 @@
     "cmd-shift-a": "my-tabs.panel-artifacts",
     "cmd-shift-k": "my-tabs.panel-call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
+    "cmd-shift-o": "my-tabs.panel-claude-usage",
     "cmd-e": "my-tabs.panel-files",
     "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
@@ -105,7 +106,8 @@
     "cmd-shift-f": "terminal",
     "cmd-shift-k": "terminal",
     "cmd-shift-b": "terminal",
-    "cmd-shift-u": "terminal"
+    "cmd-shift-u": "terminal",
+    "cmd-shift-o": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
@@ -140,6 +142,9 @@
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:factory": {
+    "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:claude-usage": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
   "mod:my-files": {

@@ -96,7 +96,7 @@ test('panel zoom ignores a hidden panel', () => {
 test('every work panel gets the zoom shortcut while terminal zoom stays native', () => {
   const keys = JSON.parse(readFileSync(join(root, 'machines/mac/keys.json')));
   assert.equal(keys.global['cmd-shift-enter'], 'pane.zoom');
-  for (const name of ['my-files', 'my-changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory']) {
+  for (const name of ['my-files', 'my-changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory', 'claude-usage']) {
     assert.equal(keys[`mod:${name}`]['cmd-shift-enter'], 'my-tabs.zoom-panel');
   }
 });

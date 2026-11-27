@@ -16,7 +16,7 @@ LINK = ROOT / "link.py"
 sys.path.insert(0, str(ROOT))
 import link  # noqa: E402
 
-WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory"}
+WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory", "claude-usage"}
 
 
 def panel_ids(layout):

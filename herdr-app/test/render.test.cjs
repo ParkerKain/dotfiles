@@ -54,7 +54,7 @@ function render(name, {platform, keysFile, layout, setup}) {
   return tooltips;
 }
 
-const MAC = {platform: 'macos', keysFile: 'machines/mac/keys.json', layout: trimmed(['files', 'changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory'])};
+const MAC = {platform: 'macos', keysFile: 'machines/mac/keys.json', layout: trimmed(['files', 'changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory', 'claude-usage'])};
 const OMARCHY = {platform: 'linux', keysFile: 'machines/omarchy/keys.json', layout: trimmed(['files', 'changes', 'jobs'])};
 const jobs = mod => {
   mod.jobs = [{name: 'a', agent: 'claude', times: ['05:00'], weekdays: [1, 2, 3, 4, 5], next: 1, loaded: true, last: null, error: null}];
@@ -63,7 +63,7 @@ const jobs = mod => {
 
 test('the Mac tab bar keeps every work panel with its usual shortcut', () => {
   assert.deepEqual(render('my-tabs', MAC).filter(t => /  /.test(t)),
-    ['Tasks  ⇧⌘T', 'Jobs  ⇧⌘J', 'Calendar  ⇧⌘C', 'Artifacts  ⇧⌘A', 'Call  ⇧⌘K', 'Factory  ⇧⌘F']);
+    ['Tasks  ⇧⌘T', 'Jobs  ⇧⌘J', 'Calendar  ⇧⌘C', 'Artifacts  ⇧⌘A', 'Call  ⇧⌘K', 'Factory  ⇧⌘F', 'Usage  ⇧⌘O']);
 });
 
 test('the Omarchy tab bar shows only the panels its layout has, in Linux notation', () => {

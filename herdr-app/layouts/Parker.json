@@ -167,6 +167,13 @@
                       "content": {
                         "mod": "factory"
                       }
+                    },
+                    {
+                      "id": "claude-usage",
+                      "type": "block",
+                      "content": {
+                        "mod": "claude-usage"
+                      }
                     }
                   ],
                   "active": "files"

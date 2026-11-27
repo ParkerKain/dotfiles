@@ -8,6 +8,7 @@
     { "title": "Artifacts", "command": "my-tabs.panel-artifacts", "group": "Panels" },
     { "title": "Call", "command": "my-tabs.panel-call-sheet", "group": "Panels", "words": "call sheet" },
     { "title": "Factory", "command": "my-tabs.panel-factory", "group": "Panels" },
+    { "title": "Claude usage", "command": "my-tabs.panel-claude-usage", "group": "Panels", "words": "claude code limits team usage tokens" },
     { "title": "Files", "command": "my-tabs.panel-files", "group": "Panels", "words": "file browser source" },
     { "title": "Changes", "command": "my-tabs.panel-changes", "group": "Panels", "words": "git diff uncommitted" }
   ]
