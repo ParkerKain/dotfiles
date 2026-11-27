@@ -91,10 +91,13 @@ test('shortcut help shows a key that ends in minus', () => {
   render('keybind-help', {...OMARCHY, setup: (mod, keys) => { mod.keys = {...keys, global: {...keys.global, 'ctrl--': 'mod.open:revive'}}; }});
 });
 
-test('the session launcher draws its own backdrop as a window, and fills a caller\'s dialog without one', () => {
-  const own = [], framed = [];
+test('the session launcher draws its own backdrop and unroll, with or without a caller\'s task', () => {
+  const own = [], task = [];
   render('session-launcher', {...MAC, ids: own});
-  render('session-launcher', {...MAC, ids: framed, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
+  render('session-launcher', {...MAC, ids: task, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
+  assert.ok(own.includes('backdrop') && own.includes('clip'));
+  assert.ok(task.includes('backdrop') && task.includes('clip'));
+});  render('session-launcher', {...MAC, ids: framed, props: {overlay: 'o1', task: {title: 'Fix lock-in', prompt: 'Lock in the session'}}});
   assert.ok(own.includes('backdrop') && own.includes('clip'));
   assert.ok(!framed.includes('backdrop') && !framed.includes('clip'));
   assert.ok(framed.includes('session-launcher'));

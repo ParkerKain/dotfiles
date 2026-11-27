@@ -5,10 +5,8 @@ import { appHome, checking, closeOverlay, exec, focused, home, knownAgents, next
 // Prompt-driven session launcher: candidate repo chips while routing (Tab picks another), a
 // stepped effort bar and a lift on Start. Opened on its own (mod.open, Cmd+Shift+N) it is a
 // frameless window overlay that covers the window: the card unrolls from a line over its own
-// backdrop and rolls back up on Cancel, Esc or a click outside. Opened by another mod as a
-// dialog with a task (Tasks Play in ops-tasks, the Lock-in fix in lock-in:
-// openOverlay({mod: "session-launcher", kind: "dialog", width: 560, height: 300, props: {task}})),
-// Herdr frames it, so the card fills the dialog with no backdrop or roll.
+// backdrop and rolls back up on Cancel, Esc or a click outside. Tasks Play (ops-tasks) and the
+// Lock-in fix (lock-in) open it the same way with props {task}: kind window, frame none, 1 x 1.
 const HELPER = `${appHome()}/mods/session-launcher/projects.py`;
 // Jobs for the detached start, one file each.
 const JOBS = `${home()}/.cache/herdr-app/session-launcher`;
@@ -155,7 +153,9 @@ export default class SessionLauncher extends View {
     const task = props()?.task;
     this.task = task ?? null;
     // A caller's dialog (it passes a task): Herdr draws the frame and dim, so no backdrop or roll.
-    this.framed = Boolean(task);
+    // Every caller now opens it as the same frameless window (Tasks Play and the Lock-in fix
+    // included), so the compact dialog layout is never used.
+    this.framed = false;
     this.text = task?.prompt ?? "";
     // Tasks Play: optional extra instructions appended to the task's prompt.
     this.extra = "";
