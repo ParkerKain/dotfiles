@@ -55,12 +55,14 @@ export default class Tabs extends View {
       this.refreshMusic(cx);
       cx.timer.every(8000, cx => this.refreshMusic(cx));
     }
-    // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button;
+    // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button, and
+    // my-tabs.open-<id> only opens it (for links from other mods);
     // my-tabs.refresh reloads whichever panel is showing.
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
         if (command.startsWith("panel-")) this.togglePanel(command.slice(6), cx);
+        if (command.startsWith("open-")) this.togglePanel(command.slice(5), cx, true);
         if (command === "refresh") this.refreshPanel();
         if (command === "hints") this.hintPanel();
         if (command === "zoom-panel") this.zoomPanel();
@@ -133,11 +135,13 @@ export default class Tabs extends View {
     run("layout.set", { layout: root });
   }
 
-  togglePanel(id, cx) {
-    this.restorePanelZoom();
+  togglePanel(id, cx, openOnly = false) {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (!body?.children?.some(child => child.id === id)) return;
-    if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
+    const showing = panel && !panel.hidden && body?.active === id;
+    if (openOnly && showing) return;
+    this.restorePanelZoom();
+    if (showing) run("layout.hide", { id: "panel" });
     else {
       const previous = id === "call-sheet" ? focused() : null;
       run("layout.select", { stack: "panel-body", child: id });

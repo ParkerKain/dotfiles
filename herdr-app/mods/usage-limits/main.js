@@ -6,7 +6,7 @@
 // this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
-import { checking, exec, focused, spaces, theme, props, readTextFile, run, shared, setShared, appHome } from "herdr";
+import { checking, exec, focused, home, spaces, theme, props, readTextFile, run, shared, setShared, appHome, window } from "herdr";
 import { PROVIDERS, TOKEN_PROVIDERS } from "./providers/index.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
@@ -14,14 +14,17 @@ import { parseSession, sessionOnBar, sessionView } from "./lib/session.js";
 import { nextState } from "./lib/state.js";
 import { PERIODS, parseTokens, summarize, exact, money, shortDate } from "./lib/tokens.js";
 import { tokens as compact } from "./lib/format.js";
+import { teamChip } from "./lib/team.js";
 
 const MOD = "usage-limits";
 const KEY_STATE = "usage-limits.state";
 const KEY_PREFS = "usage-limits.prefs";
 const KEY_REFRESH = "usage-limits.refresh";
 const KEY_TOKENS = "usage-limits.tokens";
-// The team's Claude usage from Ops, published by the kit's claude-usage panel (work Mac only).
-const KEY_TEAM = "claude-usage.summary";
+// The team's Claude usage from Ops: the kit's `claude-usage` CLI (work Mac only) writes the chip
+// here, and so does the Claude usage panel each time it loads. Machines without the CLI show none.
+const KEY_TEAM = "claude-usage.chip";
+const TEAM_EVERY = 5 * 60;           // s
 const TOKENS_EVERY = 10 * 60;     // s, the log scan takes a few seconds
 const TOKEN_DAYS = "all";
 const FETCH_EVERY = 5 * 60;       // s, installed providers
@@ -74,6 +77,9 @@ export default class UsageLimits extends View {
     this.tokensBusy = false;
     this.tokensAt = 0;     // epoch s of the last scan started
     this.period = "today";
+    this.teamAt = 0;       // epoch s of the last team fetch
+    this.teamBusy = false;
+    this.teamCli = null;   // null until checked, then true or false
     this.tick(cx, true);
     cx.timer.every(60 * 1000, (cx) => this.tick(cx, false));
   }
@@ -90,6 +96,7 @@ export default class UsageLimits extends View {
       if (force || now() - (this.lastFetch[p.id] ?? 0) >= every) this.fetch(p, cx);
     }
     if (force || now() - this.tokensAt >= TOKENS_EVERY) this.fetchTokens(cx);
+    if (force || (now() - this.teamAt >= TEAM_EVERY && window()?.visible !== false)) this.fetchTeam(cx);
     this.readSession(cx);
     cx.notify();
   }
@@ -108,6 +115,32 @@ export default class UsageLimits extends View {
         // keep the last scan
       } finally {
         this.tokensBusy = false;
+      }
+      cx.notify();
+    });
+  }
+
+  // The team chip, from the kit's claude-usage CLI when this machine has it.
+  fetchTeam(cx) {
+    if (this.teamBusy || this.teamCli === false) return;
+    // The panel may have just loaded; its stamp counts as a fetch.
+    const chip = shared(KEY_TEAM);
+    if (chip?.at && Date.now() - chip.at < TEAM_EVERY * 1000 / 2) { this.teamAt = now(); return; }
+    this.teamBusy = true;
+    this.teamAt = now();
+    const cli = `${home()}/.local/bin/claude-usage`;
+    cx.spawn(async (cx) => {
+      try {
+        if (this.teamCli === null) this.teamCli = (await exec("test", ["-x", cli]).catch(() => null))?.code === 0;
+        if (!this.teamCli) return;
+        const r = await exec(cli, ["report"], { timeout: 45000 });
+        const out = JSON.parse(r.stdout);
+        const report = out.data;
+        if (report?.chip) setShared(KEY_TEAM, { ...report.chip, stale: Boolean(report.stale), at: Date.now() });
+      } catch {
+        // keep the last chip; it dims once it's old
+      } finally {
+        this.teamBusy = false;
       }
       cx.notify();
     });
@@ -242,7 +275,7 @@ export default class UsageLimits extends View {
     const model = barModel(st, prefs, now());
     const numbers = sessionOnBar(this.session?.data, prefs);
     const numbersWidth = numbers.reduce((w, n) => w + 7 * n.text.length + 14, numbers.length ? 14 : 0);
-    const team = this.teamChip(t);
+    const team = this.teamEl(t);
     const density = chooseDensity(model, this.width ? this.width - 28 - where.width - numbersWidth - team.width : Infinity, prefs.showBars);
     const root = h_flex().id("root").size_full().px(14).gap(16).items_center().overflow_hidden()
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
@@ -276,18 +309,18 @@ export default class UsageLimits extends View {
   }
 
   // The team's Claude usage from Ops: "Team 38% · You 22%". Clicking opens the Claude usage
-  // panel. Neutral colors on purpose: the ops page's red means under-using, while this bar's
-  // red means near a limit.
-  teamChip(t) {
-    const team = shared(KEY_TEAM);
-    if (!team?.text) return { el: null, width: 0 };
+  // panel and refreshes it. Neutral colors on purpose: the ops page's red means under-using,
+  // while this bar's red means near a limit.
+  teamEl(t) {
+    const team = teamChip(shared(KEY_TEAM), Date.now());
+    if (!team) return { el: null, width: 0 };
     const el = h_flex().id("ul-team").gap(6).items_center().flex_none().whitespace_nowrap().cursor_pointer()
-      .opacity(team.stale ? 0.55 : 1).tooltip(team.hint ?? "Team Claude usage")
+      .opacity(team.old ? 0.55 : 1).tooltip(team.hint)
       .hover((s) => s.text_color(t.foreground))
-      .on_click(() => run("my-tabs.panel-claude-usage"))
+      .on_click(() => { run("my-tabs.open-claude-usage"); setShared("claude-usage.refresh", Date.now()); })
       .child(svg("mods/claude-usage/gauge.svg").size(13))
       .child(team.text);
-    return { el, width: 7 * team.text.length + 36 };
+    return { el, width: team.width };
   }
 
   // ---------- panel: limits ----------
