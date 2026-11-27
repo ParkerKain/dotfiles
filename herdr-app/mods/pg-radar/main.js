@@ -8,7 +8,7 @@
 // letters pick planes as in Lock-in. Data comes from the kit's `lock-in` CLI.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { checking, exec, focused, home, layout, nextCommand, openOverlay, run, settings, theme, window } from "herdr";
+import { checking, exec, focused, home, nextCommand, openOverlay, run, settings, theme, window as appWindow } from "herdr";
 import { decode, fixTask, hintFor, hintIndex, laneOf, LANES, placeLane, shortName } from "./lib/model.js";
 
 const POLL_MS = 5 * 60 * 1000;
@@ -20,7 +20,11 @@ const cli = () => `${home()}/.local/bin/lock-in`;
 const vault = () => `${home()}/Documents/internal/repos/devclarity-vault`;
 const open = (url) => exec("open", [url]);
 
-const alpha = (hex, a) => (/^#[0-9a-f]{6}$/i.test(hex ?? "") ? hex + Math.round(a * 255).toString(16).padStart(2, "0") : hex);
+// Scales a color's alpha, keeping any alpha it already has (layouts often set #rrggbbaa).
+const alpha = (hex, a) => {
+  const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
+  return m ? "#" + m[1] + Math.round(a * (m[2] ? parseInt(m[2], 16) / 255 : 1) * 255).toString(16).padStart(2, "0") : hex;
+};
 
 export default class Radar extends View {
   init(_props, cx) {
@@ -34,13 +38,16 @@ export default class Radar extends View {
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
+        // "focus" comes from pane.go onto the band; "pick" from the Command Deck's Lock-in row,
+        // which hands the keyboard back to the pane it came from on Esc.
         if (command === "focus") { this.picking = true; this.returnPane = null; this.handle.focus(); }
+        else if (command === "pick") { this.picking = true; this.returnPane = focused()?.pane ?? null; this.handle.focus(); }
         else if (command === "refresh") this.load(cx);
         cx.notify();
       }
     });
     this.load(cx);
-    cx.timer.every(POLL_MS, cx => { if (window()?.visible !== false) this.load(cx); });
+    cx.timer.every(POLL_MS, cx => { if (appWindow()?.visible !== false) this.load(cx); });
   }
 
   load(cx) {
@@ -73,7 +80,10 @@ export default class Radar extends View {
       const spot = this.positions(lane, before).find(p => p.flag.id === flag.id);
       this.landing.push({ flag, lane, x: spot?.x ?? 0, at: now, gone: false });
     }
-    this.landedNote = { name: shortName(gone[0].name) + (gone.length > 1 ? ` +${gone.length - 1}` : ""), until: now + LANDED_NOTE_MS };
+    // Only a session still in the future can have locked in. One that dropped off because its
+    // time passed or it was cancelled is just "off the list".
+    const locked = gone.some(f => !f.starts_at || Date.parse(f.starts_at) > now);
+    this.landedNote = { name: shortName(gone[0].name) + (gone.length > 1 ? ` +${gone.length - 1}` : ""), verb: locked ? "locked in" : "off the list", until: now + LANDED_NOTE_MS };
     // Phase flag: draw at the old spot first, then let the transition carry it off the edge.
     cx.timer.after(40, cx => { for (const l of this.landing) l.gone = true; cx.notify(); });
     cx.timer.after(LAND_MS + 100, cx => { this.landing = this.landing.filter(l => Date.now() - l.at < LAND_MS); cx.notify(); });
@@ -117,7 +127,9 @@ export default class Radar extends View {
 
   render() {
     const t = theme();
-    const tone = { final: t.ansi1 ?? t.blocked, approach: t.ansi3 ?? t.working, holding: t.ansi5 ?? t.accent, done: t.ansi2 ?? t.done };
+    // Theme status colors first: themes tune them for both light and dark.
+    const tone = { final: t.blocked ?? t.ansi1, approach: t.working ?? t.ansi3, holding: t.ansi5 ?? t.accent, done: t.done ?? t.ansi2 };
+    const noting = Boolean(this.landedNote && Date.now() < this.landedNote.until);
     const active = this.picking && this.handle.is_focused();
     const flags = this.flags();
     const zoom = Number(settings()?.zoom) || 1;
@@ -140,11 +152,9 @@ export default class Radar extends View {
       const sky = div().id(`sky-${key}`).relative().flex_1().min_w(0).h_full().overflow_hidden()
         // The left edge is today: a faint runway line the planes approach.
         .child(div().absolute().left(0).top(4).bottom(4).w(2).rounded(1).bg(alpha(color, 0.5)))
-        .children(spots.map(p => this.plane(p, color, t, active, indexOf.get(p.flag.id), key)))
-        .children(this.landing.filter(l => l.lane === key).map(l => this.lander(l, color, t)))
-        .when(key === "final" && this.landedNote && Date.now() < this.landedNote.until, el => el.child(
-          h_flex().absolute().right(10).top(0).bottom(0).items_center().gap(5).text_color(tone.done).text_size(11)
-            .child("✓").child(`${this.landedNote.name} locked in`)));
+        // Nothing draws until the lane's width is known, so planes don't slide in from x = 0.
+        .children(this.skyW > 0 ? spots.map(p => this.plane(p, color, t, active, indexOf.get(p.flag.id), key)) : [])
+        .children(this.landing.filter(l => l.lane === key).map(l => this.lander(l, color, t)));
       if (key === "final") sky.on_size_change((size, cx) => {
         const w = Math.round(size.width / zoom);
         if (w !== this.skyW) { this.skyW = w; cx.notify(); }
@@ -159,23 +169,28 @@ export default class Radar extends View {
     };
 
     const checked = this.report.checked_label ? (this.report.stale ? `Offline · ${this.report.checked_label}` : this.report.checked_label) : "";
-    const tail = v_flex().flex_none().w(84).h_full().justify_center().items_end().gap(3).px(10).border_l(1).border_color(t.border)
+    const tail = v_flex().flex_none().w(noting ? 150 : 84).h_full().justify_center().items_end().gap(3).px(10).border_l(1).border_color(t.border)
       .child(div().id("refresh").cursor_pointer().text_color(t.muted).hover(s => s.text_color(t.foreground))
         .child(this.loading ? svg("mods/workspace-chrome/spinner.svg").size(12).text_color(t.muted).spin(900) : "↻")
         .on_click((_e, cx) => this.load(cx)))
       .child(div().text_size(10).text_color(t.dim).whitespace_nowrap().child(checked))
-      .child(div().text_size(10).text_color(active ? t.accent : t.dim).whitespace_nowrap().child(active ? "letter fixes" : "click fixes"));
+      .child(noting
+        ? div().text_size(10.5).text_color(tone.done).whitespace_nowrap().truncate().child(`✓ ${this.landedNote.name} ${this.landedNote.verb}`)
+        : div().text_size(10).text_color(active ? t.accent : t.dim).whitespace_nowrap().child(active ? "letter fixes" : "click fixes"));
 
-    if (!flags.length && !this.landing.length) {
-      return box.child(frame.px(12).items_center().gap(8)
+    // The lanes stay up while the last plane lands and its note shows, then the sky clears.
+    if (!flags.length && !this.landing.length && !noting) {
+      return box.child(frame.child(h_flex().flex_1().px(12).items_center().gap(8)
         .child(div().text_color(tone.done).child("✓"))
-        .child(div().flex_1().text_color(t.muted).child("Every session is locked in. The sky is clear.")));
+        .child(div().flex_1().text_color(t.muted).child("Every session is locked in. The sky is clear.")))
+        .child(tail));
     }
     return box.child(frame.child(v_flex().flex_1().min_w(0).h_full().child(lane("final")).child(lane("approach")).child(lane("holding"))).child(tail));
   }
 
   plane(p, color, t, active, index, lane) {
-    const f = p.flag, urgent = lane === "final";
+    // Only a session a day or less out breathes, so the band isn't animating all day.
+    const f = p.flag, urgent = lane === "final" && Number(f.days) <= 1;
     const hint = active ? hintFor(index) : null;
     const tip = [f.name, `${f.when_label ?? ""} · ${f.relative_label ?? ""}`, f.short_reason || f.reason, "Click: fix · Right-click: open in Ops"].filter(Boolean).join("\n");
     if (p.more) {

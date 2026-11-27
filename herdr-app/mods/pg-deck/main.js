@@ -8,7 +8,8 @@
 // factory, claude-usage and artifacts. Each is read in the background every 5 minutes.
 import { View, div, svg, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { checking, exec, home, layout, placement, run, settings, theme, window } from "herdr";
+// `window` from "herdr" would hide GPUI's global `window` (which has paint_path), so it is renamed.
+import { checking, exec, home, layout, placement, run, settings, theme, window as appWindow } from "herdr";
 
 const POLL_MS = 5 * 60 * 1000;
 const ROW_H = 46;
@@ -16,7 +17,11 @@ const OPEN_W = 268;
 const bin = (name) => `${home()}/.local/bin/${name}`;
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const isoToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const alpha = (hex, a) => (/^#[0-9a-f]{6}$/i.test(hex ?? "") ? hex + Math.round(a * 255).toString(16).padStart(2, "0") : hex);
+// Scales a color's alpha, keeping any alpha it already has (layouts often set #rrggbbaa).
+const alpha = (hex, a) => {
+  const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
+  return m ? "#" + m[1] + Math.round(a * (m[2] ? parseInt(m[2], 16) / 255 : 1) * 255).toString(16).padStart(2, "0") : hex;
+};
 const clock = (min) => { const h = Math.floor(min / 60); return `${h % 12 || 12}:${String(min % 60).padStart(2, "0")}`; };
 
 async function json(cmd, args, timeout = 45000) {
@@ -45,11 +50,12 @@ const SOURCES = [
     },
     glance(tasks) {
       const today = isoToday();
-      const open = tasks.filter(x => x.status !== "done" && x.due_date && x.due_date <= today);
-      const late = open.filter(x => x.due_date < today).length;
+      // The CLI lists open tasks only.
+      const open = tasks.filter(x => x.due_date && x.due_date <= today);
+      const overdue = open.filter(x => x.due_date < today), late = overdue.length;
       return {
         title: open.length ? `${open.length} due today` : "Nothing due today",
-        sub: late ? `${late} overdue · ${open[0]?.title ?? ""}` : open[0]?.title ?? `${tasks.length} open in all`,
+        sub: late ? `${late} overdue · ${overdue[0].title}` : open[0]?.title ?? `${tasks.length} open in all`,
         badge: open.length ? { text: String(open.length), tone: late ? "blocked" : "working" } : null,
       };
     },
@@ -74,7 +80,7 @@ const SOURCES = [
     },
   },
   {
-    id: "lock-in", icon: "mods/day-view/calendar.svg", glyph: "✈", name: "Lock-in", panel: null,
+    id: "lock-in", glyph: "✈", name: "Lock-in",
     async read() { return (await json(bin("lock-in"), ["flags"])).data ?? {}; },
     glance(r) {
       const flags = r.flags ?? [], red = flags.filter(f => f.urgency === "red");
@@ -113,6 +119,7 @@ const SOURCES = [
     id: "artifacts", icon: "mods/artifacts/layers.svg", name: "Artifacts",
     async read() {
       const r = await exec(bin("artifacts"), ["list"], { timeout: 30000 });
+      if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `artifacts exited ${r.code}`);
       return r.stdout.split("\n").filter(Boolean).map(l => l.split(/\s{2,}/));
     },
     glance(rows) {
@@ -124,28 +131,38 @@ const SOURCES = [
 
 export default class Deck extends View {
   init(_props, cx) {
-    this.glances = {}; this.errors = {};
+    this.raw = {}; this.glances = {}; this.errors = {}; this.busy = {};
+    this.day = isoToday();
     if (checking()) return;
     this.load(cx);
-    cx.timer.every(POLL_MS, cx => { if (window()?.visible !== false) this.load(cx); });
-    // The calendar ring and countdown move with the clock, so it alone re-reads each minute.
-    cx.timer.every(60000, cx => { if (window()?.visible !== false) this.loadOne(SOURCES[1], cx); });
+    cx.timer.every(POLL_MS, cx => { if (appWindow()?.visible !== false) this.load(cx); });
+    // The calendar ring and countdown move with the clock. Each minute recomputes them from
+    // the events already read, and only a new day reads Outlook again.
+    cx.timer.every(60000, cx => {
+      if (appWindow()?.visible === false) return;
+      if (isoToday() !== this.day) { this.day = isoToday(); this.load(cx); return; }
+      const cal = SOURCES.find(s => s.id === "day-view");
+      if (this.raw[cal.id]) { this.glances[cal.id] = cal.glance(this.raw[cal.id]); cx.notify(); }
+    });
   }
 
   load(cx) { for (const s of SOURCES) this.loadOne(s, cx); }
 
   loadOne(s, cx) {
+    if (this.busy[s.id]) return;
+    this.busy[s.id] = true;
     cx.spawn(async cx => {
-      try { this.glances[s.id] = s.glance(await s.read()); this.errors[s.id] = null; }
+      try { this.raw[s.id] = await s.read(); this.glances[s.id] = s.glance(this.raw[s.id]); this.errors[s.id] = null; }
       catch (e) { this.errors[s.id] = String(e?.message ?? e); }
+      this.busy[s.id] = false;
       cx.notify();
     });
   }
 
   openPanel(s) {
-    if (s.id === "lock-in") { run("layout.show", { id: "pg-radar" }); return; }
-    const root = layout();
-    if (!find(root, s.id)) return;
+    // Lock-in lives in the radar band, so its row hands the keyboard to the radar's letters.
+    if (s.id === "lock-in") { run("pg-radar.pick"); return; }
+    if (!find(layout(), s.id)) return;
     run("layout.select", { stack: "panel-body", child: s.id });
     run("layout.show", { id: "panel" });
   }
@@ -162,24 +179,29 @@ export default class Deck extends View {
   row(s, t, mirror, zoom) {
     const g = this.glances[s.id], err = this.errors[s.id];
     const tone = (name) => t[name] ?? t.accent;
+    // Badges are bright in both appearances, so their text is always the darker theme color.
+    const badgeInk = settings()?.dark ? t.background : t.foreground;
     const tile = div().id(`tile-${s.id}`).relative().flex_none().w(30).h(30).rounded(8).bg(t.hover)
       .flex().items_center().justify_center()
       .child(s.glyph ? div().text_size(14).text_color(t.foreground).child(s.glyph) : svg(s.icon).size(15).text_color(t.foreground))
-      .when(g?.ring != null && g.ring > 0, el => el.child(ring(t, g.ring, tone(g.tone ?? "accent"), zoom)))
+      .when(g?.ring != null && g.ring > 0, el => el.child(div().absolute().inset_0()
+        .when(Boolean(g.pulse), r => r.loop("opacity", { from: 0.4, to: 1, period: 1000 }))
+        .child(ring(t, g.ring, tone(g.tone ?? "accent"), zoom))))
       .when(Boolean(g?.badge), el => el.child(div().absolute().top(-5).right(-6).min_w(16).h(16).px(4).rounded(8)
-        .bg(tone(g.badge.tone)).text_color(t.background).text_size(9.5).font_semibold().flex().items_center().justify_center()
+        .bg(tone(g.badge.tone)).text_color(badgeInk).text_size(9.5).font_semibold().flex().items_center().justify_center()
         .when(Boolean(g.pulse), b => b.loop("opacity", { from: 0.45, to: 1, period: 1100 }))
         .child(g.badge.text)))
-      .when(Boolean(err) && !g, el => el.child(div().absolute().bottom(-2).right(-2).w(7).h(7).rounded(4).bg(t.dim)));
+      // A failed read keeps the last glance but marks it as old.
+      .when(Boolean(err), el => el.child(div().absolute().bottom(-2).right(-2).w(7).h(7).rounded(4).bg(t.dim)));
 
     const text = v_flex().flex_1().min_w(0).justify_center()
       .child(div().truncate().font_semibold().text_color(g?.tone === "blocked" ? tone("blocked") : t.foreground).child(g?.title ?? (err ? `${s.name} offline` : s.name)))
-      .child(g?.meter ? meter(t, g.meter, tone(g.tone ?? "done")) : div().truncate().text_size(10.5).text_color(t.dim).child(g?.sub ?? (err ? err : "Reading…")))
+      .child(g?.meter ? meter(t, g.meter, tone(g.tone ?? "done"), s.id) : div().truncate().text_size(10.5).text_color(t.dim).child(g?.sub ?? (err ? err : "Reading…")))
       .when(Boolean(g?.meter), el => el.child(div().truncate().text_size(10).text_color(t.dim).child(g.sub)));
 
     const row = h_flex().id(`row-${s.id}`).h(ROW_H).items_center().gap(10).pl(mirror ? 12 : 7).pr(mirror ? 7 : 12)
       .cursor_pointer().hover(st => st.bg(t.hover)).rounded(8)
-      .tooltip(`${s.name}: click to open`)
+      .tooltip(err ? `${s.name}: last read failed (${err})` : `${s.name}: click to open`)
       .on_click(() => this.openPanel(s));
     return mirror ? row.child(text).child(tile) : row.child(tile).child(text);
   }
@@ -198,10 +220,10 @@ function ring(t, value, color, zoom) {
 }
 
 // A thin bar with the week used and a gold tick where on-pace would be.
-function meter(t, m, color) {
+function meter(t, m, color, id) {
   const W = 150;
   return div().relative().w(W).h(6).my(3).rounded(3).bg(t.hover)
-    .child(div().absolute().left(0).top(0).bottom(0).w(Math.round(W * Math.min(1, m.used))).rounded(3).bg(color)
+    .child(div().id(`meter-${id}`).absolute().left(0).top(0).bottom(0).w(Math.round(W * Math.min(1, m.used))).rounded(3).bg(color)
       .transition("width", { duration: 600, easing: "ease-out" }))
-    .child(div().absolute().left(Math.round(W * Math.min(1, m.pace)) - 1).top(-2).bottom(-2).w(2).bg(t.ansi3 ?? t.working));
+    .child(div().absolute().left(Math.round(W * Math.min(1, m.pace)) - 1).top(-2).bottom(-2).w(2).bg(t.working ?? t.ansi3));
 }

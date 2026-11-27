@@ -24,7 +24,7 @@ export function shortName(name, lane = "final") {
   const code = m ? m[1] : "", rest = (m ? m[2] : s).trim();
   if (lane === "holding" && code) return code;
   const words = lane === "approach" ? 2 : 3;
-  const tail = rest.includes("|") ? rest.split("|").pop().trim() : rest.replace(/\s*[-:(].*$/, "").split(/\s+/).slice(0, words).join(" ");
+  const tail = rest.includes("|") ? rest.split("|").pop().trim() : rest.replace(/\s+[-\u2013]\s.*$|\s*[:(].*$/, "").split(/\s+/).slice(0, words).join(" ");
   return [code, tail].filter(Boolean).join(" ");
 }
 

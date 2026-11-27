@@ -6,14 +6,18 @@
 // `day-view` CLI, which reads the Outlook calendar.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { checking, exec, home, settings, theme, window } from "herdr";
-import { addDays, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, timed, windowOf } from "./lib/model.js";
+import { checking, exec, home, settings, theme, window as appWindow } from "herdr";
+import { addDays, allDay, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, stack, timed, windowOf } from "./lib/model.js";
 
 const POLL_MS = 5 * 60 * 1000;
 const LOOKAHEAD_DAYS = 7;
 const cli = () => `${home()}/.local/bin/day-view`;
 const open = (url) => exec("open", [url]);
-const alpha = (hex, a) => (/^#[0-9a-f]{6}$/i.test(hex ?? "") ? hex + Math.round(a * 255).toString(16).padStart(2, "0") : hex);
+// Scales a color's alpha, keeping any alpha it already has (layouts often set #rrggbbaa).
+const alpha = (hex, a) => {
+  const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
+  return m ? "#" + m[1] + Math.round(a * (m[2] ? parseInt(m[2], 16) / 255 : 1) * 255).toString(16).padStart(2, "0") : hex;
+};
 const nowMinutes = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 
 async function readDay(date) {
@@ -28,10 +32,10 @@ export default class DayStrip extends View {
   init(_props, cx) {
     this.date = iso(new Date()); this.today = this.date; this.events = []; this.allDay = [];
     this.error = null; this.loading = false; this.loaded = false;
-    this.now = nowMinutes(); this.width = 0;
+    this.now = nowMinutes(); this.width = 0; this.retryAt = 0;
     if (checking()) return;
     this.load(cx);
-    cx.timer.every(POLL_MS, cx => { if (window()?.visible !== false) this.load(cx); });
+    cx.timer.every(POLL_MS, cx => { if (appWindow()?.visible !== false) this.load(cx); });
     // The now-line moves on the minute, so the first tick waits for the next one.
     const toMinute = 60000 - (Date.now() % 60000) + 50;
     cx.timer.after(toMinute, cx => {
@@ -41,9 +45,13 @@ export default class DayStrip extends View {
   }
 
   tick(cx) {
+    const before = this.now;
     this.now = nowMinutes();
-    // Past midnight, or the last event just ended: read again so the strip moves on.
-    if (iso(new Date()) !== this.today || (this.date === this.today && !hasRest(this.events, this.now))) this.load(cx);
+    // Read again only when the day turns over or today's last event has just ended, so a
+    // quiet week doesn't re-scan Outlook every minute. After an error, wait for the next poll.
+    const dayTurned = iso(new Date()) !== this.today;
+    const justEnded = this.date === this.today && hasRest(this.events, before) && !hasRest(this.events, this.now);
+    if ((dayTurned || justEnded) && Date.now() >= this.retryAt) this.load(cx);
     cx.notify();
   }
 
@@ -61,9 +69,9 @@ export default class DayStrip extends View {
           }
         }
         this.today = today; this.date = date; this.events = events;
-        this.allDay = events.filter(e => e.all_day).map(e => e.title);
-        this.error = null; this.loaded = true;
-      } catch (e) { this.error = String(e?.message ?? e); }
+        this.allDay = allDay(events);
+        this.error = null; this.loaded = true; this.retryAt = 0;
+      } catch (e) { this.error = String(e?.message ?? e); this.retryAt = Date.now() + POLL_MS; }
       this.loading = false; this.now = nowMinutes();
       cx.notify();
     });
@@ -72,7 +80,8 @@ export default class DayStrip extends View {
   render() {
     const t = theme();
     const zoom = Number(settings()?.zoom) || 1;
-    const c = { event: t.ansi4 ?? t.accent, soon: t.ansi3 ?? t.working, live: t.ansi1 ?? t.blocked, free: t.dim };
+    // Theme status colors first: themes tune them for both light and dark.
+    const c = { event: t.ansi4 ?? t.accent, soon: t.working ?? t.ansi3, live: t.blocked ?? t.ansi1, free: t.dim };
     const isToday = this.date === this.today;
     const events = timed(this.events);
     const win = windowOf(this.events);
@@ -85,8 +94,11 @@ export default class DayStrip extends View {
 
     const label = v_flex().flex_none().w(92).h_full().justify_center().px(10).border_r(1).border_color(t.border)
       .child(div().font_semibold().text_color(t.foreground).child(isToday ? "Today" : dayLabel(this.date)))
-      .child(div().text_size(10).text_color(t.dim).truncate().child(
-        this.error ? "Calendar offline" : !this.loaded ? "Reading…" : isToday ? dayLabel(this.date) : "Next workday"));
+      .child(div().id("day-sub").text_size(10).text_color(t.dim).truncate()
+        .when(this.allDay.length > 0, el => el.tooltip(this.allDay.join("\n")))
+        .child(this.error ? "Calendar offline" : !this.loaded ? "Reading…"
+          : this.allDay.length ? `${this.allDay[0]}${this.allDay.length > 1 ? ` +${this.allDay.length - 1}` : ""}`
+          : isToday ? dayLabel(this.date) : "Next workday"));
 
     const ticks = [];
     for (let m = win.start; m <= win.end; m += 60) {
@@ -94,16 +106,18 @@ export default class DayStrip extends View {
         .child(div().pl(3).text_size(9.5).text_color(t.dim).child(hourLabel(m))));
     }
 
-    const block = (e, i) => {
+    const block = ({ event: e, lane, lanes }, i) => {
       const live = isToday && e.start_min <= this.now && this.now < e.end_min;
       const soon = isToday && cd?.event === e && cd.tone === "soon";
       const free = e.kind === "free";
       const color = live ? c.live : soon ? c.soon : free ? c.free : c.event;
       const left = x(e.start_min), w = Math.max(6, x(e.end_min) - left - 2);
-      return div().id(`ev-${i}`).absolute().left(left).w(w).top(17).bottom(5).rounded(5).overflow_hidden()
+      // Two overlapping events split the row: the first on top, the second below.
+      const rowTop = 17, rowH = 30, h = lanes === 2 ? rowH / 2 - 1 : rowH;
+      return div().id(`ev-${i}`).absolute().left(left).w(w).top(rowTop + (lane ? rowH / 2 + 1 : 0)).h(h).rounded(5).overflow_hidden()
         .bg(alpha(color, free ? 0.12 : soon ? 0.32 : 0.26)).border_l(3).border_color(color)
         .cursor_pointer().hover(s => s.bg(alpha(color, 0.42)))
-        .tooltip(`${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}${joinUrl(e) ? "\nClick to open the day in Calendar" : ""}`)
+        .tooltip(`${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}\nClick to open the day in Calendar`)
         .on_click(() => exec(cli(), ["show", this.date]))
         // The soon glow breathes on its own layer so the text stays steady.
         .when(soon, el => el.child(div().absolute().inset_0().bg(alpha(c.soon, 0.25)).loop("opacity", { from: 0, to: 1, period: 1600 })))
@@ -114,9 +128,10 @@ export default class DayStrip extends View {
       .on_size_change((size, cx) => { const w = Math.round(size.width / zoom); if (w !== this.width) { this.width = w; cx.notify(); } })
       .children(ticks)
       // Time already gone today is shaded, so the strip reads as "what's left".
-      .when(isToday && W > 0, el => el.child(div().absolute().left(0).top(14).bottom(3).w(x(this.now)).bg(alpha(t.background, 0.35))
+      // A light foreground wash shades the past the same way in light and dark themes.
+      .when(isToday && W > 0, el => el.child(div().id("past").absolute().left(0).top(14).bottom(3).w(x(this.now)).bg(alpha(t.foreground, 0.06))
         .transition("width", { duration: 1000, easing: "linear" })))
-      .children(W > 0 ? events.map(block) : [])
+      .children(W > 0 ? stack(events).map(block) : [])
       .when(isToday && W > 0 && this.now >= win.start && this.now <= win.end, el => el
         .child(div().id("now").absolute().left(x(this.now) - 1).top(12).bottom(2).w(2).rounded(1).bg(c.live)
           .transition("left", { duration: 1000, easing: "linear" }))

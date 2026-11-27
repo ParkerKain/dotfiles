@@ -16,8 +16,10 @@ export function dayLabel(dateStr) {
   return `${wd} ${m}/${d}`;
 }
 
-// Timed events only: all-day ones (OOO, holidays) go in the label instead of on the strip.
-export const timed = (events) => (events ?? []).filter(e => !e.all_day && e.end_min > e.start_min);
+// Timed events only. All-day ones (OOO, holidays) and ones running in from yesterday or on
+// past midnight go in the label instead, so they don't stretch the strip to 24 hours.
+export const timed = (events) => (events ?? []).filter(e => !e.all_day && !e.starts_before && !e.ends_after && e.end_min > e.start_min);
+export const allDay = (events) => (events ?? []).filter(e => e.all_day || e.starts_before || e.ends_after).map(e => e.title);
 
 // The strip's hours: 7am to 6pm, stretched to fit anything earlier or later.
 export function windowOf(events) {
@@ -43,17 +45,31 @@ export function countdown(events, nowMin) {
 }
 
 export function clockOf(min) {
-  const h = Math.floor(min / 60), m = min % 60;
+  const h = Math.floor(min / 60) % 24, m = min % 60;
   return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
 export function hourLabel(min) {
-  const h = Math.floor(min / 60);
+  const h = Math.floor(min / 60) % 24;
   return `${h % 12 || 12}${h < 12 ? "a" : "p"}`;
 }
 
 // A Zoom (or Teams or Meet) link in the event's location, if any.
 export function joinUrl(event) {
-  const m = String(event?.location ?? "").match(/https?:\/\/\S*(zoom\.us|teams\.microsoft|meet\.google)\S*/i);
+  const m = String(event?.location ?? "").match(/https?:\/\/[^\s;,)>"']*(zoom\.us|teams\.microsoft|meet\.google)[^\s;,)>"']*/i);
   return m ? m[0] : null;
+}
+
+// Overlapping events share the row: each gets a lane (0 or 1) so the later one draws in the
+// lower half instead of hiding the earlier one. Returns [{ event, lane, lanes }].
+export function stack(events) {
+  const sorted = [...events].sort((a, b) => a.start_min - b.start_min || b.end_min - a.end_min);
+  const out = [];
+  for (const e of sorted) {
+    const clash = out.filter(o => o.event.end_min > e.start_min && o.event.start_min < e.end_min);
+    const lane = clash.some(o => o.lane === 0) ? 1 : 0;
+    out.push({ event: e, lane, lanes: clash.length ? 2 : 1 });
+    for (const o of clash) o.lanes = 2;
+  }
+  return out;
 }
