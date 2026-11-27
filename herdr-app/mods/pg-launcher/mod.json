@@ -1,0 +1,13 @@
+{
+  "place": "none",
+  "title": "New session (playground)",
+  "overlay": { "width": 560, "height": 470 },
+  "palette": [
+    {
+      "title": "New session (playground)",
+      "command": "mod.open",
+      "args": { "name": "pg-launcher" },
+      "words": "new session start launch agent playground"
+    }
+  ]
+}
