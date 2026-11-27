@@ -7,7 +7,7 @@
 // `day-view` CLI, which reads the Outlook calendar.
 import { View, div, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { checking, exec, home, settings, theme, window as appWindow } from "herdr";
+import { checking, exec, home, run, settings, theme, window as appWindow } from "herdr";
 import { addDays, allDay, busy, clockOf, countdown, dayLabel, hasRest, hourLabel, iso, joinUrl, stack, timed, windowOf } from "./lib/model.js";
 
 const POLL_MS = 5 * 60 * 1000;
@@ -114,8 +114,8 @@ export default class DayStrip extends View {
       return div().id(`ev-${i}`).absolute().left(left).w(w).top(rowTop + (lane ? rowH / 2 + 1 : 0)).h(h).rounded(5).overflow_hidden()
         .bg(alpha(color, free ? 0.12 : soon ? 0.32 : 0.26)).border_l(3).border_color(color)
         .cursor_pointer().hover(s => s.bg(alpha(color, 0.42)))
-        .tooltip(`${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}\nClick to open the day in Calendar`)
-        .on_click(() => exec(cli(), ["show", this.date]))
+        .tooltip(`${e.title}\n${clockOf(e.start_min)} to ${clockOf(e.end_min)}\nClick opens its call sheet (or the day in Calendar)`)
+        .on_click((_e, cx) => this.openCall(e, cx))
         // The soon glow breathes on its own layer so the text stays steady.
         .when(soon, el => el.child(div().absolute().inset_0().bg(alpha(c.soon, 0.25)).loop("opacity", { from: 0, to: 1, period: 1600 })))
         .child(div().relative().px(5).pt(2).truncate().text_color(free ? t.dim : t.foreground).child(e.title));
@@ -137,6 +137,23 @@ export default class DayStrip extends View {
 
     // The countdown ring sits at the strip's start (round 2 pick C); the old right-hand chip is gone.
     return frame.child(inner.child(this.lead(t, c, cd, isToday)).child(line.opacity(this.stepping ? 0.25 : 1).transition("opacity", { duration: 180, easing: "ease-out" })).child(this.nav(t)));
+  }
+
+  // Clicking an event opens the Call Sheet for its Ops session in a tab of its own (the call
+  // sheet's `session` prop). Events with no Ops session (internal meetings) open the day in
+  // Calendar instead. The session is matched by name, then by start time.
+  openCall(e, cx) {
+    const date = this.date;
+    cx.spawn(async () => {
+      const r = await exec(home() + "/go/bin/ops-tasks", ["callsheet", "sessions", "--date", date, "--json"], { timeout: 30000 }).catch(() => null);
+      let sessions = [];
+      try { sessions = JSON.parse(r?.stdout ?? "").data?.sessions ?? []; } catch { /* below */ }
+      const startMin = (iso) => { const d = new Date(iso); return d.getHours() * 60 + d.getMinutes(); };
+      const s = sessions.find(x => x.name === e.title) ?? sessions.find(x => startMin(x.starts_at) === e.start_min);
+      if (!s) { exec(cli(), ["show", date]); return; }
+      const code = (s.name.match(/^\[([^\]]+)\]/) ?? [])[1] ?? "Call";
+      run("tab.new", { name: `Call · ${code}`, mod: "call-sheet", props: { session: s.id } });
+    });
   }
 
   // ‹ Today › at the strip's end. Stepping fades the line while the day is read.

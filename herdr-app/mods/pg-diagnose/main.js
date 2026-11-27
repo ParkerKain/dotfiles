@@ -196,17 +196,23 @@ export default class DiagnoseHeader extends View {
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
+    // A resize means the header moved or changed width (sidebar or panel toggled, a split,
+    // a new zoom), so the learned spot is forgotten until the next mouse move.
+    row.on_size_change((size) => { const w = Math.round(size.width); if (w !== this.lastW) { this.lastW = w; this.box = null; } });
     return Popup.new(`pg-diag-${pane}`, row.on_window_mouse_move((e) => this.learn(e)))
       .size_full()
       .anchor(bottom ? "bottom_left" : "top_left")
       .when(this.open, el => el.content(this.panel(t, name, bottom)));
   }
 
-  // The header's window bounds, from any mouse move. Event bounds come in window px, so
-  // divide by zoom for layout px (seen at zoom 1.6: the panel landed 1.6x too far right).
+  // The header's window origin, from any mouse move: position minus local_position, both in
+  // layout px. (Event `bounds` gave a wrong x in a split window, so it isn't used.) The width
+  // comes from on_size_change, which reports window px.
   learn(e) {
-    const b = e.bounds, z = Number(settings()?.zoom) || 1;
-    if (b && Number.isFinite(b.x) && b.width > 0) this.box = { x: b.x / z, w: b.width / z };
+    const p = e.position, l = e.local_position;
+    if (!p || !l || !(this.lastW > 0)) return;
+    const z = Number(settings()?.zoom) || 1;
+    this.box = { x: p.x - l.x, w: this.lastW / z };
   }
 
   // The panel that grows out of the header: darker than the terminal, the agent's last line
