@@ -1,0 +1,13 @@
+{
+  "place": "none",
+  "title": "Look presets",
+  "overlay": { "width": 460, "height": 320 },
+  "palette": [
+    {
+      "title": "Look presets",
+      "command": "mod.open",
+      "args": { "name": "look-presets" },
+      "words": "theme font wallpaper preset look saved switch"
+    }
+  ]
+}

@@ -106,6 +106,8 @@ def restore(job):
 def keep(job):
     wait_for_frost()
     write_fonts(job)
+    if job.get("settings"):
+        patch(job["settings"], {"theme": job["theme"]})
     if job.get("base"):
         patch(job["base"], {"theme": job["theme"], **(job.get("fonts") or {})})
     if job.get("frost"):

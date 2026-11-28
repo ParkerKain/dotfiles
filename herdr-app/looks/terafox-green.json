@@ -1,0 +1,11 @@
+{
+  "name": "Terafox green",
+  "theme": "terafox",
+  "font": "Hack",
+  "ui_font": "Iosevka Nerd Font",
+  "wallpaper": {
+    "path": "~/Pictures/wallpapers/digital/a-green-mountains-with-pink-and-blue-sky.jpg",
+    "blur": 0.0,
+    "glass": "terafox"
+  }
+}

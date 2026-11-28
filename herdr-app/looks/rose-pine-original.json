@@ -1,0 +1,11 @@
+{
+  "name": "Rose Pine (original)",
+  "theme": "rose-pine-moon",
+  "font": "JetBrains Mono",
+  "ui_font": "Iosevka Nerd Font",
+  "wallpaper": {
+    "path": "~/Pictures/wallpapers/digital/a-silhouette-of-trees-on-a-hill.jpg",
+    "blur": 0.0,
+    "glass": "none"
+  }
+}
