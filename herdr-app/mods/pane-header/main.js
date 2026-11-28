@@ -36,8 +36,9 @@ const GROW_MS = 260;
 const SEEN = "pane-header.seen";
 const COVER_BANDS = 10, COVER_LEAD = 110, COVER_STEP = 50, COVER_FADE = 280, HEAD_IN = 250;
 // Herdr's terminal line height as a multiple of the font size; it sizes the cover from the
-// pane's visible rows, since a header doesn't learn its pane's height.
-const LINE = 1.2;
+// pane's visible rows, since a header doesn't learn its pane's height. The cover runs a couple
+// of rows long so rounding never leaves a strip of terminal showing at the bottom.
+const LINE = 1.2, COVER_EXTRA_ROWS = 2;
 function paneBacking(t, fallback) {
   const o = Number(layout()?.terminal_opacity);
   if (!(o >= 0 && o < 1) || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t.background ?? "")) return fallback;
@@ -303,10 +304,11 @@ export default class PaneHeader extends View {
 
   // The new pane's cover: bands in the terminal's own backing that fade away top to bottom.
   coverOver(t, p, width) {
-    const rows = p.scroll?.len || 24;
-    const zoom = Number(settings()?.zoom) || 1;
+    // Font size and the header's width are both in layout px, which already include zoom.
+    const rows = (p.scroll?.len || 24) + COVER_EXTRA_ROWS;
     const font = Number(settings()?.font_size) || 13;
-    const height = Math.round(rows * font * LINE / zoom);
+    const lineHeight = Number(settings()?.terminal_line_height) || 1;
+    const height = Math.round(rows * font * LINE * lineHeight);
     const fill = paneBacking(t, solid(t.background));
     return v_flex().id(`pane-cover-${p.pane}`).w(width).h(height)
       .children(Array.from({ length: COVER_BANDS }, (_, i) => div().id(`pane-cover-${p.pane}-${i}`).flex_1().bg(fill)
