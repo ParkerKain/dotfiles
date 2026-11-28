@@ -6,6 +6,7 @@ Nothing is loaded into launchd or systemd (JOB_SCHEDULER=none) and hc is a fake.
 import json
 import os
 import plistlib
+import socket
 import subprocess
 import sys
 import tempfile
@@ -33,7 +34,8 @@ class JobTest(unittest.TestCase):
         self.env = {**os.environ, "JOB_DEFS": str(self.defs), "JOB_STATE_DIR": str(self.tmp / "state"),
                     "JOB_SCHEDULER": "none", "JOB_LAUNCHD_DIR": str(self.tmp / "launchd"),
                     "JOB_SYSTEMD_DIR": str(self.tmp / "systemd"),
-                    "JOB_PATH": f"{bin_}:{Path(sys.executable).parent}:/usr/bin:/bin"}
+                    "JOB_PATH": f"{bin_}:{Path(sys.executable).parent}:/usr/bin:/bin",
+                    "WAYLAND_DISPLAY": ""}
 
     def write(self, name, body, folder=None):
         path = (folder or self.defs) / f"{name}.toml"
@@ -421,7 +423,7 @@ esac
         self.job("uninstall", "mail-inbox", env=env)
         self.assertEqual(list((self.tmp / "systemd").iterdir()), [])
 
-    def fake_herdr(self, spaces, *, ls_exit=0, tab_reply=None, agent_status="working"):
+    def fake_herdr(self, spaces, *, ls_exit=0, tab_reply=None, agent_status="working", open_on_launch=False):
         """Fake hc and herdr-app that log their arguments; run reports a working agent."""
         log = self.tmp / "calls.log"
         bin_ = self.tmp / "bin"
@@ -433,16 +435,23 @@ case "$1" in
   *) echo '{{}}' ;;
 esac
 """)
+        ready = self.tmp / "app-ready"
+        readiness = f'test -e "{ready}" || exit 1' if open_on_launch else ""
         (bin_ / "herdr-app").write_text(f"""#!/bin/sh
 echo "herdr-app $*" >> {log}
 case "$1 $2" in
-  "ls "*) echo '{json.dumps({"spaces": spaces})}'; exit {ls_exit} ;;
+  "ls "*) {readiness + ";" if readiness else ""} echo '{json.dumps({"spaces": spaces})}'; exit {ls_exit} ;;
   "do space.new") echo '{{"space": "spNEW", "tab": "tbSHELL", "terminal": "t9"}}' ;;
   "do tab.new") echo '{json.dumps(tab_reply or {})}' ;;
   *) echo '{{"ok": true}}' ;;
 esac
 """)
         (bin_ / "herdr-app").chmod(0o755)
+        (bin_ / "systemd-run").write_text(f"""#!/bin/sh
+echo "systemd-run $*" >> {log}
+touch "{ready}"
+""")
+        (bin_ / "systemd-run").chmod(0o755)
         return log
 
     def test_a_job_without_a_space_goes_in_a_new_jobs_space_and_its_shell_tab_closes(self):
@@ -500,6 +509,26 @@ esac
                                       "herdr-app ls", "hc send --json --if idle t1 do the job"])
         row, = json.loads(self.job("status").stdout)["jobs"]
         self.assertEqual(row["last"]["session"], "t1")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "starts Herdr from a Linux graphical session")
+    def test_visible_job_reopens_herdr_before_it_creates_a_tab(self):
+        self.visible_job()
+        tab = {"id": "tb1", "name": "Visible job", "terminals": [{"terminal": "t1"}]}
+        log = self.fake_herdr([{"id": "sp1", "name": "Jobs", "tabs": [tab]}],
+                              tab_reply={"tab": "tb1", "terminal": "t1"}, agent_status="idle",
+                              open_on_launch=True)
+        with socket.socket(socket.AF_UNIX) as wayland:
+            wayland.bind(str(self.tmp / "wayland-test"))
+            out = self.job("run", "visible", env={"XDG_RUNTIME_DIR": str(self.tmp),
+                                                "WAYLAND_DISPLAY": "wayland-test"})
+        self.assertTrue(json.loads(out.stdout)["started"])
+        calls = log.read_text().splitlines()
+        self.assertEqual(calls[0], "herdr-app ls")
+        self.assertEqual(calls[1], "systemd-run --user --collect --unit=parker-herdr-jobs-app "
+                                  f"--property=Type=exec -- {self.tmp / 'bin/herdr-app'}")
+        self.assertEqual(calls[2], "herdr-app ls")
+        self.assertIn("herdr-app do tab.new", calls[3])
+        self.assertIn("hc send --json --if idle t1 do the job", calls[7])
 
     def test_finance_jobs_opt_in_to_automatic_review_in_the_visible_tab(self):
         tab = {"id": "tb1", "name": "Visible job", "terminals": [{"terminal": "t1"}]}

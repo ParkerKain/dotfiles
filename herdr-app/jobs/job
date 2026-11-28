@@ -10,6 +10,7 @@ A source folder holds TOML files of two kinds:
   job   repo, agent, prompt or prompt_file, optional [schedule], space (default
         "Jobs", created when missing) and tab.
         require_visible = true requires an open app and an existing local space.
+        On Linux, open the app if needed when a Wayland session is available.
         approve_for_me = true opts the two visible Codex Finance jobs into automatic review.
         `job run <name>` starts one interactive agent under herdr-core (hc), so
         it shows in the Herdr app and phone inbox and can take another turn.
@@ -209,7 +210,10 @@ def hc(*args, check=True):
 def herdr_spaces():
     if not shutil.which("herdr-app", path=PATH):
         return None
-    out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, env=clean_env())
+    try:
+        out = subprocess.run(["herdr-app", "ls"], capture_output=True, text=True, env=clean_env(), timeout=2)
+    except subprocess.TimeoutExpired:
+        return None
     if out.returncode != 0:
         return None
     try:
@@ -225,6 +229,36 @@ def herdr_do(command, args):
         return json.loads(out.stdout) if out.returncode == 0 else {}
     except json.JSONDecodeError:
         return {}
+
+
+def open_herdr_for_visible_job():
+    """Start Herdr in the logged-in desktop, not inside the short-lived job unit."""
+    app = shutil.which("herdr-app", path=PATH)
+    systemd_run = shutil.which("systemd-run", path=PATH)
+    if not LINUX or not app or not systemd_run:
+        return None
+    env = clean_env()
+    display = env.get("WAYLAND_DISPLAY")
+    runtime = env.get("XDG_RUNTIME_DIR")
+    if not display or not (Path(display).is_absolute() or runtime):
+        return None
+    if not (Path(runtime or "/") / display).is_socket():
+        return None
+    # One named unit lets simultaneous timers share a single app launch.
+    try:
+        out = subprocess.run([systemd_run, "--user", "--collect", "--unit=parker-herdr-jobs-app",
+                              "--property=Type=exec", "--", app], capture_output=True,
+                             text=True, env=env, timeout=5)
+    except subprocess.TimeoutExpired:
+        return None
+    if out.returncode and "already exists" not in out.stderr:
+        return None
+    deadline = time.monotonic() + 10
+    while True:
+        spaces = herdr_spaces()
+        if spaces is not None or time.monotonic() >= deadline:
+            return spaces
+        time.sleep(0.25)
 
 
 def ensure_space(name, folder):
@@ -305,6 +339,8 @@ def until_epoch(text, now=None):
 def start_visible(job, prompt):
     space_name = job.get("space") or "Jobs"
     spaces = herdr_spaces()
+    if spaces is None:
+        spaces = open_herdr_for_visible_job()
     if spaces is None:
         die(f"{job['name']}: Herdr app unavailable; no agent started")
     space = next((s["id"] for s in spaces if s.get("name") == space_name and not s.get("machine")), None)
