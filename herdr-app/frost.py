@@ -5,6 +5,7 @@ Usage:
   frost.py <image>            put this image behind the panes (blurred), rebuild the Frosted layout
   frost.py <image> --blur 0   the image sharp, unblurred
   frost.py <image> --desktop  also set it as the macOS desktop wallpaper (macOS only)
+  frost.py --relayout         rebuild the Frosted layout from Parker, keeping its background
   frost.py --list             wallpapers in ~/Pictures/wallpapers (or ~/Wallpapers)
   frost.py --thumbs           rebuild the wallpaper picker's thumbnails and index (Cmd+Shift+B)
 
@@ -44,7 +45,7 @@ LOOK = {
 }
 
 
-GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts", "call-sheet", "factory"}
+GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts", "factory", "claude-usage"}
 
 
 def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
@@ -100,6 +101,18 @@ def build_layout(background: Path) -> None:
     (HOME / "layouts/Frosted.json").write_text(json.dumps(layout, indent=2) + "\n")
 
 
+def current_background() -> Path:
+    """The background the Frosted layout shows now, so a relayout keeps the wallpaper choice."""
+    try:
+        image = json.loads((HOME / "layouts/Frosted.json").read_text())["background"]["image"]
+    except (OSError, ValueError, KeyError, TypeError):
+        sys.exit("frost: no Frosted layout with a background yet; pick a wallpaper first (frost <image>)")
+    path = HOME / image
+    if not path.exists():
+        sys.exit(f"frost: the Frosted background {path} is missing; pick a wallpaper again (frost <image>)")
+    return path
+
+
 def wallpapers() -> list[Path]:
     seen, out = set(), []
     for f in sorted(WALLPAPERS.rglob("*")):
@@ -144,7 +157,14 @@ def main():
     p.add_argument("--desktop", action="store_true", help="also set the sharp wallpaper on the macOS desktop")
     p.add_argument("--list", action="store_true")
     p.add_argument("--thumbs", action="store_true")
+    p.add_argument("--relayout", action="store_true", help="rebuild the Frosted layout from Parker, keeping its background")
     args = p.parse_args()
+
+    if args.relayout:
+        bg = current_background()
+        build_layout(bg)
+        print(f"rebuilt Frosted from Parker with {bg.name}")
+        return
 
     if args.thumbs:
         build_thumbs()

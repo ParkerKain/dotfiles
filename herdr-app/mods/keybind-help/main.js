@@ -12,30 +12,42 @@ const GROUPS = [
     ["mod.open:run-once", "Run a command"],
     ["mod.open:revive", "Revive a session"],
     ["mod.open:demo-mode", "Toggle demo mode"],
+    ["mod.open:call-sheet", "Meeting mode"],
+    ["lock-in.pick", "Lock-in pins"],
+    ["mod.open:diagnose-shortcut", "Diagnose the focused pane"],
     ["mod.open:picker", "Picker"],
     ["app.palette", "Command palette"],
   ]],
   ["Sidebars", [
+    ["my-tabs.panel-files", "Files"],
+    ["my-tabs.panel-changes", "Changes"],
     ["my-tabs.panel-ops-tasks", "Tasks"],
     ["my-tabs.panel-jobs", "Jobs"],
     ["my-tabs.panel-day-view", "Calendar"],
     ["my-tabs.panel-artifacts", "Artifacts"],
-    ["my-tabs.panel-call-sheet", "Call Sheet"],
     ["my-tabs.panel-factory", "Factory"],
+    ["my-tabs.panel-claude-usage", "Claude usage"],
     ["my-tabs.hints", "Pick a sidebar row"],
     ["space-sessions.hints", "Jump to a tab in Spaces"],
     ["my-tabs.refresh", "Refresh open sidebar"],
     ["layout.toggle:sidebar", "Toggle left sidebar"],
   ]],
   ["Navigation", [
+    ["space-sessions.next-agent", "Next agent"],
     ["agent.next", "Next agent"],
+    ["space-sessions.prev-agent", "Previous agent"],
     ["agent.prev", "Previous agent"],
     ["space.next", "Next space"],
     ["space.prev", "Previous space"],
     ["layout.switch", "Switch layout"],
   ]],
+  ["Files", [
+    ["my-files.toggle-wrap", "Wrap long lines"],
+    ["my-files.toggle-rendered", "Markdown: rendered or source"],
+  ]],
   ["Session launcher", [
     ["session-launcher.toggle-agent", "Toggle agent"],
+    ["session-launcher.toggle-model", "Change model"],
     ["session-launcher.start", "Start session"],
   ]],
 ];
@@ -69,8 +81,10 @@ export default class KeybindHelp extends View {
     const bindings = this.keys ?? {};
     const findKeys = action => Object.entries(bindings.global ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key));
     const row = ([action, label]) => {
-      const keys = action.startsWith("session-launcher.")
-        ? Object.entries(bindings["mod:session-launcher"] ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key))
+      // A mod's own keys (session launcher, Files) sit in its section and work while it has the keyboard.
+      const own = ["session-launcher", "my-files"].find(mod => action.startsWith(`${mod}.`));
+      const keys = own
+        ? Object.entries(bindings[`mod:${own}`] ?? {}).filter(([, value]) => value === action).map(([key]) => showKey(key))
         : findKeys(action);
       if (!keys.length) return null;
       return h_flex().id(action).items_center().justify_between().px(10).py(5).rounded(6)

@@ -52,3 +52,27 @@ test('typing a label selects that tab and ends jump mode, Esc returns focus',()=
  mod.hintKey('s');assert.equal(mod.hinting,false);assert.equal(mod.picked,undefined);
  mod.startHints();mod.hintKey('escape');assert.equal(mod.hinting,false);
 });
+test('a tab started by another tab\'s agent nests under that tab, chains nest and cycles stay visible',()=>{
+ const ctx={};vm.runInNewContext(fs.readFileSync(path.join(folder,'model.js'),'utf8').replace(/^export /gm,'')+'\nthis.ownerTabs=ownerTabs;',ctx);
+ const tabs=[{id:'main'},{id:'w1'},{id:'w2'},{id:'other'}];
+ const agents=[{address:'t1',tab:'main'},{address:'t2',tab:'main'},{address:'t3',tab:'w1'},{address:'t4',tab:'w2'},{address:'t9',tab:'other'}];
+ const owners=ctx.ownerTabs(tabs,agents,[{address:'t2',parent:'t1'},{address:'t3',parent:'t1'},{address:'t4',parent:'t3'},{address:'t9',parent:'gone'}]);
+ assert.equal(owners.get('w1'),'main');assert.equal(owners.get('w2'),'w1');
+ assert.equal(owners.has('main'),false);assert.equal(owners.has('other'),false);
+ const cyc=ctx.ownerTabs([{id:'a'},{id:'b'}],[{address:'x',tab:'a'},{address:'y',tab:'b'}],[{address:'x',parent:'y'},{address:'y',parent:'x'}]);
+ assert.ok(cyc.size<2);
+});
+test('Cmd+[ ] tab order follows the sidebar, with owned tabs right after their owner',()=>{
+ const ctx={};vm.runInNewContext(fs.readFileSync(path.join(folder,'model.js'),'utf8').replace(/^export /gm,'')+'\nthis.sidebarTabOrder=sidebarTabOrder;',ctx);
+ const tabs=[{id:'main'},{id:'other'},{id:'w1'},{id:'w2'},{id:'w3'}];
+ const owners=new Map([['w1','main'],['w2','w1'],['w3','main']]);
+ assert.deepEqual([...ctx.sidebarTabOrder(tabs,owners)],['main','w1','w2','w3','other']);
+});
+test('next and prev agent step through sidebar order from the focused pane and wrap',()=>{
+ const {mod}=setup();const acts=[];mod.act=(n,a)=>acts.push([n,a]);
+ mod.allSpaces=()=>[{id:'s',active:true,tabs:[{id:'main',active:true},{id:'other'},{id:'child'}]}];
+ mod.allAgents=()=>[{address:'p',tab:'main',pane:'pp'},{address:'o',tab:'other',pane:'po'},{address:'c',tab:'child',pane:'pc'}];
+ mod.orderedAgents=function(){const a=this.allAgents();return {ordered:[a[0],a[2],a[1]]};};
+ mod.stepAgent(1);assert.equal(JSON.stringify(acts.at(-1)),'["pane.focus",{"pane":"pc"}]');
+ mod.stepAgent(-1);assert.equal(JSON.stringify(acts.at(-1)),'["pane.focus",{"pane":"po"}]');
+});

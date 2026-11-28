@@ -40,8 +40,8 @@
     "alt-[": "tab.prev",
     "ctrl-shift-pagedown": "space.next",
     "ctrl-shift-pageup": "space.prev",
-    "alt-down": "agent.next",
-    "alt-up": "agent.prev",
+    "alt-down": "space-sessions.next-agent",
+    "alt-up": "space-sessions.prev-agent",
     "ctrl-?": "app.help",
     "ctrl-shift-/": "app.help",
     "ctrl-shift-?": "app.help",
@@ -66,6 +66,8 @@
     "ctrl-shift-j": "my-tabs.panel-jobs",
     "alt-p": "my-tabs.hints",
     "alt-g": "space-sessions.hints",
+    "alt-e": "my-tabs.panel-files",
+    "alt-shift-g": "my-tabs.panel-changes",
     "ctrl-shift-r": "my-tabs.refresh"
   },
   "terminal": {
@@ -81,13 +83,16 @@
   },
   "mod:session-launcher": {
     "ctrl-shift-a": "session-launcher.toggle-agent",
+    "ctrl-shift-m": "session-launcher.toggle-model",
     "ctrl-shift-s": "session-launcher.start"
   },
   "mod:jobs": {
     "ctrl-shift-z": "my-tabs.zoom-panel"
   },
   "mod:my-files": {
-    "ctrl-shift-z": "my-tabs.zoom-panel"
+    "ctrl-shift-z": "my-tabs.zoom-panel",
+    "alt-z": "my-files.toggle-wrap",
+    "ctrl-shift-v": "my-files.toggle-rendered"
   },
   "mod:my-changes": {
     "ctrl-shift-z": "my-tabs.zoom-panel"

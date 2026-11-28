@@ -1,3 +1,10 @@
+// Parker's tab bar: a clone of the shipped tab bar with buttons for the side panels the
+// layout has, plus Music where the music mod is installed (with props.demo, Files and
+// Changes only). When the layout has a "glances" block (the kit's status-bar glances for
+// Tasks, Calendar, Lock-in, Factory and Artifacts), the bar drops the buttons the glances
+// cover. Every panel still toggles from its my-tabs.panel-<id> command. Opening or closing
+// a panel goes through the shared "panel.motion" handshake, so panels that honor it
+// (ops-tasks, artifacts) fade and slide in and out.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { appHome, checking, exec, spaces, panes, focused, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, props, keys } from "herdr";
@@ -18,14 +25,27 @@ const WORK_PANELS = [
   ["jobs", "Jobs", "mods/workspace-chrome/clock.svg"],
   ["day-view", "Calendar", "mods/day-view/calendar.svg"],
   ["artifacts", "Artifacts", "mods/artifacts/layers.svg"],
-  ["call-sheet", "Call", "mods/call-sheet/clipboard.svg"],
   ["factory", "Factory", "mods/factory/factory.svg"],
+  ["claude-usage", "Usage", "mods/claude-usage/gauge.svg"],
 ];
+// Panels the status-bar glances open. Their buttons go when the layout has a glances
+// block, and they keep only their my-tabs.panel-<id> commands.
+const GLANCED = new Set(["ops-tasks", "day-view", "artifacts", "factory"]);
+
+// The panel motion handshake (honored by ops-tasks and artifacts): "in" right after a panel
+// shows, "out" ~240ms before it hides, so the panel's content can fade and slide first.
+// Herdr shows and hides layout panels instantly, and resizing them would resize terminals.
+const MOTION = "panel.motion", OUT_MS = 240;
+// Herdr only animates a value when the element had that transition on the frame before, so
+// every tab keeps both attached (1ms at rest, which jumps).
+const TAB_RISE = 10, TAB_IN = { duration: 260, easing: "ease-out" }, TAB_JUMP = { duration: 1 };
+const motion = (id, phase) => { const at = Date.now(); setShared(MOTION, { id, phase, at }); return at; };
 
 // The key bound to an action in keys.json, written the way this platform writes it:
 // ⇧⌘T on macOS, Ctrl+Shift+T elsewhere. Null when nothing is bound.
 function keyFor(action, platform) {
-  const binding = (keys?.() ?? []).find(k => k.section === "global" && k.action === action)?.keys;
+  const all = keys?.() ?? [], here = `layout:${shared("layout")}`;
+  const binding = (all.find(k => k.section === here && k.action === action) ?? all.find(k => k.section === "global" && k.action === action))?.keys;
   if (!binding) return null;
   const parts = binding.split(/-(?=.)/); // "ctrl--" is Ctrl and the minus key
   if (platform === "macos") {
@@ -40,6 +60,8 @@ function keyFor(action, platform) {
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
+    this.seen = null;       // tab ids already shown in this space, so only new ones animate
+    this.arriving = {};     // tab id -> "pre" | "in" while it fades and rises in
     this.scroll = ScrollHandle.new();
     try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
     if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
@@ -54,14 +76,19 @@ export default class Tabs extends View {
       this.refreshMusic(cx);
       cx.timer.every(8000, cx => this.refreshMusic(cx));
     }
-    // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button;
+    // Keys (keys.json): my-tabs.panel-<id> toggles a side panel like its button, and
+    // my-tabs.open-<id> only opens it (for links from other mods);
     // my-tabs.refresh reloads whichever panel is showing.
+    // my-tabs.lock-in-pick stamps "lock-in.pick" for the kit's Lock-in mod, and shows a
+    // Lock-in band first where a layout still has one hidden.
     cx.spawn(async cx => {
       for (;;) {
         const command = await nextCommand();
         if (command.startsWith("panel-")) this.togglePanel(command.slice(6), cx);
+        if (command.startsWith("open-")) this.togglePanel(command.slice(5), cx, true);
         if (command === "refresh") this.refreshPanel();
         if (command === "hints") this.hintPanel();
+        if (command === "lock-in-pick") this.pickLockIn();
         if (command === "zoom-panel") this.zoomPanel();
         cx.notify();
       }
@@ -132,37 +159,39 @@ export default class Tabs extends View {
     run("layout.set", { layout: root });
   }
 
-  togglePanel(id, cx) {
-    this.restorePanelZoom();
+  togglePanel(id, cx, openOnly = false) {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (!body?.children?.some(child => child.id === id)) return;
-    if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
+    // A close still fading out counts as closed, so pressing again reopens the panel.
+    const m = shared(MOTION), closing = m?.id === id && m.phase === "out" && Date.now() - m.at < OUT_MS + 50;
+    const showing = panel && !panel.hidden && body?.active === id && !closing;
+    if (openOnly && showing) return;
+    this.restorePanelZoom();
+    if (showing) this.closePanel(id, cx);
     else {
-      const previous = id === "call-sheet" ? focused() : null;
       run("layout.select", { stack: "panel-body", child: id });
       run("layout.show", { id: "panel" });
-      if (id === "call-sheet") {
-        const at = Date.now(), tab = previous?.tab;
-        const opening = { at, pane: previous?.pane ?? null, terminal: previous?.terminal ?? null, tab: tab ?? null };
-        setShared("call-sheet.open", opening);
-        const entryPane = panes().filter(p => p.tab === tab).at(-1)?.pane;
-        const stillOpen = () => {
-          const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
-          return panel && !panel.hidden && body?.active === "call-sheet" && focused()?.tab === tab && shared("call-sheet.open")?.at === at;
-        };
-        cx.timer.after(150, cx => {
-          if (!stillOpen()) return;
-          // The newly shown mod must render before pane.go can hand it focus.
-          setShared("call-sheet.open", { ...opening, ready: true });
-          if (entryPane) run("pane.focus", { pane: entryPane });
-          cx.timer.after(50, () => {
-            if (!stillOpen()) return;
-            setShared("call-sheet.open", { ...opening, ready: true, handoff: true });
-            run("pane.go", { direction: "right" });
-          });
-        });
-      }
+      motion(id, "in");
     }
+  }
+
+  // Lock-in is a floating block that renders nothing until asked (lock-in.pick, Cmd+Shift+S).
+  // The stamp keeps older callers of this command working. reveal: a hidden band was shown
+  // for the pick, so it hides again once the pick is done.
+  pickLockIn() {
+    const band = find(layout(), "lock-in");
+    const reveal = Boolean(band?.hidden);
+    if (reveal) run("layout.show", { id: "lock-in" });
+    setShared("lock-in.pick", { at: Date.now(), reveal });
+  }
+
+  // Fades the panel's content out, then hides the column, unless something reopened it.
+  closePanel(id, cx) {
+    const at = motion(id, "out");
+    cx.timer.after(OUT_MS, () => {
+      const m = shared(MOTION), root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
+      if (m?.at === at && panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
+    });
   }
 
   // Tasks, Jobs, Calendar and Artifacts reload when their "<id>.refresh" shared key changes.
@@ -176,7 +205,7 @@ export default class Tabs extends View {
   hintPanel() {
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
     if (!body?.active) return;
-    if (!panel || panel.hidden) run("layout.show", { id: "panel" });
+    if (!panel || panel.hidden) { run("layout.show", { id: "panel" }); motion(body.active, "in"); }
     setShared(`${body.active}.hints`, Date.now());
   }
 
@@ -194,7 +223,7 @@ export default class Tabs extends View {
         const stored = this.panels[space.id] ?? null, want = enabled.includes(stored) ? stored : null;
         if (want !== now) {
           this.pending = { want, until: Date.now() + 1000 };
-          if (want) { run("layout.select", { stack: "panel-body", child: want }); run("layout.show", { id: "panel" }); }
+          if (want) { run("layout.select", { stack: "panel-body", child: want }); run("layout.show", { id: "panel" }); motion(want, "in"); }
           else run("layout.hide", { id: "panel" });
           return;
         }
@@ -210,10 +239,25 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
-  render() {
+  // A tab that wasn't in this space a render ago fades and rises 10px into the bar (the
+  // Cascade motion the side panels use). Switching spaces shows its tabs without motion.
+  trackArrivals(space, shown, cx) {
+    const ids = shown.map(c => c.id);
+    if (this.seenSpace !== space?.id || !this.seen) { this.seenSpace = space?.id; this.seen = new Set(ids); return; }
+    for (const id of ids) {
+      if (this.seen.has(id)) continue;
+      this.seen.add(id);
+      this.arriving[id] = "pre";
+      cx.timer.after(30, cx => { this.arriving[id] = "in"; cx.notify(); });
+      cx.timer.after(30 + TAB_IN.duration + 50, cx => { delete this.arriving[id]; cx.notify(); });
+    }
+  }
+
+  render(cx) {
     const t = theme();
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
+    this.trackArrivals(space, shown, cx);
     const active = shown.findIndex(tab => tab.active);
     const selected = shown[active]?.id;
     if (selected !== this.selected || active !== this.selectedIndex) {
@@ -227,7 +271,11 @@ export default class Tabs extends View {
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
       const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
-      return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
+      const arriving = this.arriving[c.id];
+      return h_flex().id(`tab-${c.id}`).relative()
+        .top(arriving === "pre" ? TAB_RISE : 0).opacity(arriving === "pre" ? 0 : 1)
+        .transition("opacity", arriving === "in" ? TAB_IN : TAB_JUMP).transition("top", arriving === "in" ? TAB_IN : TAB_JUMP)
+        .h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         // A rename or status dot on this or an earlier tab can push the active one out.
         .when(i <= active, el => el.on_size_change((_size, cx) => { this.scroll.scroll_to_item(active); cx.notify(); }))
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
@@ -254,9 +302,11 @@ export default class Tabs extends View {
     // The Demo layout passes {demo: true}: Files and Changes only, none of the work panels.
     const demo = Boolean(props()?.demo);
     const inLayout = new Set((body?.children ?? []).map(child => child.id));
-    const workPanels = WORK_PANELS.filter(([id]) => inLayout.has(id));
+    const glances = Boolean(find(root, "glances"));
+    const workPanels = WORK_PANELS.filter(([id]) => inLayout.has(id) && !(glances && GLANCED.has(id)));
     const enabled = demo ? ["files", "changes"] : [...new Set([...(shared("workspace.panels") ?? ["files", "changes"]), ...workPanels.map(([id]) => id)])];
-    this.syncPanel(space, panel, body, enabled);
+    // Panels the glances open still come back per space.
+    this.syncPanel(space, panel, body, demo ? enabled : [...new Set([...enabled, ...inLayout])]);
     // Icon-only buttons with a tooltip. The open panel widens to show its name,
     // and a panel can publish "<id>.badge" ({count} or {dot: true, tone}) for a mark.
     // An open button shows the count inline after its name; an icon-only one in its
@@ -284,7 +334,7 @@ export default class Tabs extends View {
         .when(on, el => el.child(label))
         .when(Boolean(mark), el => el.child(mark));
     };
-    const panelButton = (id, label, icon, key) => iconButton(id, label, icon, key, {
+    const panelButton = (id, label, icon, key = keyFor(`my-tabs.panel-${id}`, w?.platform)) => iconButton(id, label, icon, key, {
       on: panel && !panel.hidden && body?.active === id,
       action: (_e, cx) => this.togglePanel(id, cx),
     });
@@ -305,7 +355,7 @@ export default class Tabs extends View {
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(!demo, el => el
         .when(workPanels.length, el => el.child(divider("divider-work")))
-        .children(workPanels.map(([id, label, icon]) => panelButton(id, label, icon, keyFor(`my-tabs.panel-${id}`, w?.platform))))
+        .children(workPanels.map(([id, label, icon]) => panelButton(id, label, icon)))
         // Music is Mac-only: the button shows where the music mod is installed.
         .when(this.hasMusic, el => el
           .child(divider("divider-ambient"))

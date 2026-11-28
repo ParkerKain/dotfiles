@@ -1,0 +1,6 @@
+{
+  "place": "none",
+  "title": "Diagnose",
+  "overlay": { "width": 1, "height": 1 },
+  "palette": [{ "title": "Diagnose", "command": "mod.open", "args": { "name": "diagnose-shortcut" }, "words": "debug troubleshoot inspect agent fork diagnose session" }]
+}

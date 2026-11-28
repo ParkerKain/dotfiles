@@ -214,6 +214,83 @@ class JobTest(unittest.TestCase):
         out = json.loads(self.job("run", "weekly").stdout)
         self.assertEqual((out["started"], out["paused"]), (False, True))
 
+    def test_pause_until_lifts_itself(self):
+        out = json.loads(self.job("pause", "--until", "90m").stdout)["paused"]
+        self.assertAlmostEqual(out["until"] - out["ts"], 5400, delta=5)
+        state = self.tmp / "state/paused"
+        state.write_text(json.dumps({"ts": 1, "until": 2}))
+        self.assertIsNone(json.loads(self.job("status").stdout)["paused"])
+        self.assertFalse(state.exists())
+        self.assertIn("--until wants", self.job("pause", "--until", "soon", check=False).stderr)
+
+    def test_pause_until_a_clock_time_is_the_next_one(self):
+        out = json.loads(self.job("pause", "--until", "23:59").stdout)["paused"]
+        self.assertTrue(0 < out["until"] - out["ts"] <= 86400)
+
+    def fake_session(self, status, turn=1):
+        """hc whose run starts t1 and whose get reports this status."""
+        get = json.dumps({"state": "live", "status": {"state": status}, "turn": turn})
+        (self.tmp / "bin/hc").write_text(f"""#!/bin/sh
+case "$1" in
+  run) echo '{{"address": "t1"}}' ;;
+  get) echo '{get}' ;;
+  *) echo '{{}}' ;;
+esac
+""")
+
+    def test_job_closes_after_codex_reports_startup_idle(self):
+        self.write("prep", f'repo = "{self.repo}"\nagent = "codex"\nprompt = "x"\nclose_when_done = true\n')
+        (self.tmp / "bin/hc").write_text(f"""#!/bin/sh
+case "$1" in
+  run) echo '{{"address": "t1"}}' ;;
+  wait) echo '{{"status": "done", "reason": "status"}}' ;;
+  get)
+    if [ -f '{self.tmp}/exited' ]; then
+      echo '{{"state": "exited"}}'
+    elif [ -f '{self.tmp}/startup-idle' ]; then
+      echo 'ok: drafted prep' > '{self.tmp}/state/prep.outcome'
+      echo '{{"state": "live", "status": {{"state": "done"}}, "turn": 1}}'
+    else
+      touch '{self.tmp}/startup-idle'
+      echo '{{"state": "live", "status": {{"state": "idle"}}, "turn": 0}}'
+    fi ;;
+  send) touch '{self.tmp}/exited'; echo '{{}}' ;;
+  *) echo '{{}}' ;;
+esac
+""")
+        out = json.loads(self.job("run", "prep").stdout)
+        self.assertTrue(out["started"])
+        self.assertTrue(out["closed"])
+        self.assertEqual(out["outcome"], "ok: drafted prep")
+        self.assertTrue((self.tmp / "exited").exists())
+
+    def test_a_session_that_errors_still_records_an_outcome(self):
+        self.fake_session("error")
+        self.write("brief", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\nclose_when_done = true\n')
+        out = json.loads(self.job("run", "brief").stdout)
+        self.assertFalse(out["closed"])
+        self.assertRegex(out["outcome"], r"^error: session ended with status error after \d+s, 1 turn, no outcome reported$")
+        self.assertEqual((self.tmp / "state/brief.outcome").read_text().strip(), out["outcome"])
+        runs = [json.loads(l) for l in (self.tmp / "state/runs.jsonl").read_text().splitlines()]
+        self.assertEqual(len(runs), 2)
+        self.assertEqual(runs[0]["ts"], runs[1]["ts"])
+        self.assertEqual({k: runs[1][k] for k in ("status", "turn", "outcome", "closed")},
+                         {"status": "error", "turn": 1, "outcome": out["outcome"], "closed": False})
+
+    def test_a_job_without_close_when_done_records_an_outcome_only_on_error(self):
+        self.write("plain", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\n')
+        self.fake_session("working")
+        self.job("run", "plain")
+        self.assertEqual(len((self.tmp / "state/runs.jsonl").read_text().splitlines()), 1)
+        self.fake_session("error")
+        self.assertTrue(json.loads(self.job("run", "plain").stdout)["outcome"].startswith("error:"))
+
+    def test_status_warns_when_the_zone_changed_after_boot(self):
+        changed = {"JOB_BOOT_TIME": "{ sec = 1000, usec = 0 } Mon", "JOB_ZONE_CHANGED": "2000"}
+        self.assertIn("restart the Mac", json.loads(self.job("status", env=changed).stdout)["clock"])
+        same = {"JOB_BOOT_TIME": "{ sec = 3000, usec = 0 }", "JOB_ZONE_CHANGED": "2000"}
+        self.assertIsNone(json.loads(self.job("status", env=same).stdout)["clock"])
+
     def test_run_and_check_refuse_the_other_kind(self):
         self.weekly()
         self.hook()
@@ -482,6 +559,7 @@ esac
                 self.assertNotIn("hc run", calls)
                 self.assertEqual("hc kill --json t1" in calls, kill)
 
+    @unittest.skipIf(sys.version_info < (3, 11), "loads the engine in-process, which needs tomllib (run under /opt/homebrew/bin/python3)")
     def test_systemd_words_escape_percent_and_dollar(self):
         sys.path.insert(0, str(ROOT))
         import importlib.machinery, importlib.util

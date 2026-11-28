@@ -16,7 +16,27 @@ LINK = ROOT / "link.py"
 sys.path.insert(0, str(ROOT))
 import link  # noqa: E402
 
-WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory"}
+WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory", "claude-usage"}
+# Kit mods outside the side panel: the day strip band, the glances status block, the
+# floating Lock-in and Meeting mode.
+KIT_MODS = WORK_PANELS | {"day-strip", "glances", "lock-in"}
+
+
+def mods_in(layout):
+    """Every mod a layout names: blocks, floating blocks, the pane header and the toast."""
+    found, stack = set(), [layout]
+    while stack:
+        node = stack.pop()
+        content = node.get("content") if isinstance(node.get("content"), dict) else {}
+        if content.get("mod"):
+            found.add(content["mod"])
+        header = content.get("pane", {}).get("header", {}).get("content", {})
+        if header.get("mod"):
+            found.add(header["mod"])
+        if node.get("toast"):
+            found.add(node["toast"])
+        stack.extend(node.get("children", []) + node.get("floating", []))
+    return found
 
 
 def panel_ids(layout):
@@ -68,7 +88,13 @@ class LinkTest(unittest.TestCase):
         self.assertIn("jobs", panels)
         self.assertFalse(WORK_PANELS & set(panels))
         self.assertIn(active, panels)
+        # No kit-only block is left anywhere in Omarchy's copy, and every mod it names is one Omarchy has.
+        named = mods_in(json.loads(parker.read_text()))
+        self.assertFalse(KIT_MODS & named)
+        omarchy_mods = {p.name for p in (self.herdr / "mods").iterdir()}
+        self.assertLessEqual(named - {"workspace-chrome", "pane"}, omarchy_mods)
         self.assertFalse((self.herdr / "layouts/Demo.json").exists())
+        self.assertFalse((self.herdr / "layouts/Meeting.json").exists())
         # Mods: shared ones linked, Mac-only ones not.
         mods = {p.name for p in (self.herdr / "mods").iterdir()}
         self.assertTrue({"jobs", "session-launcher", "wallpaper", "my-tabs"} <= mods)
@@ -117,6 +143,19 @@ class LinkTest(unittest.TestCase):
         trimmed = link.drop_panels(layout, {"ops-tasks"})
         self.assertEqual(panel_ids(trimmed), (["files"], "files"))
         self.assertEqual(len(layout["children"][0]["children"]), 2)  # the original is untouched
+
+    def test_drop_panels_drops_floating_blocks_and_falls_back_for_header_and_toast(self):
+        layout = {"id": "root", "toast": "parker-toast", "children": [
+            {"id": "work-body", "floating": [{"id": "lock-in", "content": {"mod": "lock-in"}}], "children": [
+                {"id": "main", "content": {"tab": "active", "pane": {"header": {"content": {"mod": "pane-header"}, "height": 30}}}}]}]}
+        trimmed = link.drop_panels(layout, {"lock-in", "pane-header", "parker-toast"})
+        self.assertNotIn("toast", trimmed)
+        body = trimmed["children"][0]
+        self.assertNotIn("floating", body)
+        self.assertEqual(body["children"][0]["content"]["pane"]["header"], {"content": {"mod": "pane"}, "height": 30})
+        # The original is untouched.
+        self.assertEqual(layout["children"][0]["children"][0]["content"]["pane"]["header"]["content"]["mod"], "pane-header")
+        self.assertEqual(link.drop_panels(layout, set()), layout)
 
     def test_refuses_to_run_from_a_checkout_other_than_home_dotfiles(self):
         env = {**os.environ, "HOME": str(self.tmp)}

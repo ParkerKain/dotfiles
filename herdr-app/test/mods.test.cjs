@@ -63,10 +63,14 @@ test('Music pill tracks external playback changes without issuing mutations', as
 test('Demo blocks every work panel shortcut and the wallpaper switcher', () => {
   const keys = JSON.parse(readFileSync(join(root, 'machines/mac/keys.json')));
   for (const [key, action] of Object.entries(keys.global)) {
-    if (/^my-tabs.panel-/.test(action) || ['mod.open:wallpaper', 'mod.open:music'].includes(action)) {
+    // Files and Changes are the two panels Demo shows, so their keys stay live there.
+    if (['my-tabs.panel-files', 'my-tabs.panel-changes'].includes(action)) assert.equal(keys['layout:Demo'][key], undefined, key);
+    else if (/^my-tabs.panel-/.test(action) || ['mod.open:wallpaper', 'mod.open:music'].includes(action)) {
       assert.equal(keys['layout:Demo'][key], 'terminal', key);
     }
   }
+  const opened = Object.values(keys.global);
+  assert.ok(opened.includes('my-tabs.panel-files') && opened.includes('my-tabs.panel-changes'));
 });
 
 test('panel zoom fills the work area and restores its width after reload', () => {
@@ -92,7 +96,7 @@ test('panel zoom ignores a hidden panel', () => {
 test('every work panel gets the zoom shortcut while terminal zoom stays native', () => {
   const keys = JSON.parse(readFileSync(join(root, 'machines/mac/keys.json')));
   assert.equal(keys.global['cmd-shift-enter'], 'pane.zoom');
-  for (const name of ['my-files', 'my-changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'call-sheet', 'factory']) {
+  for (const name of ['my-files', 'my-changes', 'ops-tasks', 'jobs', 'day-view', 'artifacts', 'factory', 'claude-usage']) {
     assert.equal(keys[`mod:${name}`]['cmd-shift-enter'], 'my-tabs.zoom-panel');
   }
 });
@@ -105,7 +109,8 @@ test('Omarchy keys only open mods Omarchy installs, and its panels zoom on its p
     const opened = action.match(/^mod\.open:(.+)$/)?.[1];
     if (opened && opened !== 'picker') assert.ok(mods.includes(opened), action);
     const panel = action.match(/^my-tabs\.panel-(.+)$/)?.[1];
-    if (panel) assert.ok(mods.includes(panel), action);
+    // The Files and Changes panels are the my-files and my-changes mods.
+    if (panel) assert.ok(mods.includes({files: 'my-files', changes: 'my-changes'}[panel] ?? panel), action);
   }
   const zoom = Object.entries(keys.global).find(([, action]) => action === 'pane.zoom')[0];
   for (const name of ['my-files', 'my-changes', 'jobs']) assert.equal(keys[`mod:${name}`][zoom], 'my-tabs.zoom-panel');

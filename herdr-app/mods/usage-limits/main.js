@@ -6,7 +6,7 @@
 // this mod never reads an auth token. Everything below main.js is pure and tested.
 import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
-import { checking, exec, focused, spaces, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
+import { checking, exec, focused, spaces, settings, theme, props, readTextFile, shared, setShared, appHome } from "herdr";
 import { PROVIDERS, TOKEN_PROVIDERS } from "./providers/index.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
@@ -243,7 +243,11 @@ export default class UsageLimits extends View {
     const density = chooseDensity(model, this.width ? this.width - 28 - where.width - numbersWidth : Infinity, prefs.showBars);
     const root = h_flex().id("root").size_full().px(14).gap(16).items_center().overflow_hidden()
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
-      .on_size_change((size, cx) => { this.width = size.width; cx.notify(); });
+      // Sizes arrive in window px; the widths above are script px, so undo the zoom.
+      .on_size_change((size, cx) => {
+        const w = Math.round(size.width / (Number(settings()?.zoom) || 1));
+        if (w !== this.width) { this.width = w; cx.notify(); }
+      });
     // Only the limits themselves open the panel, not the empty rest of the block.
     const content = h_flex().id("ul-content").gap(14).items_center().flex_none().on_hover((on, cx) => this.hover(on, cx));
     if (numbers.length) {

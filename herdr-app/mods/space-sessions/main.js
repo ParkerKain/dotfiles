@@ -1,7 +1,13 @@
+// Spaces sidebar: collapsible space groups with their sessions. A session launched for a
+// task gets a second line, "▸ <task title>" in the accent color. The match is ops-tasks':
+// the terminal's ops-task=<key> label, else the Play prompt's "Task:" line. Titles come
+// from `ops-tasks list --json` (~/go/bin/ops-tasks), read every 5 minutes. Without the CLI
+// (Omarchy) or after a failed read the lines stay off. Clicking the line opens the Tasks
+// panel and asks it (shared "ops-tasks.reveal") to scroll to that task and flash it.
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, spaces, panes, focused, layout, theme, run, checking, setAgentOrder, openOverlay, nextCommand } from "herdr";
-import { SAMPLE_SPACES, SAMPLE_AGENTS, summary } from "./model.js";
+import { agents, spaces, panes, focused, layout, theme, run, hc, exec, home, setShared, checking, setAgentOrder, openOverlay, nextCommand, terminals } from "herdr";
+import { SAMPLE_SPACES, SAMPLE_AGENTS, summary, ownerTabs, sidebarTabOrder } from "./model.js";
 
 // Jump labels, easiest keys first; past single letters, two-letter labels behind reserved prefixes.
 const KEYS = "asdfghjklqwertyuiopzxcvbnm";
@@ -18,6 +24,23 @@ function find(node, id) {
   return null;
 }
 
+// Task lines: the same task-to-session match as the ops-tasks panel.
+const TASK_LABEL = "ops-task";
+const REVEAL = "ops-tasks.reveal";
+// The panel motion handshake (my-tabs, glances): "in" lets the Tasks panel slide in.
+const MOTION = "panel.motion";
+const TASK_EVERY = 5 * 60 * 1000;
+const keyOf = task => `${task.source}:${task.kind}:${task.id}`;
+function promptKey(argv, tasks) {
+  const prompt = argv?.[argv.length - 1];
+  if (typeof prompt !== "string" || !prompt.startsWith("You are helping me work a DevClarity task.")) return null;
+  const task = tasks.find(task => prompt.includes(`\nTask: ${task.title}\n`) && (!task.project_name || prompt.includes(`\nProject: ${task.project_name}\n`)));
+  return task ? keyOf(task) : null;
+}
+// Sample tasks for herdr-app check, on the sample spaces' tabs.
+const SAMPLE_TASK_TABS = { design: { key: "personal:task:1", title: "Draft the day one recap email for the Acme Level Up cohort" },
+  builder: { key: "personal:task:2", title: "Review the sidebar icons pull request" } };
+
 const tint = (color, alpha) => /^#[0-9a-f]{6,8}$/i.test(color ?? "") ? color.slice(0,7) + alpha : "#00000000";
 
 export default class SpaceSessions extends View {
@@ -31,6 +54,8 @@ export default class SpaceSessions extends View {
         const command = await nextCommand();
         if (command === "hints") this.startHints();
         if (command === "focus") this.handle.focus();
+        if (command === "next-agent") this.stepAgent(1);
+        if (command === "prev-agent") this.stepAgent(-1);
         cx.notify();
       }
     });
@@ -38,10 +63,106 @@ export default class SpaceSessions extends View {
       const saved = JSON.parse(localStorage.getItem("collapsed-spaces") ?? "[]");
       this.collapsed = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === "string") : []);
     } catch { this.collapsed = new Set(); }
+    try {
+      const saved = JSON.parse(localStorage.getItem("collapsed-machines") ?? "[]");
+      this.collapsedMachines = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === "string") : []);
+    } catch { this.collapsedMachines = new Set(); }
+    // A remote machine's name is its address; `hc machine ls` knows its host name (omarchy).
+    this.hosts = {};
+    // Task titles by key, from ops-tasks. Failures keep the last good read; none at all shows no lines.
+    this.tasks = [];
+    if (!this.sample) {
+      this.loadTasks(cx);
+      cx.timer.every(TASK_EVERY, cx => this.loadTasks(cx));
+    }
+    if (!this.sample) cx.spawn(async cx => {
+      try {
+        const out = await hc(["machine", "ls", "--json"]);
+        for (const m of JSON.parse(out.stdout).machines ?? []) if (m.name && m.host) this.hosts[m.name] = m.host;
+        cx.notify();
+      } catch {}
+    });
+  }
+  loadTasks(cx) {
+    cx.spawn(async cx => {
+      try {
+        const result = await exec(`${home()}/go/bin/ops-tasks`, ["list", "--json"]);
+        const value = JSON.parse(result.stdout);
+        if (result.code !== 0 || !value.ok) return;
+        this.tasks = value.data?.tasks ?? [];
+        cx.notify();
+      } catch {}
+    });
+  }
+
+  // The task a tab's agents were launched for: the first agent whose terminal matches one.
+  taskOfTab(tab, tabAgents, cores) {
+    if (this.sample) return SAMPLE_TASK_TABS[tab.id] ?? null;
+    if (!this.tasks.length) return null;
+    for (const agent of tabAgents) {
+      const core = cores.get(agent.address);
+      if (!core || (core.state && core.state !== "live")) continue;
+      const key = core.labels?.[TASK_LABEL] || promptKey(core.argv, this.tasks);
+      const task = key && this.tasks.find(task => keyOf(task) === key);
+      if (task) return { key, title: task.title };
+    }
+    return null;
+  }
+
+  // Open the Tasks panel and ask ops-tasks to scroll to the task and flash it.
+  revealTask(key) {
+    if (this.sample) return;
+    const root = layout(), body = find(root, "panel-body"), panel = find(root, "panel");
+    if (!body?.children?.some(child => child.id === "ops-tasks")) return;
+    const opening = !panel || panel.hidden || body.active !== "ops-tasks";
+    run("layout.select", { stack: "panel-body", child: "ops-tasks" });
+    if (panel) run("layout.show", { id: "panel" });
+    if (opening) setShared(MOTION, { id: "ops-tasks", phase: "in", at: Date.now() });
+    setShared(REVEAL, { key, at: Date.now() });
+  }
+
+  machineKey(space) { return space.machine ?? ""; }
+  machineLabel(key) { return key ? (this.hosts[key] ?? key) : "This machine"; }
+  toggleMachine(key, cx) {
+    if (this.collapsedMachines.has(key)) this.collapsedMachines.delete(key);
+    else this.collapsedMachines.add(key);
+    try { localStorage.setItem("collapsed-machines", JSON.stringify([...this.collapsedMachines])); } catch {}
+    cx.notify();
   }
   allSpaces() { return this.sample ? SAMPLE_SPACES : spaces(); }
   allAgents() { return this.sample ? SAMPLE_AGENTS : agents(); }
   act(name,args) { if(!this.sample)run(name,args); }
+
+  // Agents in the order the sidebar shows them: spaces by machine, tabs depth-first with owned tabs
+  // under their owner, panes in model order within a tab.
+  orderedAgents() {
+    const allAgents = this.allAgents();
+    const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
+    const all = keys.flatMap(k => this.allSpaces().filter(s => this.machineKey(s) === k));
+    const cores = this.sample ? [] : terminals();
+    const ownersOf = new Map(all.map(space => [space.id, ownerTabs(space.tabs ?? [], allAgents, cores)]));
+    const tabOrder = all.flatMap(space => sidebarTabOrder(space.tabs ?? [], ownersOf.get(space.id)));
+    const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
+    const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
+    return {all, ownersOf, ordered};
+  }
+
+  // keys.json: Cmd+] and Cmd+[ step through agents in sidebar order. The built-in agent.next folds a
+  // delegated child into its parent when it works out the current agent, so it stalls on the child.
+  stepAgent(dir) {
+    const ordered = this.orderedAgents().ordered;
+    if (!ordered.length) return;
+    const pane = focused()?.pane;
+    let at = ordered.findIndex(a => a.pane === pane);
+    if (at < 0) {
+      const space = this.allSpaces().find(s => s.active);
+      const tab = space?.tabs?.find(t => t.active);
+      at = ordered.findIndex(a => a.tab === tab?.id);
+    }
+    const next = ordered[at < 0 ? (dir > 0 ? 0 : ordered.length - 1) : (at + dir + ordered.length) % ordered.length];
+    this.act("tab.select", { id: next.tab });
+    if (next.pane) this.act("pane.focus", { pane: next.pane });
+  }
 
   startHints() {
     if (this.hinting) { this.endHints(); return; }
@@ -93,7 +214,7 @@ export default class SpaceSessions extends View {
   renderAgentRow(t, agent, space, tab) {
     const program = agent.program;
     const selected = space.active && tab.active && agent.focused;
-    const label = agent.title || program?.name || agent.address;
+    const label = agent.pane_name || agent.title || program?.name || agent.address;
     return h_flex().id(`agent-${agent.address}`).gap(6).items_center().px(8).py(3)
       .cursor_pointer().hover(s => s.bg(t.hover))
       .on_click(() => { this.act("tab.select", {id:tab.id}); this.act("pane.focus", {pane:agent.pane}); })
@@ -105,23 +226,25 @@ export default class SpaceSessions extends View {
   }
 
   renderSpaces(t) {
-    const all = this.allSpaces(), allAgents = this.allAgents();
+    const allAgents = this.allAgents();
+    const keys = [...new Set(this.allSpaces().map(s => this.machineKey(s)))].sort((a, b) => (a ? 1 : 0) - (b ? 1 : 0));
+    const multi = keys.length > 1;
+    const {all, ownersOf, ordered} = this.orderedAgents();
+    const cores = new Map((this.sample ? [] : terminals()).map(c => [c.address, c]));
+    const shown = all.filter(s => !multi || !this.collapsedMachines.has(this.machineKey(s)));
     const grouped = true;
-    // Cmd+[ and Cmd+] walk agents in the order this sidebar shows them.
-    const tabOrder = all.flatMap(space => (space.tabs ?? []).map(tab => tab.id));
-    const rank = id => { const i = tabOrder.indexOf(id); return i < 0 ? tabOrder.length : i; };
-    const ordered = allAgents.map((a, i) => [a, i]).sort((x, y) => rank(x[0].tab) - rank(y[0].tab) || x[1] - y[1]).map(([a]) => a);
+    // agent.select and other built-in navigation use the sidebar order too.
     if (!this.sample) setAgentOrder(ordered.map(a => a.address));
     if (this.hinting) {
       if (this.handle.is_focused()) this.hadFocus = true;
       else if (this.hadFocus) this.endHints(false);
     } else this.hadFocus = false;
-    const targets = all.flatMap(space => this.collapsed.has(space.id) ? [{kind:"space", id:space.id}]
+    const targets = shown.flatMap(space => this.collapsed.has(space.id) ? [{kind:"space", id:space.id}]
       : (space.tabs ?? []).map(tab => ({kind:"tab", id:tab.id})));
     const names = labels(targets.length);
     this.hintMap = targets.map((target, i) => [names[i], target]);
     const labelFor = (kind, id) => this.hinting ? this.hintMap.find(([, x]) => x.kind === kind && x.id === id)?.[0] : null;
-    const cards = all.map(space => {
+    const cardFor = space => {
       const expanded = !this.collapsed.has(space.id);
       const details = summary(space, allAgents);
       const count = space.tabs?.length ?? 0;
@@ -142,28 +265,64 @@ export default class SpaceSessions extends View {
           .text_color(space.active ? t.foreground : t.muted).child(space.name))
         .when(Boolean(busy), el => el.child(div().text_size(10).text_color(details.counts.blocked ? t.blocked : t.dim).child(busy)))
         .child(div().px(5).py(1).rounded(4).text_size(10).text_color(t.dim).child(String(count)));
-      const sessions = (space.tabs ?? []).map((tab,index) => {
+      const owners = ownersOf.get(space.id);
+      const childTabs = id => (space.tabs ?? []).filter(x => owners.get(x.id) === id);
+      const topTabs = (space.tabs ?? []).filter(x => !owners.has(x.id));
+      const renderTab = (tab, index, depth) => {
         const selected = space.active && tab.active;
         const tabAgents = allAgents.filter(a => a.tab === tab.id);
         const program = tabAgents[0]?.program;
-        const row = h_flex().id(`session-${tab.id}`).gap(7).items_center().px(8).py(4).rounded(0)
-          .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
-          .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
-          .bg(selected ? t.selected : "#00000000")
+        const task = this.taskOfTab(tab, tabAgents, cores);
+        const line = h_flex().gap(7).items_center()
           .when(Boolean(labelFor("tab", tab.id)), el => el.child(this.badge(t, labelFor("tab", tab.id))))
           .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(13).text_color(t.muted) : image(program.icon).size(13)))
           .when(!program?.icon, el => el.child(div().w(13).flex_none().text_size(11).text_color(t.dim).child("›_")))
           .child(div().flex_1().min_w(0).truncate().text_color(selected ? t.foreground : t.muted).child(tab.name))
           .when(["working","blocked","done"].includes(tab.status), el => el.child(div().size(5).rounded(3).flex_none().bg(t[tab.status])));
+        // The task line sits under the name, past the icon, and opens the task in the Tasks panel.
+        const taskLine = task && h_flex().id(`task-${tab.id}`).ml(20).min_w(0).rounded(3).cursor_pointer()
+          .tooltip(`Show in Tasks: ${task.title}`)
+          .hover(s => s.text_color(t.foreground))
+          .text_size(11).text_color(t.accent)
+          .on_mouse_down("left", (_e,cx) => cx.stop_propagation())
+          .on_click((_e,cx) => {cx.stop_propagation();this.revealTask(task.key);})
+          .child(div().flex_1().min_w(0).truncate().child(`▸ ${task.title}`));
+        const row = v_flex().id(`session-${tab.id}`).gap(1).px(8).py(4).rounded(0)
+          .cursor_pointer().hover(s => s.bg(t.hover)).on_click(() => this.act("tab.select", {id:tab.id}))
+          .on_mouse_down("right", (_e,cx) => {cx.stop_propagation();if(!this.sample)openOverlay({mod:"menu",kind:"popup",width:200,props:{tab:"tab",target:{id:tab.id,space:space.id}}});})
+          .bg(selected ? t.selected : "#00000000")
+          .child(line)
+          .when(Boolean(taskLine), el => el.child(taskLine));
         const paneRows = tabAgents.length > 1 ? tabAgents.map(agent => this.renderAgentRow(t, agent, space, tab)) : [];
         return v_flex().id(`row-${tab.id}`).child(row)
           .when(paneRows.length > 0, el => el.child(v_flex().id(`panes-${tab.id}`).pl(20).pb(2).children(paneRows)))
-          .when(index < count - 1 && !selected, el => el.child(div().h(1).ml(28).mr(8).bg(tint(t.foreground,"1b"))));
-      });
+          .when(childTabs(tab.id).length > 0 && depth < 4, el => el.child(v_flex().id(`owned-${tab.id}`).pl(14).children(
+            childTabs(tab.id).map((child, i) => renderTab(child, i, depth + 1)))))
+          .when(depth === 0 && index < topTabs.length - 1 && !selected, el => el.child(div().h(1).ml(28).mr(8).bg(tint(t.foreground,"1b"))));
+      };
+      const sessions = topTabs.map((tab, index) => renderTab(tab, index, 0));
       return v_flex().id(`space-${space.id}`).gap(0).mx(7).my(3).px(4).py(3).rounded(8)
         .border_1().border_color(space.active ? t.input : t.border).bg(tint(t.surface,"20"))
         .child(heading)
         .when(grouped && expanded, el => el.child(v_flex().id(`sessions-${space.id}`).pl(14).pr(2).gap(2).children(sessions)));
+    };
+    const cards = !multi ? all.map(cardFor) : keys.flatMap(key => {
+      const own = all.filter(s => this.machineKey(s) === key);
+      const open = !this.collapsedMachines.has(key);
+      const counts = own.map(s => summary(s, allAgents).counts);
+      const blocked = counts.reduce((n, c) => n + c.blocked, 0), working = counts.reduce((n, c) => n + c.working, 0);
+      const busy = blocked ? `${blocked} needs you` : working ? `${working} working` : "";
+      const label = this.machineLabel(key);
+      const header = h_flex().id(`machine-${key || "local"}`).gap(5).items_center().px(12).pt(6).pb(2)
+        .cursor_pointer().text_color(t.dim).hover(s => s.text_color(t.foreground))
+        .tooltip(`${open ? "Collapse" : "Expand"} ${label}`)
+        .accessibility_label(`${open ? "Collapse" : "Expand"} ${label}`)
+        .on_click((_e, cx) => this.toggleMachine(key, cx))
+        .child(div().w(10).flex_none().text_size(10).child(open ? "▾" : "▸"))
+        .child(div().flex_1().min_w(0).truncate().text_size(10.5).font_semibold().child(label.toUpperCase()))
+        .when(!open && Boolean(busy), el => el.child(div().text_size(10).text_color(blocked ? t.blocked : t.dim).child(busy)))
+        .child(div().text_size(10).child(String(own.length)));
+      return [header, ...(open ? own.map(cardFor) : [])];
     });
     return v_flex().id("space-sessions").track_focus(this.handle).size_full().min_h(0).text_size(12.5).bg(t.chrome)
       .on_key_down((e, cx) => { if (!this.hinting) return; this.hintKey(e.key); cx.stop_propagation(); cx.notify(); })

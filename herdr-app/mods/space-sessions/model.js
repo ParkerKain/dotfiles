@@ -22,3 +22,35 @@ export function summary(space, allAgents) {
   if (!parts.length) parts.push(`${space.tabs?.length ?? 0} sessions`);
   return {counts, text:parts.join(" · ")};
 }
+
+// Map each tab to the tab that owns it: the tab holding the Core parent of the tab's first agent.
+// Only tabs in the same list count, and a tab never owns itself.
+export function ownerTabs(tabs, allAgents, cores) {
+  const ids = new Set(tabs.map(tab => tab.id));
+  const tabOf = new Map(allAgents.map(a => [a.address, a.tab]));
+  const parentOf = new Map(cores.filter(c => c.parent).map(c => [c.address, c.parent]));
+  const owners = new Map();
+  for (const tab of tabs) {
+    const first = allAgents.find(a => a.tab === tab.id);
+    const owner = first && tabOf.get(parentOf.get(first.address));
+    if (owner && owner !== tab.id && ids.has(owner)) owners.set(tab.id, owner);
+  }
+  // Break any ownership cycle so every tab still renders.
+  for (const id of owners.keys()) {
+    const seen = new Set([id]);
+    let at = owners.get(id);
+    while (at && owners.has(at)) { if (seen.has(at)) { owners.delete(id); break; } seen.add(at); at = owners.get(at); }
+  }
+  return owners;
+}
+
+// Tab ids in the order the sidebar draws them: each top-level tab, then the tabs it owns beneath it.
+export function sidebarTabOrder(tabs, owners) {
+  const out = [];
+  const visit = tab => {
+    out.push(tab.id);
+    for (const child of tabs) if (owners.get(child.id) === tab.id) visit(child);
+  };
+  for (const tab of tabs) if (!owners.has(tab.id)) visit(tab);
+  return out;
+}

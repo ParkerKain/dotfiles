@@ -11,13 +11,14 @@
     "cmd-shift-[": "tab.prev",
     "cmd-alt-]": "space.next",
     "cmd-alt-[": "space.prev",
-    "cmd-]": "agent.next",
-    "cmd-[": "agent.prev",
+    "cmd-]": "space-sessions.next-agent",
+    "cmd-[": "space-sessions.prev-agent",
     "cmd-shift-l": "layout.switch",
     "cmd-n": "space.new",
     "cmd-shift-n": "mod.open:session-launcher",
     "cmd-shift-e": "mod.open:run-once",
     "cmd-shift-r": "mod.open:revive",
+    "cmd-shift-i": "mod.open:diagnose-shortcut",
     "cmd-p": "mod.open:picker",
     "cmd-shift-p": "app.palette",
     "cmd-,": "app.settings",
@@ -44,8 +45,12 @@
     "cmd-shift-j": "my-tabs.panel-jobs",
     "cmd-shift-c": "my-tabs.panel-day-view",
     "cmd-shift-a": "my-tabs.panel-artifacts",
-    "cmd-shift-k": "my-tabs.panel-call-sheet",
+    "cmd-shift-k": "mod.open:call-sheet",
     "cmd-shift-f": "my-tabs.panel-factory",
+    "cmd-shift-u": "my-tabs.panel-claude-usage",
+    "cmd-shift-s": "lock-in.pick",
+    "cmd-e": "my-tabs.panel-files",
+    "cmd-shift-g": "my-tabs.panel-changes",
     "cmd-r": "my-tabs.refresh",
     "cmd-=": "app.zoom_in",
     "cmd-+": "app.zoom_in",
@@ -75,7 +80,7 @@
     "ctrl-down": "pane.go:down",
     "cmd-shift-m": "mod.open:demo-mode",
     "cmd-shift-b": "mod.open:wallpaper",
-    "cmd-shift-u": "mod.open:music"
+    "cmd-shift-o": "mod.open:music"
   },
   "layout:Demo": {
     "cmd-]": "terminal",
@@ -102,10 +107,13 @@
     "cmd-shift-f": "terminal",
     "cmd-shift-k": "terminal",
     "cmd-shift-b": "terminal",
-    "cmd-shift-u": "terminal"
+    "cmd-shift-u": "terminal",
+    "cmd-shift-o": "terminal",
+    "cmd-shift-s": "terminal"
   },
   "mod:session-launcher": {
     "cmd-shift-a": "session-launcher.toggle-agent",
+    "cmd-shift-m": "session-launcher.toggle-model",
     "cmd-shift-s": "session-launcher.start"
   },
   "terminal": {
@@ -132,14 +140,16 @@
   "mod:artifacts": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
-  "mod:call-sheet": {
-    "cmd-shift-enter": "my-tabs.zoom-panel"
-  },
   "mod:factory": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
   },
-  "mod:my-files": {
+  "mod:claude-usage": {
     "cmd-shift-enter": "my-tabs.zoom-panel"
+  },
+  "mod:my-files": {
+    "cmd-shift-enter": "my-tabs.zoom-panel",
+    "cmd-shift-z": "my-files.toggle-wrap",
+    "cmd-shift-v": "my-files.toggle-rendered"
   },
   "mod:my-changes": {
     "cmd-shift-enter": "my-tabs.zoom-panel"

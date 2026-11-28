@@ -1,1 +1,13 @@
-{ "place": "none", "title": "My shortcuts", "overlay": { "width": 650, "height": 620 } }
+{
+  "place": "none",
+  "title": "My shortcuts",
+  "overlay": { "width": 650, "height": 620 },
+  "palette": [
+    {
+      "title": "My shortcuts",
+      "command": "mod.open",
+      "args": { "name": "keybind-help" },
+      "words": "keybindings hotkeys keyboard"
+    }
+  ]
+}

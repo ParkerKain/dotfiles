@@ -1,1 +1,13 @@
-{ "place": "none", "title": "New session", "overlay": { "width": 560, "height": 380 } }
+{
+  "place": "none",
+  "title": "New session",
+  "overlay": { "kind": "window", "frame": "none", "width": 1, "height": 1 },
+  "palette": [
+    {
+      "title": "Session Launcher",
+      "command": "mod.open",
+      "args": { "name": "session-launcher" },
+      "words": "new session start launch agent"
+    }
+  ]
+}

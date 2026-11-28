@@ -28,7 +28,8 @@ is a daemon: the scheduler fires `job run` or `job check`.
   job pause | resume        stop or restart scheduled jobs and hooks (for demos);
                             a run started by hand (--force) still goes.
                             --by <who> tags the pause; resume --by <who> only lifts a
-                            pause that <who> made (the Demo layout uses --by demo)
+                            pause that <who> made (the Demo layout uses --by demo);
+                            pause --until <90m|2h|HH:MM|YYYY-MM-DD HH:MM> lifts itself then
   job unit <name>           print the launchd plist or systemd units for its schedule
   job install <name>        write and load that schedule
   job uninstall <name>      unload and remove it
@@ -261,11 +262,42 @@ def name_tab(addr, name):
 # ---- pause ----------------------------------------------------------------
 
 def paused():
-    """{"ts": epoch, "by"?: who} when jobs are paused, else None."""
+    """{"ts": epoch, "by"?: who, "until"?: epoch} when jobs are paused, else None.
+    A pause whose `until` has passed is lifted here."""
     try:
-        return json.loads(PAUSED.read_text())
+        state = json.loads(PAUSED.read_text())
     except (OSError, ValueError):
         return {"ts": int(PAUSED.stat().st_mtime)} if PAUSED.exists() else None
+    if state.get("until") and time.time() >= state["until"]:
+        PAUSED.unlink(missing_ok=True)
+        return None
+    return state
+
+
+def until_epoch(text, now=None):
+    """Epoch seconds for `pause --until`: a duration (90m, 2h, 3d), a local time today or
+    tomorrow (14:30), or a local date and time (2026-12-01 09:00, or with a T)."""
+    now = now or time.time()
+    m = re.fullmatch(r"(\d+)([mhd])", text.strip())
+    if m:
+        return int(now + int(m[1]) * {"m": 60, "h": 3600, "d": 86400}[m[2]])
+    for fmt in ("%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            t = time.strptime(text.strip(), fmt)
+        except ValueError:
+            continue
+        if fmt == "%H:%M":
+            day = time.localtime(now)
+            at = time.mktime((day.tm_year, day.tm_mon, day.tm_mday, t.tm_hour, t.tm_min, 0, 0, 0, -1))
+            if at <= now:  # already past today: tomorrow at that time
+                day = time.localtime(now + 86400)
+                at = time.mktime((day.tm_year, day.tm_mon, day.tm_mday, t.tm_hour, t.tm_min, 0, 0, 0, -1))
+            return int(at)
+        at = time.mktime(t[:8] + (-1,))
+        if at <= now:
+            die(f"--until {text} is already past")
+        return int(at)
+    die(f"--until wants 90m, 2h, 3d, HH:MM or YYYY-MM-DD HH:MM, not '{text}'")
 
 
 # ---- run a job ------------------------------------------------------------
@@ -301,11 +333,21 @@ def start_visible(job, prompt):
         hc("kill", addr)
         die(f"{job['name']}: could not verify placement in '{space_name}' / '{tab_name}'; prompt withheld")
 
-    record(job["name"], addr, addr)
     if info.get("state") != "live" or (info.get("status") or {}).get("state") != "idle":
         die(f"{job['name']}: agent did not become idle in '{tab_name}' ({addr}); prompt withheld")
     hc("send", "--if", "idle", addr, prompt)
     return addr
+
+
+def wait_for_start(addr, timeout=45):
+    """Wait for the launch prompt to start a turn, even if Herdr reports startup idle."""
+    deadline = time.monotonic() + timeout
+    while True:
+        info = hc("get", addr, check=False)
+        status = (info.get("status") or {}).get("state")
+        if (status and (status != "idle" or info.get("turn", 0))) or time.monotonic() >= deadline:
+            return info, status
+        time.sleep(1)
 
 
 def run(args):
@@ -316,14 +358,15 @@ def run(args):
         print(json.dumps({"session": None, "started": False, "paused": True,
                           "why": f"jobs are paused; {job['name']} skipped (job resume, or run it with --force)"}))
         return
+    started_at = time.time()
     session = f"{job['name']}-{time.strftime('%m%d-%H%M')}"[:32]
     require_visible = job.get("require_visible") is True
     prompt = job["prompt"]
     close = bool(job.get("close_when_done"))
+    outcome = outcome_file(job["name"])
+    outcome.parent.mkdir(parents=True, exist_ok=True)
+    outcome.unlink(missing_ok=True)
     if close:
-        outcome = outcome_file(job["name"])
-        outcome.parent.mkdir(parents=True, exist_ok=True)
-        outcome.unlink(missing_ok=True)
         prompt += ("\n\n## Closing this session\n\n"
                    f"As your very last step, write one line to `{outcome}`: `ok: <what changed, or no changes>` "
                    "when the run finished, or `blocked: <why>` when something stopped it. "
@@ -343,17 +386,12 @@ def run(args):
         if placeholder:
             herdr_do("tab.close", {"id": placeholder, "confirmed": True})
         name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
-    # A folder the agent has not trusted yet stops at a dialog with no status,
-    # and the first message waits behind it. Say so instead of looking like it ran.
-    hc("wait", addr, "--timeout", "45", check=False)
-    info = hc("get", addr, check=False)
-    status = (info.get("status") or {}).get("state")
-    if not require_visible:
-        record(job["name"], session, addr)
-    if not require_visible and (status is None or (status == "idle" and info.get("turn", 0) == 0)):
+    record(job["name"], session, addr, ts=int(started_at))
+    info, status = wait_for_start(addr)
+    if status is None or (status == "idle" and info.get("turn", 0) == 0):
         print(json.dumps({"session": session, "address": addr, "started": False,
-                          "why": "agent is not working: probably a folder trust question. "
-                                 f"Open it (hc attach {session}) and answer; the prompt is delivered once the folder is trusted, so do not resend it."}))
+                          "why": "agent did not start a turn within 45 seconds. "
+                                 f"Open it (hc attach {session}) to check for a startup prompt."}))
         sys.exit(2)
     if (args.wait or close) and status == "working":
         while True:
@@ -362,13 +400,37 @@ def run(args):
             if state.get("reason") != "timeout" and status != "working":
                 break
     result = {"session": session, "address": addr, "started": True, "status": status}
-    if close:
-        result["closed"], result["outcome"] = close_if_ok(addr, outcome)
+    # A close_when_done run that stopped, or any run whose session went to error, gets an
+    # outcome even when the agent never wrote one, so runs.jsonl and the .outcome file say why.
+    if close or status == "error":
+        turn = hc("get", addr, check=False).get("turn", info.get("turn"))
+        line = ensure_outcome(outcome, status, turn, time.time() - started_at)
+        result["closed"], result["outcome"] = close_if_ok(addr, outcome) if close else (False, line)
+        record(job["name"], session, addr, ts=int(started_at), status=status, turn=turn,
+               duration=int(time.time() - started_at), outcome=result["outcome"], closed=result["closed"])
     print(json.dumps(result))
 
 
 def outcome_file(name):
     return STATE / f"{name}.outcome"
+
+
+def took(seconds):
+    seconds = int(seconds)
+    return f"{seconds}s" if seconds < 120 else f"{seconds // 60}m"
+
+
+def ensure_outcome(outcome, status, turn, seconds):
+    """The agent's outcome line, or one written for it when the session stopped without one
+    (an `error` status, or a finished turn that never wrote the file)."""
+    text = outcome.read_text().strip() if outcome.exists() else ""
+    if text:
+        return text.splitlines()[0]
+    kind = "error" if status in ("error", None) else "no outcome"
+    turns = f", {turn} turn{'' if turn == 1 else 's'}" if turn is not None else ""
+    line = f"{kind}: session ended with status {status or 'unknown'} after {took(seconds)}{turns}, no outcome reported"
+    outcome.write_text(line + "\n")
+    return line
 
 
 def close_if_ok(addr, outcome):
@@ -394,10 +456,12 @@ def close_if_ok(addr, outcome):
     return True, line
 
 
-def record(name, session, address):
+def record(name, session, address, ts=None, **done):
+    """One line when a run starts; a second with the same session and ts (and status, turn,
+    duration, outcome, closed) once the runner knows how it ended. The last line per job wins."""
     RUNS.parent.mkdir(parents=True, exist_ok=True)
     with RUNS.open("a") as f:
-        f.write(json.dumps({"job": name, "session": session, "address": address, "ts": int(time.time())}) + "\n")
+        f.write(json.dumps({"job": name, "session": session, "address": address, "ts": ts or int(time.time())} | done) + "\n")
 
 
 def last_runs():
@@ -655,6 +719,27 @@ def systemd_arg(text, exec_word=True):
     return text
 
 
+def stale_clock():
+    """Why launchd's times are off, or None. launchd reads the time zone once, at boot, and keeps
+    it: after the Mac's zone changes (Location Services moves it when traveling), every
+    StartCalendarInterval fires on the old zone's clock until the next restart. Reinstalling
+    the plists doesn't help. $JOB_ZONE_CHANGED and $JOB_BOOT_TIME stand in for tests."""
+    if SCHEDULER != "launchd" and not os.environ.get("JOB_BOOT_TIME"):
+        return None
+    try:
+        changed = float(os.environ.get("JOB_ZONE_CHANGED") or os.lstat("/etc/localtime").st_mtime)
+        boot = os.environ.get("JOB_BOOT_TIME") or subprocess.run(
+            ["sysctl", "-n", "kern.boottime"], capture_output=True, text=True).stdout
+        booted = float(re.search(r"(\d+)", boot)[1])
+    except (OSError, ValueError, TypeError):
+        return None
+    if changed <= booted:
+        return None
+    return (f"the time zone changed at {time.strftime('%a %b %-d %H:%M', time.localtime(changed))}, after this Mac "
+            "started, and launchd keeps the zone it booted with: scheduled jobs fire on the old zone's clock "
+            "until you restart the Mac")
+
+
 def write_units(units):
     for path, body in units.items():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -702,7 +787,8 @@ def status():
     items = all_items()
     jobs = [broken_row(i) if "error" in i else job_status(i, last) for i in items if i["kind"] == "job"]
     hooks = [broken_row(i) if "error" in i else hook_status(i) for i in items if i["kind"] == "hook"]
-    print(json.dumps({"ok": True, "machine": machine.name(), "paused": paused(), "jobs": jobs, "hooks": hooks}))
+    print(json.dumps({"ok": True, "machine": machine.name(), "paused": paused(), "clock": stale_clock(),
+                      "jobs": jobs, "hooks": hooks}))
 
 
 REFRESH_DRIFT, REFRESH_FAILED = 3, 4
@@ -773,6 +859,7 @@ def main():
     sub.add_parser("status")
     for c in ("pause", "resume"):
         sub.add_parser(c).add_argument("--by", help="who paused; resume --by only lifts that one's pause")
+    sub.choices["pause"].add_argument("--until", help="lift the pause by itself then: 90m, 2h, 3d, HH:MM or YYYY-MM-DD HH:MM (local)")
     r = sub.add_parser("run"); r.add_argument("name"); r.add_argument("--wait", action="store_true")
     r.add_argument("--force", action="store_true", help="run even while jobs are paused")
     c = sub.add_parser("check"); c.add_argument("name")
@@ -783,6 +870,8 @@ def main():
     args = p.parse_args()
 
     if args.cmd == "list":
+        if warning := stale_clock():
+            print(f"warning: {warning}", file=sys.stderr)
         for item in all_items():
             if "error" in item:
                 print(f"{item['name']:<24} {item['kind']:<5} broken: {item['error']}")
@@ -799,7 +888,8 @@ def main():
         PAUSED.parent.mkdir(parents=True, exist_ok=True)
         # An existing pause keeps its owner, so a demo never lifts a pause made by hand.
         if not paused():
-            PAUSED.write_text(json.dumps({"ts": int(time.time())} | ({"by": args.by} if args.by else {})))
+            PAUSED.write_text(json.dumps({"ts": int(time.time())} | ({"by": args.by} if args.by else {})
+                                         | ({"until": until_epoch(args.until)} if args.until else {})))
         print(json.dumps({"ok": True, "paused": paused()}))
     elif args.cmd == "resume":
         if not args.by or (paused() or {}).get("by") == args.by:
@@ -816,7 +906,7 @@ def main():
         require_home_checkout()
         item = load(args.name)
         written = scheduler().install(item)
-        print(json.dumps({"ok": True, "installed": [str(p) for p in written]}))
+        print(json.dumps({"ok": True, "installed": [str(p) for p in written]} | ({"warning": w} if (w := stale_clock()) else {})))
     elif args.cmd == "uninstall":
         # A definition that has been deleted can still be uninstalled by name.
         # Whatever is installed under this name goes, job or hook, even if the file changed kind or is gone.

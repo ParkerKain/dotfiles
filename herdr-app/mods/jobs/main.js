@@ -82,7 +82,7 @@ export default class Jobs extends View {
         try { data = JSON.parse(r.stdout); } catch { throw new Error(r.stderr.trim().split("\n").pop() || `job status exited ${r.code}`); }
         if (!data.ok) throw new Error(r.stderr.trim() || "job status failed");
         // A failing hook script shows its error on its own row without hiding the others.
-        this.jobs = data.jobs; this.hooks = data.hooks ?? []; this.paused = data.paused ?? null; this.error = null;
+        this.jobs = data.jobs; this.hooks = data.hooks ?? []; this.paused = data.paused ?? null; this.clock = data.clock ?? null; this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
@@ -249,7 +249,9 @@ export default class Jobs extends View {
           .on_click((_e, cx) => this.togglePause(cx)))
         .child(div().id("refresh").cursor_pointer().text_color(t.muted).child(this.loading || Date.now() < (this.spinUntil ?? 0) ? svg("mods/workspace-chrome/spinner.svg").size(13).text_color(t.muted).spin(900) : "↻").on_click((_e, cx) => this.load(cx))))
       .when(this.paused, (el) => el.child(div().px(12).py(8).border_b(1).border_color(t.border).text_color(t.blocked)
-        .child(`Paused${this.paused.by === "demo" ? " for demo" : ""} since ${day(this.paused.ts, now)} ${clock(this.paused.ts)} · scheduled jobs and hooks skip until ${this.paused.by === "demo" ? "you leave Demo or resume" : "you resume"}`)))
+        .child(`Paused${this.paused.by === "demo" ? " for demo" : ""} since ${day(this.paused.ts, now)} ${clock(this.paused.ts)} · scheduled jobs and hooks skip until ${this.paused.until ? `${day(this.paused.until, now)} ${clock(this.paused.until)} or you resume` : this.paused.by === "demo" ? "you leave Demo or resume" : "you resume"}`)))
+      .when(this.clock, (el) => el.child(div().px(12).py(8).border_b(1).border_color(t.border).text_color(t.blocked)
+        .child(`Schedules are off: ${this.clock}`)))
       .when(this.error, (el) => el.child(div().p(10).text_color(t.blocked).child(this.error)))
       .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(6)
         .child(div().p(4).font_semibold().text_color(t.foreground).child(`Jobs · ${this.jobs.length}`))
