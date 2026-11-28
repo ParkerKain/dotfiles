@@ -180,10 +180,12 @@ export default class LookTryout extends View {
         const index = JSON.parse((await readTextFile(`${thumbs}/index.json`)) || "[]");
         // The flat landscapes, then the jade set, then the green ones already in the collection.
         const order = Object.keys(WALLPAPER_NOTES);
-        const picks = index.filter(w => w.group === "flat").sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
+        // Wallpapers found online (wallpapers/found, from Wallhaven) first, then the generated flat set.
+        const picks = index.filter(w => w.group === "found")
+          .concat(index.filter(w => w.group === "flat").sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)))
           .concat(index.filter(w => w.group === "jade"))
-          .concat(index.filter(w => w.group !== "flat" && w.group !== "jade" && WALLPAPER_NOTES[w.name]));
-        this.lists.wallpaper = picks.map(w => [w.name, WALLPAPER_NOTES[w.name] ?? "", w.path]);
+          .concat(index.filter(w => !["found", "flat", "jade"].includes(w.group) && WALLPAPER_NOTES[w.name]));
+        this.lists.wallpaper = picks.map(w => [w.name, WALLPAPER_NOTES[w.name] ?? (w.group === "found" ? "Found on Wallhaven (sources in wallpapers/found/SOURCES.txt)." : ""), w.path]);
         for (const w of picks) this.thumbs[w.name] = w.thumb;
         const cur = JSON.parse((await readTextFile(`${thumbs}/current.json`)) || "null");
         if (cur) {

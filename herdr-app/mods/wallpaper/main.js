@@ -6,8 +6,8 @@ import { h_flex, v_flex, ScrollHandle } from "gpui-base";
 import { closeOverlay, exec, home, props, readTextFile, run, theme } from "herdr";
 
 const COLS = 4;
-const GROUPS = ["flat", "jade", "digital", "photo", "rose-pine", "art"];
-const LABELS = { flat: "Flat landscapes", jade: "Jade", digital: "Digital", photo: "Photos", "rose-pine": "Rose Pine", art: "Paintings and prints" };
+const GROUPS = ["found", "flat", "jade", "digital", "photo", "rose-pine", "art"];
+const LABELS = { found: "Found online", flat: "Flat landscapes", jade: "Jade", digital: "Digital", photo: "Photos", "rose-pine": "Rose Pine", art: "Paintings and prints" };
 
 export default class Wallpaper extends View {
   init(_props, cx) {
