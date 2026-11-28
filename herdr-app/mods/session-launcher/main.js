@@ -19,12 +19,12 @@ const mac = () => appWindow()?.platform !== "linux";
 const ROUTE_DEBOUNCE = 400;
 // How long the card takes to lift and fade before the overlay closes.
 const LIFT_MS = 350;
-// Cascade: the card rises 18px and fades in, then its rows follow 40ms apart. Cancel, Esc or a
+// Cascade: the card rises 18px and fades in, then its rows follow 55ms apart. Cancel, Esc or a
 // click outside drops it 10px as it fades.
-const RISE_MS = 220;
-const DROP_MS = 160;
+const RISE_MS = 300;
+const DROP_MS = 200;
 const CARD_RISE = 18, CARD_DROP = 10;
-const FIELD_RISE = 8, FIELD_IN = 200, FIELD_LEAD = 90, FIELD_STEP = 40;
+const FIELD_RISE = 8, FIELD_IN = 260, FIELD_LEAD = 120, FIELD_STEP = 55;
 // The card's size. The overlay itself covers the window (mod.json), frameless, so the card draws
 // its own border, corners and shadow and the space around it catches a click outside.
 const CARD_W = 560;

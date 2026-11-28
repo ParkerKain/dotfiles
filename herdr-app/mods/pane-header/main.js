@@ -30,11 +30,11 @@ const DELEGATE = () => `${home()}/.local/bin/herdr-delegate`;
 const GROW_MS = 260;
 
 // New pane cascade: Herdr makes a split at once, so a new pane's header fades in while a cover
-// over its terminal fades away in bands, top to bottom, 35ms apart. Every header records its
+// over its terminal fades away in bands, top to bottom, 50ms apart. Every header records its
 // pane in SEEN, so a pane is new when it wasn't seen but a pane beside it in its tab was.
 // Headers that mount in the first seconds after Herdr starts never count as new.
 const SEEN = "pane-header.seen";
-const COVER_BANDS = 10, COVER_LEAD = 80, COVER_STEP = 35, COVER_FADE = 200, HEAD_IN = 180;
+const COVER_BANDS = 10, COVER_LEAD = 110, COVER_STEP = 50, COVER_FADE = 280, HEAD_IN = 250;
 // Herdr's terminal line height as a multiple of the font size; it sizes the cover from the
 // pane's visible rows, since a header doesn't learn its pane's height.
 const LINE = 1.2;

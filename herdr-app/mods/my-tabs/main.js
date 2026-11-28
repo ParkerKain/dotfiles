@@ -36,7 +36,9 @@ const GLANCED = new Set(["ops-tasks", "day-view", "artifacts", "factory"]);
 // shows, "out" ~240ms before it hides, so the panel's content can fade and slide first.
 // Herdr shows and hides layout panels instantly, and resizing them would resize terminals.
 const MOTION = "panel.motion", OUT_MS = 240;
-const TAB_RISE = 10, TAB_IN = { duration: 200, easing: "ease-out" };
+// Herdr only animates a value when the element had that transition on the frame before, so
+// every tab keeps both attached (1ms at rest, which jumps).
+const TAB_RISE = 10, TAB_IN = { duration: 260, easing: "ease-out" }, TAB_JUMP = { duration: 1 };
 const motion = (id, phase) => { const at = Date.now(); setShared(MOTION, { id, phase, at }); return at; };
 
 // The key bound to an action in keys.json, written the way this platform writes it:
@@ -271,8 +273,8 @@ export default class Tabs extends View {
       const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
       const arriving = this.arriving[c.id];
       return h_flex().id(`tab-${c.id}`).relative()
-        .when(arriving === "pre", el => el.top(TAB_RISE).opacity(0))
-        .when(arriving === "in", el => el.top(0).opacity(1).transition("opacity", TAB_IN).transition("top", TAB_IN))
+        .top(arriving === "pre" ? TAB_RISE : 0).opacity(arriving === "pre" ? 0 : 1)
+        .transition("opacity", arriving === "in" ? TAB_IN : TAB_JUMP).transition("top", arriving === "in" ? TAB_IN : TAB_JUMP)
         .h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         // A rename or status dot on this or an earlier tab can push the active one out.
         .when(i <= active, el => el.on_size_change((_size, cx) => { this.scroll.scroll_to_item(active); cx.notify(); }))
