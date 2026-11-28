@@ -46,13 +46,17 @@ LOOK = {
 }
 
 
-def theme_look(name):
+def theme_look(name, explicit=True):
     """The translucent overrides for a theme, derived from its colors. None keeps the Rose Pine LOOK."""
     if not name or name == "none":
         return LOOK
     path = HOME / "themes" / f"{name}.json"
     if not path.exists():
-        sys.exit(f"frost: no theme {path}")
+        if explicit:
+            sys.exit(f"frost: no theme {path}")
+        # A theme saved by an earlier run that has since gone: fall back rather than break every run.
+        print(f"frost: saved theme {name} is gone, using the Rose Pine glass", file=sys.stderr)
+        return LOOK
     t = json.loads(path.read_text())
     bg, fg, c = t["background"], t["foreground"], t.get("colors", {})
     chrome = c.get("chrome", mix(bg, "#000000", 0.2))
@@ -200,7 +204,7 @@ def main():
 
     saved = saved_choice()
     theme = args.theme if args.theme is not None else saved.get("theme")
-    look = theme_look(theme)
+    look = theme_look(theme, explicit=args.theme is not None)
 
     def remember(**changes):
         THUMBS.mkdir(parents=True, exist_ok=True)

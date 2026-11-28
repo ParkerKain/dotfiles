@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Draws a set of jade and emerald wallpapers into ~/Pictures/wallpapers/jade (or ~/Wallpapers/jade).
 
-    python3 herdr-app/wallpapers/jade.py            # all of them
-    python3 herdr-app/wallpapers/jade.py malachite  # one by name
+    python3 herdr-app/wallpapers/jade.py                  # all of them
+    python3 herdr-app/wallpapers/jade.py malachite-bands  # one by name
+
+Needs numpy and Pillow: Homebrew's python3 on the Mac has both. On Omarchy run it with
+`uv run --no-project --with numpy --with pillow python3 herdr-app/wallpapers/jade.py`.
 
 They're generated rather than downloaded, so they carry no license and match the jade themes'
 colors. Frosted blurs them, so each one is built from broad color fields first and detail second.
@@ -68,13 +71,19 @@ def save(name, img):
 
 
 def aurora():
-    img = blobs("#06110e", [(0.2, 0.25, 0.45, "#1f8a63", 0.85), (0.75, 0.15, 0.35, "#2fd08a", 0.45),
-                            (0.6, 0.75, 0.5, "#0f5a4c", 0.8), (0.95, 0.6, 0.3, "#3fb7b0", 0.35)])
+    img = blobs("#06110e", [(0.2, 0.25, 0.45, "#1a6e51", 0.55), (0.75, 0.15, 0.35, "#2fd08a", 0.2),
+                            (0.6, 0.75, 0.5, "#0d4a3f", 0.6), (0.95, 0.6, 0.3, "#3fb7b0", 0.2)])
     x, y = grid()
     n = fbm(11, 3, 1400)
-    # Curtains: vertical streaks bent by noise, brightest near the top third.
-    streak = (np.sin((x * 5 + n * 4.5) * np.pi) * 0.5 + 0.5) ** 6 * np.exp(-((y - 0.32) / 0.28) ** 2)
-    img = img * (1 - 0.5 * streak[..., None]) + rgb("#7ef0c0") * 0.5 * streak[..., None]
+    # Curtains: two wide ribbons that sweep across, each a soft band with fine vertical rays inside.
+    curtain = np.zeros_like(x)
+    for k, (cy, amp, width) in enumerate(((0.3, 0.12, 0.09), (0.5, 0.08, 0.06))):
+        center = cy + amp * np.sin(x * (2.2 + k) * np.pi + n * 3 + k)
+        # Sharp-ish lower hem and a long fade upwards, as real curtains hang.
+        band = np.where(y < center, np.exp(-((center - y) / (width * 2.2)) ** 2), np.exp(-((y - center) / (width * 0.5)) ** 2))
+        rays = 0.6 + 0.4 * (np.sin((x * 70 + n * 12) * np.pi) * 0.5 + 0.5)
+        curtain = np.maximum(curtain, band * rays * (0.9 - 0.3 * k))
+    img = img * (1 - 0.6 * curtain[..., None]) + rgb("#7ef0c0") * 0.6 * curtain[..., None]
     save("jade-aurora", grain(img))
 
 
@@ -114,9 +123,10 @@ def topo():
 
 def ridges():
     x, y = grid()
-    sky = rgb("#a9d8c4") * (1 - y[..., None]) + rgb("#2d6b58") * y[..., None]
+    # Dark enough that the tab bar's text, over Frosted's translucent chrome, stays readable.
+    sky = rgb("#4f8c77") * (1 - y[..., None]) + rgb("#1f4a3e") * y[..., None]
     img = sky.copy()
-    layers = ["#6fae95", "#3f8a70", "#25634f", "#16443a", "#0b2a24"]
+    layers = ["#3f7d68", "#2f6a57", "#225444", "#163d33", "#0b2620"]
     for i, c in enumerate(layers):
         base = 0.38 + i * 0.12
         line = base + 0.04 * np.sin(x[0] * (1.3 + 0.6 * i) * np.pi + i * 1.7) + 0.16 * (fbm(51 + i, 4, 900)[0] - 0.5)
@@ -126,7 +136,7 @@ def ridges():
         img = img * (1 - mask) + rgb(c) * mask
         # Mist pooling at each ridge's foot.
         mist = np.exp(-((y - line[None, :] - 0.06) / 0.05) ** 2)[..., None] * 0.18
-        img = img * (1 - mist) + rgb("#d8efe4") * mist
+        img = img * (1 - mist) + rgb("#9fcfbd") * mist
     save("misty-ridges", grain(img, 3))
 
 
@@ -135,9 +145,21 @@ def celadon():
     n = fbm(61, 4, 1500)
     t = (0.6 * y + 0.4 * n)[..., None]
     img = rgb("#5f8a78") * (1 - t) + rgb("#22403a") * t
-    # Crackle: thin dark lines where two noise fields cross zero.
-    a, b = fbm(67, 3, 500) - 0.5, fbm(71, 3, 450) - 0.5
-    crack = np.clip(1 - np.minimum(np.abs(a), np.abs(b)) / 0.006, 0, 1)[..., None] * 0.25
+    # Crackle: the edges of a Voronoi tiling (where the nearest two seeds are almost equally near),
+    # nudged by noise so the cells aren't too straight. Worked out at quarter size, then scaled up.
+    h4, w4 = H // 4, W // 4
+    seeds = RNG.random((260, 2)) * [w4, h4]
+    yy, xx = np.mgrid[0:h4, 0:w4].astype(np.float32)
+    wob = np.asarray(Image.fromarray((fbm(67, 2, 300) * 255).astype(np.uint8)).resize((w4, h4)), dtype=np.float32) / 255 * 6
+    d1 = np.full((h4, w4), 1e9, np.float32)
+    d2 = np.full((h4, w4), 1e9, np.float32)
+    for sx, sy in seeds:
+        d = np.hypot(xx + wob - sx, yy - wob - sy)
+        d2 = np.where(d < d1, d1, np.minimum(d2, d))
+        d1 = np.minimum(d1, d)
+    edge = np.clip(1 - (d2 - d1) / 1.6, 0, 1)
+    edge = np.asarray(Image.fromarray((edge * 255).astype(np.uint8)).resize((W, H), Image.Resampling.BILINEAR), dtype=np.float32) / 255
+    crack = (edge * 0.35)[..., None]
     img = img * (1 - crack) + rgb("#a9cfbd") * crack
     save("celadon-glaze", grain(img, 2))
 
@@ -146,14 +168,19 @@ def deep_forest():
     img = blobs("#050c0a", [(0.5, 1.1, 0.7, "#145c45", 0.9), (0.15, 0.4, 0.3, "#0e3b33", 0.6),
                             (0.85, 0.35, 0.25, "#1c6f5a", 0.5)])
     x, y = grid()
-    # Tall trunks of light, like sun through a canopy.
-    beams = (np.sin((x * 9 + 3.5 * fbm(81, 2, 1800)) * np.pi) * 0.5 + 0.5) ** 12 * (1 - y) * 0.35
+    # Straight diagonal shafts of sun through a canopy, uneven in width and strength, fading downwards.
+    u = x * 0.8 + y * 0.45
+    beams = np.zeros_like(x)
+    for k, (pos, width, strength) in enumerate(((0.22, 0.012, 0.5), (0.31, 0.025, 0.35), (0.47, 0.008, 0.45),
+                                                 (0.58, 0.03, 0.25), (0.74, 0.015, 0.4))):
+        beams = np.maximum(beams, np.exp(-((u - pos) / width) ** 2) * strength)
+    beams = beams * np.clip(1.1 - y, 0, 1) * (0.7 + 0.3 * fbm(81, 2, 900))
     img = img * (1 - beams[..., None]) + rgb("#9ce8c4") * beams[..., None]
     save("deep-forest-light", grain(img, 3))
 
 
-ALL = {"aurora": aurora, "mesh": emerald_mesh, "malachite": malachite, "topo": topo,
-       "ridges": ridges, "celadon": celadon, "forest": deep_forest}
+ALL = {"jade-aurora": aurora, "emerald-mesh": emerald_mesh, "malachite-bands": malachite, "jade-topo": topo,
+       "misty-ridges": ridges, "celadon-glaze": celadon, "deep-forest-light": deep_forest}
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or ALL:

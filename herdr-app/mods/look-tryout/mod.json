@@ -1,7 +1,7 @@
 {
   "place": "none",
   "title": "Look tryout",
-  "overlay": { "width": 480, "height": 400 },
+  "overlay": { "width": 500, "height": 460 },
   "palette": [
     {
       "title": "Look tryout",

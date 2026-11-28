@@ -12,7 +12,7 @@ import { View, div, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import {
   appHome, checking, closeOverlay, exec, fonts, openOverlay, props, readTextFile, run,
-  nextCommand, settings, shared, theme, themes, writeTextFile,
+  layouts, nextCommand, setShared, settings, shared, theme, themes, writeTextFile,
 } from "herdr";
 
 const THEMES = [
@@ -99,13 +99,17 @@ const TOKEN_ANSI = { kw: 5, fn: 4, ty: 6, str: 2, num: 3, cm: 8 };
 const KEYS = {
   y: "yes", n: "no", right: "next", l: "next", j: "next", down: "next",
   left: "prev", h: "prev", k: "prev", up: "prev", tab: "next-round", "shift-tab": "prev-round",
-  b: "blur", enter: "keep", escape: "restore", q: "restore",
+  b: "blur", space: "preview", enter: "keep", escape: "restore", q: "restore",
 };
 
 export default class LookTryout extends View {
   init(_props, cx) {
     if (!props()?.window && !checking()) {
-      openOverlay({ mod: "look-tryout", props: { window: true }, kind: "window", key: "look-tryout", width: 500, height: 460 });
+      // Already open (its heartbeat is fresh): focus that window instead of replacing it, which
+      // would start a restore under the new copy while it records the tryout look as the original.
+      const open = shared("look-tryout.open");
+      if (typeof open === "number" && Date.now() - open < 45000) run("look-tryout.focus");
+      else openOverlay({ mod: "look-tryout", props: { window: true }, kind: "window", key: "look-tryout", width: 500, height: 460 });
       closeOverlay(props().overlay);
       this.bounce = true;
       return;
@@ -140,6 +144,8 @@ export default class LookTryout extends View {
     this.queue = Promise.resolve();
     this.dataDir = `${appHome()}/data/look-tryout`;
     if (checking()) return;
+    setShared("look-tryout.open", Date.now());
+    cx.timer.every(20000, () => { if (!this.done) setShared("look-tryout.open", Date.now()); });
     // The same actions as the keys, as `look-tryout.<action>` commands (keys.json or herdr-app do).
     cx.spawn(async cx => {
       for (;;) {
@@ -149,16 +155,16 @@ export default class LookTryout extends View {
     });
     cx.spawn(async cx => {
       try {
-        // settings.json links into dotfiles. Write the real file so the link survives the atomic replace.
+        // settings.json links into dotfiles on the Mac. helper.py writes the real file in place.
         const real = async p => (await exec("readlink", ["-f", p])).stdout.trim();
         this.settingsPath = (await real(`${appHome()}/settings.json`)) || `${appHome()}/settings.json`;
         const file = JSON.parse((await readTextFile(this.settingsPath)) || "{}");
         for (const k of ["font", "ui_font"]) if (file[k]) this.original[k] = this.current[k] = file[k];
-        this.basePath = this.settingsPath !== `${appHome()}/settings.json`
-          ? this.settingsPath.replace(/settings\.json$/, "settings.base.json") : null;
-        // frost sits two folders above this mod's real folder (herdr-app/mods/look-tryout).
+        // frost and settings.base.json sit two folders above this mod's real folder (herdr-app/mods/look-tryout).
         this.modDir = await real(`${appHome()}/mods/look-tryout`);
-        this.frost = this.modDir ? this.modDir.replace(/\/mods\/look-tryout$/, "/frost") : null;
+        const herdrApp = this.modDir ? this.modDir.replace(/\/mods\/look-tryout$/, "") : null;
+        this.frost = herdrApp ? `${herdrApp}/frost` : null;
+        this.basePath = herdrApp ? `${herdrApp}/settings.base.json` : null;
 
         const thumbs = `${appHome()}/mods/wallpaper-thumbs`;
         const index = JSON.parse((await readTextFile(`${thumbs}/index.json`)) || "[]");
@@ -191,10 +197,13 @@ export default class LookTryout extends View {
   get item() { return this.lists[this.key][this.pos[this.key]]; }
   get wallpaperOff() { return this.key === "wallpaper" && !this.frosted; }
 
-  // Applies the shown candidate of the current round to the window.
-  show(cx) {
+  // Applies the shown candidate of the current round to the window. A wallpaper takes seconds to
+  // render, so entering that round (Tab, or finishing UI fonts) only shows its thumbnail. Browsing,
+  // voting or Space renders it.
+  show(cx, render = false) {
     const k = this.key, item = this.item;
-    if (item && !this.wallpaperOff && this.current[k] !== item[0]) this.apply(k, item, cx);
+    const wait = k === "wallpaper" && !render;
+    if (item && !wait && !this.wallpaperOff && this.current[k] !== item[0]) this.apply(k, item, cx);
     cx.notify();
   }
 
@@ -204,21 +213,25 @@ export default class LookTryout extends View {
     if (k === "theme") {
       run("app.theme", { name });
       if (this.frosted) this.enqueue(cx, () => this.frostRun(["--relayout", "--theme", name]), "theme");
+    } else if (k === "wallpaper" && !list.length) {
+      body = div().text_size(12).text_color(t.muted)
+        .child("No wallpaper thumbnails yet. Run ~/dotfiles/herdr-app/wallpapers/jade.py, then ~/dotfiles/herdr-app/frost --thumbs.");
     } else if (k === "wallpaper") {
       this.enqueue(cx, () => this.frostWallpaper(item[2], this.blur, this.current.theme), "wallpaper");
     } else {
-      this.enqueue(cx, () => this.patchJson(this.settingsPath, { [k]: name }));
+      this.enqueue(cx, () => this.helper("patch", this.settingsPath, JSON.stringify({ [k]: name })));
     }
   }
 
   // Everything that writes runs one job at a time. A job tagged with a slot is skipped when a newer
   // job for the same slot is already waiting, so arrowing fast only renders the last wallpaper.
+  // Once the tryout is kept or restored, jobs still waiting are dropped, so none lands after the restore.
   enqueue(cx, job, slot) {
     const ticket = slot ? (this[`ticket_${slot}`] = (this[`ticket_${slot}`] ?? 0) + 1) : 0;
     this.busy++;
     cx.notify();
     const p = this.queue.then(async () => {
-      if (slot && ticket !== this[`ticket_${slot}`]) return;
+      if (this.done || (slot && ticket !== this[`ticket_${slot}`])) return;
       await job();
     }).catch(e => { this.status = String(e?.message ?? e).split("\n").pop(); });
     this.queue = p;
@@ -236,20 +249,19 @@ export default class LookTryout extends View {
     return this.frostRun([path, "--blur", String(blur), "--theme", themeName || "none"]);
   }
 
-  async patchJson(path, patch) {
-    if (!path) return;
-    for (let attempt = 0; ; attempt++) {
-      const text = await readTextFile(path);
-      const obj = { ...JSON.parse(text || "{}"), ...patch };
-      try { await writeTextFile(path, JSON.stringify(obj, null, 2) + "\n", text); return; }
-      catch (e) { if (attempt === 2) throw e; } // Herdr wrote it meanwhile (zoom): read again.
-    }
+  async helper(...args) {
+    if (!this.modDir) throw new Error("look-tryout's folder wasn't found");
+    const r = await exec("python3", [`${this.modDir}/helper.py`, ...args], { timeout: 180000 });
+    if (r.code !== 0) throw new Error(r.stderr.trim().split("\n").pop() || `helper.py exited ${r.code}`);
   }
 
   saveVerdicts(cx) {
     const text = JSON.stringify({ updated: new Date().toISOString(), verdicts: this.verdicts }, null, 2) + "\n";
     const path = `${this.dataDir}/verdicts.json`;
-    this.enqueue(cx, async () => writeTextFile(path, text, await readTextFile(path)));
+    // Its own chain: a verdict must land even when the tryout ends right after it.
+    this.verdictWrites = (this.verdictWrites ?? Promise.resolve())
+      .then(async () => writeTextFile(path, text, await readTextFile(path)))
+      .catch(e => { this.status = `Could not save verdicts: ${e?.message ?? e}`; cx.notify(); });
   }
 
   move(by, cx) {
@@ -257,7 +269,7 @@ export default class LookTryout extends View {
     if (!list.length) return;
     this.pos[this.key] = (this.pos[this.key] + by + list.length) % list.length;
     this.status = "";
-    this.show(cx);
+    this.show(cx, true);
   }
 
   setRound(i, cx) {
@@ -274,7 +286,7 @@ export default class LookTryout extends View {
     const list = this.lists[this.key];
     const next = list.findIndex(([n], i) => i > this.pos[this.key] && !this.verdicts[this.key][n]);
     const left = next >= 0 ? next : list.findIndex(([n]) => !this.verdicts[this.key][n]);
-    if (left >= 0) { this.pos[this.key] = left; this.show(cx); return; }
+    if (left >= 0) { this.pos[this.key] = left; this.show(cx, true); return; }
     // Round finished: move on to the next round with anything undecided.
     const finished = ROUNDS[this.round].title;
     const r = ROUNDS.findIndex(({ key }, i) => i > this.round && !(key === "wallpaper" && !this.frosted)
@@ -298,17 +310,27 @@ export default class LookTryout extends View {
     return this.lists.wallpaper.find(([n]) => n === this.current.wallpaper)?.[2] ?? this.originalWallpaperPath;
   }
 
+  // Keep hands everything to helper.py: fonts into settings.json and settings.base.json (which
+  // link.py merges back in), the theme into each of Parker's layouts (app.theme only sets the shown
+  // one), and a fresh Frosted render, since the theme's background is baked into the blurred image.
   keep(cx) {
     this.done = true;
+    const c = this.current;
+    const wallpaper = this.currentWallpaperPath();
+    const job = {
+      settings: this.settingsPath, base: this.basePath, theme: c.theme,
+      fonts: { font: c.font, ui_font: c.ui_font },
+      layouts: ["Parker", "Frosted", "Meeting", "Demo"].filter(l => layouts().includes(l)),
+      frost: this.frost && wallpaper && layouts().includes("Frosted")
+        ? [this.frost, wallpaper, "--blur", String(this.blur), "--theme", c.theme] : null,
+    };
     this.status = "Keeping this look…";
-    // Live settings already hold the fonts. The base file is what link.py merges back in.
-    this.enqueue(cx, () => this.patchJson(this.basePath, { theme: this.current.theme, font: this.current.font, ui_font: this.current.ui_font }));
-    // Frosted bakes a tint of the theme's background into the image, so render it once more.
-    if (this.frosted && this.currentWallpaperPath()) {
-      this.enqueue(cx, () => this.frostWallpaper(this.currentWallpaperPath(), this.blur, this.current.theme));
-    }
-    this.queue.then(() => closeOverlay(props().overlay));
     cx.notify();
+    // Visiting the other layouts closes this window, so the helper runs on after it goes.
+    this.queue.catch(() => {}).then(() => {
+      exec("python3", [`${this.modDir}/helper.py`, "keep", JSON.stringify(job)], { timeout: 600000 });
+      closeOverlay(props().overlay);
+    });
   }
 
   // Puts back whatever the tryout changed. One restore.py process does the writes, because a closing
@@ -316,8 +338,9 @@ export default class LookTryout extends View {
   restore() {
     const o = this.original, c = this.current;
     const theme = o.theme && c.theme !== o.theme ? o.theme : null;
-    // app.theme acts on the shown layout. After a layout switch, restore.py waits for ours instead.
-    if (theme && shared("layout") === this.layout) run("app.theme", { name: theme });
+    // app.theme acts on the shown layout. After a layout switch, helper.py waits for ours instead.
+    const here = shared("layout") === this.layout;
+    if (theme && here) run("app.theme", { name: theme });
     const fonts = {};
     for (const k of ["font", "ui_font"]) if (o[k] && c[k] !== o[k]) fonts[k] = o[k];
     let frost = null;
@@ -329,22 +352,29 @@ export default class LookTryout extends View {
         frost = [this.frost, "--relayout", "--theme", glass];
       }
     }
-    if (!theme && !frost && !Object.keys(fonts).length) return Promise.resolve();
-    const job = JSON.stringify({ settings: this.settingsPath, fonts, theme, frost, layout: this.layout });
-    return exec("python3", [`${this.modDir}/restore.py`, job], { timeout: 180000 })
-      .catch(e => { this.status = `Restore failed: ${e?.message ?? e}`; });
+    if ((!theme || here) && !frost && !Object.keys(fonts).length) return Promise.resolve();
+    const job = JSON.stringify({ settings: this.settingsPath, fonts, theme: here ? null : theme, frost, layout: this.layout });
+    return this.helper("restore", job).catch(e => { this.status = `Restore failed: ${e?.message ?? e}`; });
   }
 
+  // Esc waits for the job already running to land, then restores. Waiting jobs are dropped.
   quit(cx) {
     this.done = true;
     this.status = "Restoring your look…";
     cx.notify();
-    this.restore().then(() => closeOverlay(props().overlay));
+    this.queue.catch(() => {}).then(() => this.restore()).then(() => this.leave());
+  }
+
+  leave() {
+    setShared("look-tryout.open", 0);
+    closeOverlay(props().overlay);
   }
 
   // The window can also go without Esc (Herdr's close, a layout switch). Put the look back then too.
   async close() {
-    if (this.bounce || this.done || checking()) return;
+    if (this.bounce || checking()) return;
+    setShared("look-tryout.open", 0);
+    if (this.done) return;
     this.done = true;
     await this.restore();
   }
@@ -356,6 +386,7 @@ export default class LookTryout extends View {
       "next-round": () => this.setRound(this.round + 1, cx), "prev-round": () => this.setRound(this.round - 1, cx),
       blur: () => this.toggleBlur(cx), keep: () => this.keep(cx), restore: () => this.quit(cx),
       focus: () => this.handle.focus(),
+      preview: () => this.show(cx, true),
     };
     actions[c]?.();
   }
@@ -386,7 +417,7 @@ export default class LookTryout extends View {
       return stop(div().id(`dot-${i}`).w(10).h(10).rounded(5).cursor_pointer()
         .border_1().border_color(i === at ? t.foreground : d === "yes" ? yes : d === "no" ? no : t.dim)
         .bg(d === "yes" ? yes : d === "no" ? no : "#00000000")
-        .on_click((_e, cx) => { this.pos[k] = i; this.show(cx); }));
+        .on_click((_e, cx) => { this.pos[k] = i; this.show(cx, true); }));
     }));
 
     const codeFont = k === "font" && item ? item[0] : (this.current.font || "JetBrains Mono");
@@ -404,10 +435,14 @@ export default class LookTryout extends View {
     if (k === "wallpaper" && !this.frosted) {
       body = div().text_size(12).text_color(t.muted)
         .child("Wallpapers show behind the Frosted layout. Switch to it (Settings > Look or Cmd+Shift+L), then open Look tryout again.");
+    } else if (k === "wallpaper" && !list.length) {
+      body = div().text_size(12).text_color(t.muted)
+        .child("No wallpaper thumbnails yet. Run ~/dotfiles/herdr-app/wallpapers/jade.py, then ~/dotfiles/herdr-app/frost --thumbs.");
     } else if (k === "wallpaper") {
       body = v_flex().gap(8)
         .when(!!(item && this.thumbs[item[0]]), el => el.child(image(this.thumbs[item[0]]).w(300).h(188).rounded(8)))
         .child(h_flex().gap(6).items_center().text_size(11).text_color(t.muted)
+          .when(!!item && this.current.wallpaper !== item[0], el => el.child(key("space")).child("show it ·"))
           .child(key("b")).child(this.blur ? "Blurred (frosted)" : "Sharp")
           .child(div().text_color(t.dim).child(`· glass tinted by ${this.current.theme ?? "the current theme"}`)));
     } else {
