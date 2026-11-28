@@ -12,7 +12,7 @@ platform = "linux"
 # and run-once are Mac-only (Apple Music, client demos, zsh demo helpers).
 mods = [
   "my-files", "my-changes", "my-tabs", "space-sessions", "keybind-help", "usage-limits",
-  "session-launcher", "revive", "wallpaper", "jobs", "pane-header", "parker-toast",
+  "session-launcher", "revive", "wallpaper", "look-tryout", "jobs", "pane-header", "parker-toast",
 ]
 external_mods = []
 # Layouts from herdr-app/layouts/ that this machine links. Blocks whose mod this

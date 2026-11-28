@@ -6,6 +6,7 @@ Usage:
   frost.py <image> --blur 0   the image sharp, unblurred
   frost.py <image> --desktop  also set it as the macOS desktop wallpaper (macOS only)
   frost.py --relayout         rebuild the Frosted layout from Parker, keeping its background
+  frost.py ... --theme NAME   tint the glass from themes/NAME.json (kept for later runs; "none" for Rose Pine)
   frost.py --list             wallpapers in ~/Pictures/wallpapers (or ~/Wallpapers)
   frost.py --thumbs           rebuild the wallpaper picker's thumbnails and index (Cmd+Shift+B)
 
@@ -45,6 +46,42 @@ LOOK = {
 }
 
 
+def theme_look(name):
+    """The translucent overrides for a theme, derived from its colors. None keeps the Rose Pine LOOK."""
+    if not name or name == "none":
+        return LOOK
+    path = HOME / "themes" / f"{name}.json"
+    if not path.exists():
+        sys.exit(f"frost: no theme {path}")
+    t = json.loads(path.read_text())
+    bg, fg, c = t["background"], t["foreground"], t.get("colors", {})
+    chrome = c.get("chrome", mix(bg, "#000000", 0.2))
+    # Over a busy wallpaper, secondary text needs to sit closer to the foreground than in the opaque theme.
+    muted, dim = mix(c.get("muted", mix(fg, bg, 0.35)), fg, 0.35), mix(c.get("dim", mix(fg, bg, 0.5)), fg, 0.35)
+    return {
+        "terminal_opacity": LOOK["terminal_opacity"],
+        "sidebar": chrome + "80",
+        "pane": bg + "2e",
+        "tint": bg,
+        "colors": {"border": fg + "26", "chrome": chrome + "8c", "surface": bg + "8c", "background": bg + "8c",
+                   "muted": muted, "dim": dim},
+    }
+
+
+def mix(a, b, amount):
+    """a moved toward b by amount (0..1), as #rrggbb."""
+    ca, cb = [int(a[i:i + 2], 16) for i in (1, 3, 5)], [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(ca, cb))
+
+
+def saved_choice():
+    """What the last run picked: {path, blur, theme}, from the picker's current.json."""
+    try:
+        return json.loads((THUMBS / "current.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 GLASS_PANELS = {"ops-tasks", "jobs", "day-view", "artifacts", "factory", "claude-usage"}
 
 
@@ -76,20 +113,20 @@ def frost(src: Path, blur: float, tint: str, tint_amount: float) -> Path:
     return out
 
 
-def build_layout(background: Path) -> None:
+def build_layout(background: Path, look=LOOK) -> None:
     # The installed copy: link.py writes one without the panels this machine lacks.
     layout = json.loads((HOME / "layouts/Parker.json").read_text())
     layout.pop("cloned_from", None)
     layout["background"] = {"image": str(background.relative_to(HOME)), "fit": "cover"}
-    layout["terminal_opacity"] = LOOK["terminal_opacity"]
-    layout["colors"] = {**layout.get("colors", {}), **LOOK["colors"]}
+    layout["terminal_opacity"] = look["terminal_opacity"]
+    layout["colors"] = {**layout.get("colors", {}), **look["colors"]}
 
     def walk(node):
         if node.get("id") == "sidebar":
-            node["background"] = LOOK["sidebar"]
+            node["background"] = look["sidebar"]
         pane = node.get("content", {}).get("pane") if isinstance(node.get("content"), dict) else None
         if pane:
-            pane["background"] = LOOK["pane"]
+            pane["background"] = look["pane"]
         # Panel mods paint theme().background, which stays opaque. With glass they paint chrome instead.
         if node.get("id") in GLASS_PANELS:
             node["content"]["props"] = {**node["content"].get("props", {}), "glass": True}
@@ -152,7 +189,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("image", nargs="?", type=Path)
     p.add_argument("--blur", type=float, default=90, help="blur radius in screen px, 0 for sharp (default 90)")
-    p.add_argument("--tint", default="#232136", help="color mixed over the blur (default rose-pine-moon base)")
+    p.add_argument("--tint", help="color mixed over the blur (default: the theme's background, else rose-pine-moon base)")
+    p.add_argument("--theme", help="theme in themes/ whose colors tint the glass; 'none' for the Rose Pine look")
     p.add_argument("--tint-amount", type=float, default=0.2, help="0..1 (default 0.2)")
     p.add_argument("--desktop", action="store_true", help="also set the sharp wallpaper on the macOS desktop")
     p.add_argument("--list", action="store_true")
@@ -160,10 +198,20 @@ def main():
     p.add_argument("--relayout", action="store_true", help="rebuild the Frosted layout from Parker, keeping its background")
     args = p.parse_args()
 
+    saved = saved_choice()
+    theme = args.theme if args.theme is not None else saved.get("theme")
+    look = theme_look(theme)
+
+    def remember(**changes):
+        THUMBS.mkdir(parents=True, exist_ok=True)
+        (THUMBS / "current.json").write_text(json.dumps({**saved, **changes, "theme": theme}) + "\n")
+
     if args.relayout:
         bg = current_background()
-        build_layout(bg)
-        print(f"rebuilt Frosted from Parker with {bg.name}")
+        build_layout(bg, look)
+        if args.theme is not None:
+            remember()
+        print(f"rebuilt Frosted from Parker with {bg.name}" + (f" and the {theme} theme" if theme else ""))
         return
 
     if args.thumbs:
@@ -174,12 +222,11 @@ def main():
             print(f)
         return
     src = args.image.expanduser().resolve()
-    bg = frost(src, args.blur, args.tint, args.tint_amount)
-    build_layout(bg)
+    bg = frost(src, args.blur, args.tint or look.get("tint", "#232136"), args.tint_amount)
+    build_layout(bg, look)
     if args.desktop:
         set_desktop(src)
-    THUMBS.mkdir(parents=True, exist_ok=True)
-    (THUMBS / "current.json").write_text(json.dumps({"path": str(src), "blur": args.blur}) + "\n")
+    remember(path=str(src), blur=args.blur)
     print(f"frosted {src.name} -> {bg}")
 
 

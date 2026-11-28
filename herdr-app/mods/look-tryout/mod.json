@@ -1,0 +1,13 @@
+{
+  "place": "none",
+  "title": "Look tryout",
+  "overlay": { "width": 480, "height": 400 },
+  "palette": [
+    {
+      "title": "Look tryout",
+      "command": "mod.open",
+      "args": { "name": "look-tryout" },
+      "words": "theme font colors jade emerald try preview"
+    }
+  ]
+}
