@@ -213,9 +213,6 @@ export default class LookTryout extends View {
     if (k === "theme") {
       run("app.theme", { name });
       if (this.frosted) this.enqueue(cx, () => this.frostRun(["--relayout", "--theme", name]), "theme");
-    } else if (k === "wallpaper" && !list.length) {
-      body = div().text_size(12).text_color(t.muted)
-        .child("No wallpaper thumbnails yet. Run ~/dotfiles/herdr-app/wallpapers/jade.py, then ~/dotfiles/herdr-app/frost --thumbs.");
     } else if (k === "wallpaper") {
       this.enqueue(cx, () => this.frostWallpaper(item[2], this.blur, this.current.theme), "wallpaper");
     } else {
@@ -401,7 +398,9 @@ export default class LookTryout extends View {
       focus: () => this.handle.focus(),
       preview: () => this.show(cx, true),
     };
-    actions[c]?.();
+    // An exception here would end the command loop and leave the keys dead, so show it instead.
+    try { actions[c]?.(); }
+    catch (e) { this.status = `Error: ${e?.message ?? e}`; cx.notify(); }
   }
 
   render() {
