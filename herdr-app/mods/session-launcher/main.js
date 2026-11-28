@@ -4,8 +4,8 @@ import { appHome, checking, closeOverlay, exec, focused, home, knownAgents, next
 
 // Prompt-driven session launcher: candidate repo chips while routing (Tab picks another), a
 // stepped effort bar and a lift on Start. Opened on its own (mod.open, Cmd+Shift+N) it is a
-// frameless window overlay that covers the window: the card unrolls from a line over its own
-// backdrop and rolls back up on Cancel, Esc or a click outside. Tasks Play (ops-tasks) and the
+// frameless window overlay that covers the window: the card rises over its own backdrop while
+// its rows cascade in, and drops and fades on Cancel, Esc or a click outside. Tasks Play (ops-tasks) and the
 // Lock-in fix (lock-in) open it the same way with props {task}: kind window, frame none, 1 x 1.
 const HELPER = `${appHome()}/mods/session-launcher/projects.py`;
 // Jobs for the detached start, one file each.
@@ -19,11 +19,12 @@ const mac = () => appWindow()?.platform !== "linux";
 const ROUTE_DEBOUNCE = 400;
 // How long the card takes to lift and fade before the overlay closes.
 const LIFT_MS = 350;
-const UNROLL_MS = 340;   // line to full card
-const ROLL_UP_MS = 200;  // card back to a line on Cancel
-// The card rises and fades in on open, and drops and fades out on Cancel, Esc or a click outside.
+// Cascade: the card rises 18px and fades in, then its rows follow 40ms apart. Cancel, Esc or a
+// click outside drops it 10px as it fades.
 const RISE_MS = 220;
 const DROP_MS = 160;
+const CARD_RISE = 18, CARD_DROP = 10;
+const FIELD_RISE = 8, FIELD_IN = 200, FIELD_LEAD = 90, FIELD_STEP = 40;
 // The card's size. The overlay itself covers the window (mod.json), frameless, so the card draws
 // its own border, corners and shadow and the space around it catches a click outside.
 const CARD_W = 560;
@@ -187,7 +188,9 @@ export default class SessionLauncher extends View {
     // Phase flag: the card mounts hidden and shows a frame later so its transition runs.
     this.shown = checking() || this.framed;
     this.closing = false;
-    if (!checking()) cx.timer.after(30, cx => { this.shown = true; cx.notify(); });
+    // The rows cascade in a frame after mounting, in the frameless card and a caller's dialog alike.
+    this.fieldsIn = checking();
+    if (!checking()) cx.timer.after(30, cx => { this.shown = true; this.fieldsIn = true; cx.notify(); });
     this.lastValue = this.input.value();
     this.lastContent = this.input.content();
     this.input.on("change", (_e, cx) => {
@@ -245,9 +248,14 @@ export default class SessionLauncher extends View {
     });
   }
 
-  rolledOpen() { return this.shown && !this.closing; }
+  // One row of the card, in the cascade: it rises 8px and fades in after the rows above it.
+  field(i, el) {
+    const p = { duration: FIELD_IN, delay: FIELD_LEAD + i * FIELD_STEP, easing: "ease-out" };
+    return el.id(`field-${i}`).relative().top(this.fieldsIn ? 0 : FIELD_RISE).opacity(this.fieldsIn ? 1 : 0)
+      .transition("top", p).transition("opacity", p);
+  }
 
-  // Cancel, Esc and a click outside: the card rolls up to a line and fades, then the overlay closes.
+  // Cancel, Esc and a click outside: the card drops and fades, then the overlay closes.
   // A framed dialog closes at once.
   dismiss(cx) {
     if (this.busy || this.closing) return;
@@ -255,7 +263,7 @@ export default class SessionLauncher extends View {
     this.closing = true;
     this.picking = null;
     cx.notify();
-    cx.timer.after(ROLL_UP_MS + 130, () => closeOverlay(props()?.overlay));
+    cx.timer.after(DROP_MS + 40, () => closeOverlay(props()?.overlay));
   }
 
   pasteImage(cx) {
@@ -638,28 +646,28 @@ export default class SessionLauncher extends View {
     const framed = this.framed;
     return card.p(framed ? 14 : 18).gap(framed ? 8 : 12)
       // One line: a long Tasks Play title wrapped in the fixed-height dialog and squeezed the prompt to nothing.
-      .child(div().flex_shrink_0().min_w(0).truncate().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session"))
+      .child(this.field(0, div().flex_shrink_0().min_w(0).truncate().text_size(17).font_semibold().text_color(t.foreground).child(this.task ? `Starting ${this.task.title}` : "New session")))
       // Keep padding outside the native editor so its scroll viewport matches its visible height.
       // The minimum keeps the prompt clickable however much the rows below wrap.
-      .child(v_flex().flex_1().min_h(framed ? 48 : 72).p(framed ? 8 : 10).rounded(8).border_1().border_color(t.input).bg(t.background)
-        .child(Textarea.new(this.input).flex_1().min_h(0).w_full().text_color(t.foreground)))
-      .when(this.candidates().length > 0, el => el.child(this.chips(t)))
-      .child(h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
+      .child(this.field(1, v_flex().flex_1().min_h(framed ? 48 : 72).p(framed ? 8 : 10).rounded(8).border_1().border_color(t.input).bg(t.background)
+        .child(Textarea.new(this.input).flex_1().min_h(0).w_full().text_color(t.foreground))))
+      .when(this.candidates().length > 0, el => el.child(this.field(2, this.chips(t))))
+      .child(this.field(3, h_flex().flex_shrink_0().flex_wrap().items_center().gap(8)
         .child(div().text_size(11).text_color(t.dim).child("Agent"))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "claude" ? t.selected : t.raised).text_color(this.agent === "claude" ? t.foreground : t.muted).child("Claude").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "claude") this.toggleAgent(cx); }))
         .child(div().cursor_pointer().px(9).py(4).rounded(6).bg(this.agent === "codex" ? t.selected : t.raised).text_color(this.agent === "codex" ? t.foreground : t.muted).child("Codex").on_click((_e, cx) => { this.agentTouched = true; if (this.agent !== "codex") this.toggleAgent(cx); }))
-        .child(div().text_size(11).text_color(t.dim).child(mac() ? "⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image" : "Ctrl+Shift+A switch agent · Ctrl+Shift+S start · Ctrl+V pastes an image")))
-      .child(this.modelRow(t))
-      .child(v_flex().flex_shrink_0().gap(4)
+        .child(div().text_size(11).text_color(t.dim).child(mac() ? "⌘⇧A switch agent · ⌘⇧S start · ⌘V or ⌃V pastes an image" : "Ctrl+Shift+A switch agent · Ctrl+Shift+S start · Ctrl+V pastes an image"))))
+      .child(this.field(4, this.modelRow(t)))
+      .child(this.field(5, v_flex().flex_shrink_0().gap(4)
         .child(h_flex().items_center().gap(8)
           .child(div().flex_1().text_size(12).text_color(t.foreground).child(this.destination()))
           .child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Change folder").on_click((_e, cx) => this.changeFolder(cx)))
           .when(Boolean(this.override), el => el.child(div().cursor_pointer().text_size(12).text_color(t.accent).child("Auto").on_click((_e, cx) => { if (!this.busy) { this.override = null; this.scheduleRoute(cx); } }))))
-        .when(Boolean(this.route), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(this.route.reason))))
+        .when(Boolean(this.route), el => el.child(div().min_w(0).truncate().text_size(11).text_color(t.muted).child(this.route.reason)))))
       .when(Boolean(this.error), el => el.child(div().flex_shrink_0().text_color(t.blocked).child(this.error)))
-      .child(h_flex().flex_shrink_0().justify_end().gap(10)
+      .child(this.field(6, h_flex().flex_shrink_0().justify_end().gap(10)
         .child(div().cursor_pointer().text_color(t.muted).child("Cancel").on_click((_e, cx) => this.dismiss(cx)))
-        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx))));
+        .child(div().cursor_pointer().px(12).py(7).rounded(7).bg(canStart ? t.solid : t.raised).text_color(canStart ? t.solid_foreground : t.muted).child(this.busy ? "Starting…" : this.error ? "Retry" : "Start").on_click((_e, cx) => this.start(cx)))));
   }
 
   render() {
@@ -680,23 +688,18 @@ export default class SessionLauncher extends View {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(div().id("backdrop").absolute().inset_0().bg("#0b0a1499")
         .opacity(this.shown && !this.closing && !this.leaving ? 1 : 0)
-        .transition("opacity", { duration: this.closing ? ROLL_UP_MS + 120 : UNROLL_MS, easing: "ease-out" }))
+        .transition("opacity", motion))
       .on_click((_e, cx) => this.dismiss(cx))
       .on_key_down((e, cx) => this.onKey(e, cx))
-      // The card unrolls like a scroll: it opens as a thin line and its height grows downward,
-      // revealing the content top first. Cancel rolls it back up to the line and fades it;
-      // Start lifts and fades it. The fixed-height box keeps the top edge still.
+      // The card rises into place and fades in while its rows cascade (field()). Cancel drops
+      // and fades it; Start lifts and fades it.
       .child(v_flex().id("roll").flex_shrink_0().w(CARD_W).h(CARD_H).items_start()
-      // The clip grows; the card inside keeps its full height, so the content is revealed
-      // top first instead of squeezing.
-      .child(div().id("clip").relative().flex_shrink_0().w(CARD_W).h(this.rolledOpen() ? CARD_H : 3).overflow_hidden()
-        .transition("height", this.closing ? { duration: ROLL_UP_MS, easing: "ease-in" } : { duration: UNROLL_MS, easing: "ease-out" })
+      .child(div().id("clip").relative().flex_shrink_0().w(CARD_W).h(CARD_H).overflow_hidden()
         .bg(t.popover).border_1().border_color(t.border).rounded(12).shadow_xl()
         // A press inside the card is not a click outside.
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .top(this.leaving ? -18 : 0).transition("top", motion)
-        .opacity(this.leaving ? 0 : this.closing ? 0 : 1)
-        .transition("opacity", this.closing ? { duration: 120, delay: ROLL_UP_MS, easing: "ease-in" } : motion)
+        .top(this.leaving ? -18 : this.closing ? CARD_DROP : this.shown ? 0 : CARD_RISE).transition("top", motion)
+        .opacity(this.shown && !this.closing && !this.leaving ? 1 : 0).transition("opacity", motion)
       .child(this.content(t, v_flex().id("card").relative().flex_shrink_0().w(CARD_W - 2).h(CARD_H - 2)))));
   }
 }
