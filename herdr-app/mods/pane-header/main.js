@@ -22,12 +22,36 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
-import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, settings, theme } from "herdr";
+import { checking, exec, focused, hc, home, layout, nextCommand, panes, props, run, settings, setShared, shared, theme } from "herdr";
 import { lastLine } from "./lib/lastline.js";
 
 const PANEL_H = 150;
 const DELEGATE = () => `${home()}/.local/bin/herdr-delegate`;
 const GROW_MS = 260;
+
+// New pane cascade: Herdr makes a split at once, so a new pane's header fades in while a cover
+// over its terminal fades away in bands, top to bottom, 35ms apart. Every header records its
+// pane in SEEN, so a pane is new when it wasn't seen but a pane beside it in its tab was.
+// Headers that mount in the first seconds after Herdr starts never count as new.
+const SEEN = "pane-header.seen";
+const COVER_BANDS = 10, COVER_LEAD = 80, COVER_STEP = 35, COVER_FADE = 200, HEAD_IN = 180;
+// Herdr's terminal line height as a multiple of the font size; it sizes the cover from the
+// pane's visible rows, since a header doesn't learn its pane's height.
+const LINE = 1.2;
+function paneBacking(t, fallback) {
+  const o = Number(layout()?.terminal_opacity);
+  if (!(o >= 0 && o < 1) || !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(t.background ?? "")) return fallback;
+  return t.background.slice(0, 7) + Math.round((1 - (1 - o) ** 2) * 255).toString(16).padStart(2, "0");
+}
+// At init: the panes seen before this one when it might be new, else null. A header can mount
+// before panes() lists its pane, so the check against its tab waits for render (splitCheck).
+function unseen(pane) {
+  const seen = shared(SEEN);
+  const ids = Array.isArray(seen?.ids) ? seen.ids : [];
+  const started = seen?.started ?? Date.now();
+  setShared(SEEN, { started, ids: [...ids.filter(id => id !== pane), pane].slice(-300) });
+  return !seen || Date.now() - started < 3000 || ids.includes(pane) ? null : ids;
+}
 
 const alpha = (hex, a) => {
   const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex ?? "");
@@ -98,6 +122,10 @@ export default class PaneHeader extends View {
     // Diagnose needs herdr-delegate (the kit's, on the work Mac). Until it's found, it stays off.
     this.canDiagnose = false;
     if (checking()) return;
+    // "pre" while the new pane's cover is up, "in" while it fades away, null at rest.
+    this.cover = null;
+    this.seenBefore = unseen(props()?.pane);
+    this.mountedAt = Date.now();
     cx.spawn(async cx => {
       const r = await exec("test", ["-x", DELEGATE()]).catch(() => null);
       this.canDiagnose = r?.code === 0;
@@ -197,10 +225,34 @@ export default class PaneHeader extends View {
     return this.size?.width > 0 ? this.size.width / zoom : 0;
   }
 
+  // The first render that finds this pane decides whether it is a new split, and starts the cover.
+  splitCheck(p, cx) {
+    const ids = this.seenBefore;
+    if (!ids) return;
+    this.seenBefore = null;
+    if (Date.now() - this.mountedAt > 1000) return;
+    if (!panes().some(o => o.tab === p.tab && o.pane !== p.pane && ids.includes(o.pane))) return;
+    this.cover = "pre";
+    this.coverStarted = false;
+    // A pane whose width never arrives doesn't keep its header hidden.
+    cx.timer.after(1500, cx => { if (!this.coverStarted) { this.cover = null; cx.notify(); } });
+  }
+
+  // The cover needs the header's width, which arrives after the first render. It fades from the
+  // first frame that can draw it.
+  startCover(cx) {
+    if (this.cover !== "pre" || this.coverStarted || !(this.width() > 0)) return;
+    this.coverStarted = true;
+    cx.timer.after(30, cx => { this.cover = "in"; cx.notify(); });
+    cx.timer.after(30 + COVER_LEAD + COVER_BANDS * COVER_STEP + COVER_FADE + 50, cx => { this.cover = null; cx.notify(); });
+  }
+
   render(cx) {
     const t = theme();
     const p = this.me();
     if (!p) return div();
+    this.splitCheck(p, cx);
+    this.startCover(cx);
     const name = nameOf(p);
     const pic = icon(p.program, 14, t.dim);
     const st = p.status;
@@ -234,6 +286,7 @@ export default class PaneHeader extends View {
       .when(st === "blocked", el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).child("Needs you")))
       .when(st === "done", el => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
       .when(this.open, el => el.child(div().flex_none().px(6).h(18).flex().items_center().rounded(5).bg(alpha(t.accent, 0.2)).text_size(10.5).font_semibold().text_color(t.accent).child("Diagnosing")))
+      .when(Boolean(this.cover), el => el.opacity(this.cover === "pre" ? 0 : 1).transition("opacity", { duration: HEAD_IN, easing: "ease-out" }))
       .when(this.hovered && !this.open, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
@@ -244,7 +297,21 @@ export default class PaneHeader extends View {
     return Popup.new(`pane-diag-${pane}`, row)
       .size_full()
       .anchor(bottom ? "bottom_left" : "top_left")
-      .when(this.open && width > 0, el => el.content(this.panel(t, name, bottom, dark, width)));
+      .when(this.open && width > 0, el => el.content(this.panel(t, name, bottom, dark, width)))
+      .when(!this.open && Boolean(this.cover) && width > 0 && !bottom, el => el.content(this.coverOver(t, p, width)));
+  }
+
+  // The new pane's cover: bands in the terminal's own backing that fade away top to bottom.
+  coverOver(t, p, width) {
+    const rows = p.scroll?.len || 24;
+    const zoom = Number(settings()?.zoom) || 1;
+    const font = Number(settings()?.font_size) || 13;
+    const height = Math.round(rows * font * LINE / zoom);
+    const fill = paneBacking(t, solid(t.background));
+    return v_flex().id(`pane-cover-${p.pane}`).w(width).h(height)
+      .children(Array.from({ length: COVER_BANDS }, (_, i) => div().id(`pane-cover-${p.pane}-${i}`).flex_1().bg(fill)
+        .opacity(this.cover === "pre" ? 1 : 0)
+        .transition("opacity", { duration: COVER_FADE, delay: COVER_LEAD + i * COVER_STEP, easing: "ease-out" })));
   }
 
   // The panel that grows out of the header: dark and opaque, the agent's last line quoted,
