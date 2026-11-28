@@ -128,6 +128,10 @@ def build_layout(background: Path, look=LOOK) -> None:
     def walk(node):
         if node.get("id") == "sidebar":
             node["background"] = look["sidebar"]
+        # usage-limits paints the status row's right half with its own glass (chrome). The glances
+        # on the left paint nothing, so give their block the same glass over the wallpaper.
+        if node.get("id") == "glances":
+            node["background"] = look["colors"]["chrome"]
         pane = node.get("content", {}).get("pane") if isinstance(node.get("content"), dict) else None
         if pane:
             pane["background"] = look["pane"]
