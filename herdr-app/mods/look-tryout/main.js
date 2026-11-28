@@ -275,7 +275,20 @@ export default class LookTryout extends View {
   setRound(i, cx) {
     this.round = (i + ROUNDS.length) % ROUNDS.length;
     this.status = "";
+    if (this.key === "font" || this.key === "ui_font") this.refreshFonts();
     this.show(cx);
+  }
+
+  // Herdr reads the machine's fonts at start and again on a look change, so fonts installed while
+  // it ran appear after the Themes round has applied one. Re-read the list on entering a font round.
+  refreshFonts() {
+    const have = new Set(fonts());
+    for (const [k, all] of [["font", CODE_FONTS], ["ui_font", UI_FONTS]]) {
+      const shown = this.lists[k][this.pos[k]]?.[0];
+      this.lists[k] = all.filter(([n]) => have.has(n));
+      const at = this.lists[k].findIndex(([n]) => n === shown);
+      this.pos[k] = at >= 0 ? at : Math.max(0, this.lists[k].findIndex(([n]) => !this.verdicts[k][n]));
+    }
   }
 
   vote(v, cx) {

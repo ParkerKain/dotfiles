@@ -41,13 +41,23 @@ def shown_layout():
         return None
 
 
+def frost_running():
+    """True while a frost render runs: a process whose program or script is herdr-app's frost.
+    Matching whole command lines would also match this helper, whose JSON argument names frost."""
+    out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        words = command.split()
+        if int(pid) != os.getpid() and any(w.endswith(("/herdr-app/frost", "/herdr-app/frost.py")) for w in words[:3]):
+            return True
+    return False
+
+
 def wait_for_frost(limit=90):
     """A render the tryout started may still be running. Let it land first, or it would overwrite
-    the restored layout when it finishes. Matches the shell wrapper too, which starts first."""
+    the restored layout when it finishes."""
     end = time.time() + limit
-    while time.time() < end:
-        if subprocess.run(["pgrep", "-f", "herdr-app/frost"], capture_output=True).returncode != 0:
-            return
+    while frost_running() and time.time() < end:
         time.sleep(0.3)
 
 
