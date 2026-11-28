@@ -43,6 +43,7 @@ Herdr picks up a relinked mod right away, because `link.py` replaces links by re
 `jobs/job` runs scheduled agent jobs and hooks as Herdr sessions, and the Jobs panel (`mods/jobs`) shows them. Each machine reads only the sources in its manifest's `[jobs]`, so work jobs and hooks (parker-agent-kit `jobs/defs/`) stay on the Mac and personal jobs (`machines/omarchy/jobs/`) stay on Omarchy.
 
 - A job file has `repo`, `agent` (`claude` or `codex`), `prompt` or `prompt_file`, and an optional `[schedule]` (`times = ["07:00"]`, optional `weekdays` with 1 = Monday). Its session opens in the Herdr space named by `space` (default `Jobs`, created when missing), so any first-run question it asks is visible.
+- Jobs marked `require_visible = true` start only in an existing local Herdr space. On Linux the runner opens Herdr if needed when a Wayland desktop session is available. If it can't verify the tab in that space, it withholds the prompt.
 - A hook file has `check = "<script>"` and `interval = <seconds>`. The script answers `check` and `status` (JSON `{ok, hooks: [{last_check, last_trigger}]}`), and the engine schedules the check.
 - `job install <name>` writes a launchd plist on macOS (`com.parker.job.<name>`, `com.parker.hook.<name>`) or a systemd user timer on Linux (`parker-job-<name>`, `parker-hook-<name>`). The panel's Turn on and Turn off do the same.
 - `job pause` and `job resume` (the panel's Pause button, and demo mode) make scheduled runs and checks skip. `job pause --until 2h` (or `HH:MM`, or `YYYY-MM-DD HH:MM`) lifts itself at that time.
