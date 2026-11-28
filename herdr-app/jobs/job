@@ -290,6 +290,17 @@ def until_epoch(text, now=None):
 
 # ---- run a job ------------------------------------------------------------
 
+def wait_for_start(addr, timeout=45):
+    """Wait for the launch prompt to start a turn, even if Herdr reports startup idle."""
+    deadline = time.monotonic() + timeout
+    while True:
+        info = hc("get", addr, check=False)
+        status = (info.get("status") or {}).get("state")
+        if (status and (status != "idle" or info.get("turn", 0))) or time.monotonic() >= deadline:
+            return info, status
+        time.sleep(1)
+
+
 def run(args):
     job = load(args.name)
     if job["kind"] != "job":
@@ -324,16 +335,12 @@ def run(args):
     if placeholder:
         herdr_do("tab.close", {"id": placeholder, "confirmed": True})
     name_tab(addr, job.get("tab") or job["name"].replace("-", " ").capitalize())
-    # A folder the agent has not trusted yet stops at a dialog with no status,
-    # and the first message waits behind it. Say so instead of looking like it ran.
-    hc("wait", addr, "--timeout", "45", check=False)
-    info = hc("get", addr, check=False)
-    status = (info.get("status") or {}).get("state")
     record(job["name"], session, addr, ts=int(started_at))
+    info, status = wait_for_start(addr)
     if status is None or (status == "idle" and info.get("turn", 0) == 0):
         print(json.dumps({"session": session, "address": addr, "started": False,
-                          "why": "agent is not working: probably a folder trust question. "
-                                 f"Open it (hc attach {session}) and answer; the prompt is delivered once the folder is trusted, so do not resend it."}))
+                          "why": "agent did not start a turn within 45 seconds. "
+                                 f"Open it (hc attach {session}) to check for a startup prompt."}))
         sys.exit(2)
     if (args.wait or close) and status == "working":
         while True:

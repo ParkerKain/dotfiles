@@ -238,6 +238,32 @@ case "$1" in
 esac
 """)
 
+    def test_job_closes_after_codex_reports_startup_idle(self):
+        self.write("prep", f'repo = "{self.repo}"\nagent = "codex"\nprompt = "x"\nclose_when_done = true\n')
+        (self.tmp / "bin/hc").write_text(f"""#!/bin/sh
+case "$1" in
+  run) echo '{{"address": "t1"}}' ;;
+  wait) echo '{{"status": "done", "reason": "status"}}' ;;
+  get)
+    if [ -f '{self.tmp}/exited' ]; then
+      echo '{{"state": "exited"}}'
+    elif [ -f '{self.tmp}/startup-idle' ]; then
+      echo 'ok: drafted prep' > '{self.tmp}/state/prep.outcome'
+      echo '{{"state": "live", "status": {{"state": "done"}}, "turn": 1}}'
+    else
+      touch '{self.tmp}/startup-idle'
+      echo '{{"state": "live", "status": {{"state": "idle"}}, "turn": 0}}'
+    fi ;;
+  send) touch '{self.tmp}/exited'; echo '{{}}' ;;
+  *) echo '{{}}' ;;
+esac
+""")
+        out = json.loads(self.job("run", "prep").stdout)
+        self.assertTrue(out["started"])
+        self.assertTrue(out["closed"])
+        self.assertEqual(out["outcome"], "ok: drafted prep")
+        self.assertTrue((self.tmp / "exited").exists())
+
     def test_a_session_that_errors_still_records_an_outcome(self):
         self.fake_session("error")
         self.write("brief", f'repo = "{self.repo}"\nagent = "claude"\nprompt = "x"\nclose_when_done = true\n')
