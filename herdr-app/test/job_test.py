@@ -502,7 +502,7 @@ touch "{ready}"
         self.assertEqual((out["started"], out["address"]), (True, "t1"))
         calls = log.read_text().splitlines()
         self.assertEqual(json.loads(calls[1].split("tab.new ", 1)[1]), {
-            "space": "sp1", "name": "Visible job", "folder": str(self.repo),
+            "space": "sp1", "name": "Visible job", "folder": str(self.repo.resolve()),  # macOS /var is a link to /private/var
             "argv": ["codex", "--no-daemon"], "focus": False,
         })
         self.assertEqual(calls[2:6], ["hc wait --json t1 --timeout 30", "hc get --json t1",
