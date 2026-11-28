@@ -18,7 +18,7 @@
     "cmd-shift-n": "mod.open:session-launcher",
     "cmd-shift-e": "mod.open:run-once",
     "cmd-shift-r": "mod.open:revive",
-    "cmd-shift-i": "pane-header.diagnose",
+    "cmd-shift-i": "mod.open:diagnose-shortcut",
     "cmd-p": "mod.open:picker",
     "cmd-shift-p": "app.palette",
     "cmd-,": "app.settings",

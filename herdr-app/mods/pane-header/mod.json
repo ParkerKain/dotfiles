@@ -1,1 +1,1 @@
-{ "place": "none", "title": "Pane header with Diagnose", "palette": [{ "title": "Diagnose", "command": "pane-header.diagnose", "words": "debug troubleshoot inspect agent fork diagnose session" }] }
+{ "place": "none", "title": "Pane header with Diagnose" }

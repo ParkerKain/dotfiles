@@ -14,7 +14,7 @@ const GROUPS = [
     ["mod.open:demo-mode", "Toggle demo mode"],
     ["mod.open:call-sheet", "Meeting mode"],
     ["lock-in.pick", "Lock-in pins"],
-    ["pane-header.diagnose", "Diagnose the focused pane"],
+    ["mod.open:diagnose-shortcut", "Diagnose the focused pane"],
     ["mod.open:picker", "Picker"],
     ["app.palette", "Command palette"],
   ]],

@@ -11,7 +11,7 @@ platform = "darwin"
 # Mods from herdr-app/mods/ that this machine links.
 mods = [
   "my-files", "my-changes", "my-tabs", "space-sessions", "keybind-help", "usage-limits",
-  "session-launcher", "revive", "wallpaper", "jobs", "pane-header", "parker-toast",
+  "session-launcher", "revive", "wallpaper", "jobs", "pane-header", "diagnose-shortcut", "parker-toast",
   "music", "demo-mode", "demo-quiet", "run-once",
 ]
 # Mods another repo links here (parker-agent-kit's scripts/link.sh). Listed so
