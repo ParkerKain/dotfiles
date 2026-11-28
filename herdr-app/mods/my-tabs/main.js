@@ -33,9 +33,10 @@ const WORK_PANELS = [
 const GLANCED = new Set(["ops-tasks", "day-view", "artifacts", "factory"]);
 
 // The panel motion handshake (honored by ops-tasks and artifacts): "in" right after a panel
-// shows, "out" ~170ms before it hides, so the panel's content can fade and slide first.
+// shows, "out" ~240ms before it hides, so the panel's content can fade and slide first.
 // Herdr shows and hides layout panels instantly, and resizing them would resize terminals.
-const MOTION = "panel.motion", OUT_MS = 170;
+const MOTION = "panel.motion", OUT_MS = 240;
+const TAB_RISE = 10, TAB_IN = { duration: 200, easing: "ease-out" };
 const motion = (id, phase) => { const at = Date.now(); setShared(MOTION, { id, phase, at }); return at; };
 
 // The key bound to an action in keys.json, written the way this platform writes it:
@@ -57,6 +58,8 @@ function keyFor(action, platform) {
 export default class Tabs extends View {
   init(_props, cx) {
     this.pressed = null;
+    this.seen = null;       // tab ids already shown in this space, so only new ones animate
+    this.arriving = {};     // tab id -> "pre" | "in" while it fades and rises in
     this.scroll = ScrollHandle.new();
     try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
     if (!this.panels || typeof this.panels !== "object" || Array.isArray(this.panels)) this.panels = {};
@@ -234,10 +237,25 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
-  render() {
+  // A tab that wasn't in this space a render ago fades and rises 10px into the bar (the
+  // Cascade motion the side panels use). Switching spaces shows its tabs without motion.
+  trackArrivals(space, shown, cx) {
+    const ids = shown.map(c => c.id);
+    if (this.seenSpace !== space?.id || !this.seen) { this.seenSpace = space?.id; this.seen = new Set(ids); return; }
+    for (const id of ids) {
+      if (this.seen.has(id)) continue;
+      this.seen.add(id);
+      this.arriving[id] = "pre";
+      cx.timer.after(30, cx => { this.arriving[id] = "in"; cx.notify(); });
+      cx.timer.after(30 + TAB_IN.duration + 50, cx => { delete this.arriving[id]; cx.notify(); });
+    }
+  }
+
+  render(cx) {
     const t = theme();
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
+    this.trackArrivals(space, shown, cx);
     const active = shown.findIndex(tab => tab.active);
     const selected = shown[active]?.id;
     if (selected !== this.selected || active !== this.selectedIndex) {
@@ -251,7 +269,11 @@ export default class Tabs extends View {
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
       const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
-      return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
+      const arriving = this.arriving[c.id];
+      return h_flex().id(`tab-${c.id}`).relative()
+        .when(arriving === "pre", el => el.top(TAB_RISE).opacity(0))
+        .when(arriving === "in", el => el.top(0).opacity(1).transition("opacity", TAB_IN).transition("top", TAB_IN))
+        .h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         // A rename or status dot on this or an earlier tab can push the active one out.
         .when(i <= active, el => el.on_size_change((_size, cx) => { this.scroll.scroll_to_item(active); cx.notify(); }))
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
