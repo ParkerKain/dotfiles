@@ -16,6 +16,9 @@ LINK = ROOT / "link.py"
 sys.path.insert(0, str(ROOT))
 import link  # noqa: E402
 
+# The shared default theme, so changing it in settings.base.json doesn't break these tests.
+BASE_THEME = json.loads((ROOT / "settings.base.json").read_text())["theme"]
+
 WORK_PANELS = {"ops-tasks", "day-view", "artifacts", "call-sheet", "factory", "claude-usage"}
 # Kit mods outside the side panel: the day strip band, the glances status block, the
 # floating Lock-in and Meeting mode.
@@ -78,7 +81,7 @@ class LinkTest(unittest.TestCase):
         self.assertTrue(list((self.herdr / ".link-state/backups").rglob("keys.json")))
         # Settings: shared look merged in, Herdr's own zoom kept, ~ expanded.
         settings = json.loads((self.herdr / "settings.json").read_text())
-        self.assertEqual((settings["zoom"], settings["theme"], settings["font_ligatures"]), (1.5, "rose-pine-moon", True))
+        self.assertEqual((settings["zoom"], settings["theme"], settings["font_ligatures"]), (1.5, BASE_THEME, True))
         self.assertEqual(settings["sounds"]["done"], f"{self.tmp}/dotfiles/herdr/sounds/rising-two-note.mp3")
         self.assertNotIn("font_size", settings)
         # Layout: a written copy with Jobs but none of the work Mac's panels.
@@ -135,7 +138,7 @@ class LinkTest(unittest.TestCase):
         (self.herdr / "settings.json").symlink_to(real)
         self.ok("mac")
         self.assertTrue((self.herdr / "settings.json").is_symlink())
-        self.assertEqual(json.loads(real.read_text())["theme"], "rose-pine-moon")
+        self.assertEqual(json.loads(real.read_text())["theme"], BASE_THEME)
 
     def test_drop_panels_moves_the_active_panel_to_one_that_remains(self):
         layout = {"id": "root", "children": [{"id": "panel-body", "type": "stack", "active": "ops-tasks", "children": [
