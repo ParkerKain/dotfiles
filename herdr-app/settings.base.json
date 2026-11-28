@@ -4,7 +4,7 @@
     "done": "~/dotfiles/herdr/sounds/rising-two-note.mp3",
     "blocked": "~/dotfiles/herdr/sounds/rising-two-note.mp3"
   },
-  "font": "Hack",
+  "font": "Iosevka Nerd Font Mono",
   "font_ligatures": true,
   "terminal_line_height": 1.0,
   "terminal_cell_width": 1.0,
