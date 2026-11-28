@@ -1,0 +1,13 @@
+{
+  "place": "none",
+  "title": "Try wallpapers",
+  "overlay": { "width": 300, "height": 80 },
+  "palette": [
+    {
+      "title": "Try wallpapers",
+      "command": "mod.open",
+      "args": { "name": "wallpaper-tryout" },
+      "words": "wallpaper background frosted demo preview flat landscape"
+    }
+  ]
+}

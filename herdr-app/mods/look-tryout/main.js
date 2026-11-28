@@ -67,6 +67,15 @@ const UI_FONTS = [
 // Wallpapers: the generated jade set (herdr-app/wallpapers/jade.py), then the green ones already
 // in the collection. Thumbnails and paths come from the Wallpaper picker's index (frost --thumbs).
 const WALLPAPER_NOTES = {
+  "teal peaks": "Flat. Layered teal peaks under a peach sky, closest to your pick.",
+  "peaks at dusk": "Flat. Faceted peaks, violet-to-peach dusk, crescent moon.",
+  "pine valley": "Flat. Pine-covered hills under a low sun.",
+  "lake reflection": "Flat. Peaks mirrored in a still lake at night.",
+  "mint dunes": "Flat. Soft mint dunes, peach sky.",
+  "misty hills": "Flat. Pale layered hills with a few birds.",
+  "night forest": "Flat. Rows of pines under a full moon.",
+  "island sunset": "Flat. A pine island and the sun on the water.",
+  "flat waves": "Flat. Layered teal waves, peach sun.",
   "jade aurora": "Generated. Jade curtains of light over a dark ground.",
   "emerald mesh": "Generated. Smooth emerald-to-teal mesh gradient.",
   "malachite bands": "Generated. Cut malachite banding.",
@@ -135,7 +144,8 @@ export default class LookTryout extends View {
     this.blur = 0;
     this.originalBlur = 0;
     this.glassTheme = null; // the theme Frosted's glass was tinted with when the tryout opened
-    this.round = 0;
+    // The Try wallpapers palette entry opens straight on the Wallpaper round.
+    this.round = Math.max(0, ROUNDS.findIndex(r => r.key === props()?.round));
     this.pos = { theme: 0, font: 0, ui_font: 0, wallpaper: 0 };
     this.verdicts = { theme: {}, font: {}, ui_font: {}, wallpaper: {} };
     this.done = false; // kept or restored: close() has nothing left to do
@@ -168,7 +178,11 @@ export default class LookTryout extends View {
 
         const thumbs = `${appHome()}/mods/wallpaper-thumbs`;
         const index = JSON.parse((await readTextFile(`${thumbs}/index.json`)) || "[]");
-        const picks = index.filter(w => w.group === "jade").concat(index.filter(w => w.group !== "jade" && WALLPAPER_NOTES[w.name]));
+        // The flat landscapes, then the jade set, then the green ones already in the collection.
+        const order = Object.keys(WALLPAPER_NOTES);
+        const picks = index.filter(w => w.group === "flat").sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
+          .concat(index.filter(w => w.group === "jade"))
+          .concat(index.filter(w => w.group !== "flat" && w.group !== "jade" && WALLPAPER_NOTES[w.name]));
         this.lists.wallpaper = picks.map(w => [w.name, WALLPAPER_NOTES[w.name] ?? "", w.path]);
         for (const w of picks) this.thumbs[w.name] = w.thumb;
         const cur = JSON.parse((await readTextFile(`${thumbs}/current.json`)) || "null");
@@ -185,7 +199,8 @@ export default class LookTryout extends View {
         if (saved?.verdicts) for (const k of Object.keys(this.verdicts)) this.verdicts[k] = { ...saved.verdicts[k] };
         // Start each round at its first undecided candidate.
         for (const { key } of ROUNDS) this.pos[key] = Math.max(0, this.lists[key].findIndex(([n]) => !this.verdicts[key][n]));
-        this.show(cx);
+        // Opening changes nothing. The first browse, vote or Space applies the shown candidate.
+        cx.notify();
       } catch (e) {
         this.status = `Could not start: ${e?.message ?? e}`;
         cx.notify();
@@ -330,7 +345,8 @@ export default class LookTryout extends View {
     const job = {
       settings: this.settingsPath, base: this.basePath, theme: c.theme,
       fonts: { font: c.font, ui_font: c.ui_font },
-      layouts: ["Parker", "Frosted", "Meeting", "Demo"].filter(l => layouts().includes(l)),
+      // Visiting each layout to set its theme flashes the window, so only do it when the theme changed.
+      layouts: c.theme === this.original.theme ? [] : ["Parker", "Frosted", "Meeting", "Demo"].filter(l => layouts().includes(l)),
       frost: this.frost && wallpaper && layouts().includes("Frosted")
         ? [this.frost, wallpaper, "--blur", String(this.blur), "--theme", c.theme] : null,
     };
